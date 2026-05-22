@@ -89,6 +89,7 @@ export default function App() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
   const user = session?.user
   const emailConfirmed = Boolean(user?.email_confirmed_at || user?.confirmed_at)
+
   setToken(session && emailConfirmed ? session.access_token : null)
   setHydrating(false)
 })

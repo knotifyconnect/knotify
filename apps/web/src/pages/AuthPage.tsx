@@ -5,13 +5,13 @@ import { supabase } from '../lib/supabase'
 import { apiPost } from '../lib/api'
 import { SignInCard2 } from '../components/ui/sign-in-card-2'
 
-type SupabaseAuthUserLike = {
+type SupabaseUserLike = {
   email_confirmed_at?: string | null
   confirmed_at?: string | null
   user_metadata?: Record<string, unknown>
 }
 
-function isEmailConfirmed(user: SupabaseAuthUserLike | null | undefined) {
+function isEmailConfirmed(user: SupabaseUserLike | null | undefined) {
   return Boolean(user?.email_confirmed_at || user?.confirmed_at)
 }
 
@@ -31,15 +31,24 @@ export function AuthPage() {
       setMode('signup')
       return
     }
+
     if (location.pathname === '/login') {
       setMode('login')
       return
     }
+
     const requestedMode = searchParams.get('mode')
     if (requestedMode === 'signup' || requestedMode === 'login') {
       setMode(requestedMode)
     }
   }, [location.pathname, searchParams])
+
+  useEffect(() => {
+    if (searchParams.get('verified') === '1') {
+      setMode('login')
+      setError('Email verified. You can now log in.')
+    }
+  }, [searchParams])
 
   async function completeProfileFromForm() {
     await apiPost('/api/auth/complete-profile', {
@@ -50,8 +59,9 @@ export function AuthPage() {
     })
   }
 
-  async function completeProfileFromMetadata(user: SupabaseAuthUserLike | null | undefined) {
+  async function completeProfileFromMetadata(user: SupabaseUserLike | null | undefined) {
     const metadata = user?.user_metadata ?? {}
+
     const metadataFullName = typeof metadata.fullName === 'string' ? metadata.fullName.trim() : ''
     const metadataUsername = typeof metadata.username === 'string' ? metadata.username.trim() : ''
 
@@ -68,9 +78,11 @@ export function AuthPage() {
   async function login() {
     setLoading(true)
     setError(null)
+
     try {
       const normalizedEmail = email.trim().toLowerCase()
       const trimmedPassword = password.trim()
+
       if (!normalizedEmail || !trimmedPassword) {
         throw new Error('Email and password are required')
       }
@@ -92,6 +104,7 @@ export function AuthPage() {
       await completeProfileFromMetadata(data.user).catch(() => undefined)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed'
+
       if (message.toLowerCase().includes('invalid login credentials')) {
         setError('Invalid email or password.')
       } else if (message.toLowerCase().includes('email not confirmed')) {
@@ -107,6 +120,7 @@ export function AuthPage() {
   async function signup() {
     setLoading(true)
     setError(null)
+
     try {
       const normalizedEmail = email.trim().toLowerCase()
       const trimmedPassword = password.trim()
@@ -116,6 +130,7 @@ export function AuthPage() {
       if (!cleanedFullName || !cleanedUsername) {
         throw new Error('Full Name and Username are required for sign up')
       }
+
       if (!normalizedEmail || !trimmedPassword) {
         throw new Error('Email and password are required')
       }
@@ -145,8 +160,9 @@ export function AuthPage() {
       setError('Signup created. Check your email inbox and confirm your account before logging in.')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Sign up failed'
-      if (message.toLowerCase().includes('email not confirmed')) {
-        setError('Signup created. Check your email inbox and confirm your account before logging in.')
+
+      if (message.toLowerCase().includes('already registered')) {
+        setError('This email may already be registered. Try logging in or use a fresh test email.')
       } else {
         setError(message)
       }
