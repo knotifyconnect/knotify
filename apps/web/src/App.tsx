@@ -87,10 +87,11 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setToken(session?.access_token ?? null)
-      setHydrating(false)
-    })
-
+  const user = session?.user
+  const emailConfirmed = Boolean(user?.email_confirmed_at || user?.confirmed_at)
+  setToken(session && emailConfirmed ? session.access_token : null)
+  setHydrating(false)
+})
     return () => subscription.unsubscribe()
   }, [setToken])
 
