@@ -1,0 +1,641 @@
+import { Router } from 'express'
+import { z } from 'zod'
+import multer from 'multer'
+import Anthropic from '@anthropic-ai/sdk'
+import { requireAuth } from '../middleware/auth.js'
+import { supabase } from '../lib.js'
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const uploadCv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
+
+const updateMeSchema = z.object({
+  fullName: z.string().min(2).optional(),
+  bio: z.string().max(500).optional().nullable(),
+  headline: z.string().max(120).optional().nullable(),
+  university: z.string().optional(),
+  currentCompany: z.string().optional(),
+  avatarUrl: z
+    .string()
+    .max(180000)
+    .refine((value) => value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:image/'), {
+      message: 'avatarUrl must be a URL or image data URL',
+    })
+    .nullable()
+    .optional(),
+  locationCity: z.string().optional(),
+  status: z.enum(['studying', 'open_to_work', 'employed']).optional(),
+  locationLat: z.number().optional(),
+  locationLng: z.number().optional(),
+  websiteUrl: z.string().max(200).optional().nullable(),
+  githubUrl: z.string().max(200).optional().nullable(),
+  linkedinUrl: z.string().max(200).optional().nullable(),
+  languages: z.array(z.string().max(50)).optional(),
+})
+
+const searchUsersQuerySchema = z.object({
+  q: z.string().trim().max(80).default(''),
+  skill: z.string().trim().max(60).default(''),
+})
+
+const userPanelParamSchema = z.object({
+  id: z.string().uuid(),
+})
+
+const usernameParamSchema = z.object({
+  username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/),
+})
+
+export const usersRouter = Router()
+
+usersRouter.get('/me', requireAuth, async (req, res) => {
+  if (!req.authUser) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  let row = (await supabase.from('users').select('*').eq('auth_id', req.authUser.id).maybeSingle()).data
+
+  // Self-heal: auto-create the profile row if missing (recovers from failed signup completions)
+  if (!row) {
+    const email = req.authUser.email ?? `user-${req.authUser.id.slice(0, 8)}@unknown.app`
+    const baseUsername = `user_${req.authUser.id.replace(/-/g, '').slice(0, 12)}`
+    const stem = (email.split('@')[0] ?? 'New user').replace(/[._-]+/g, ' ')
+    const fullName = stem.charAt(0).toUpperCase() + stem.slice(1)
+
+    // Auto-promote knotify team emails to admin on first profile creation
+    const ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
+    const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase())
+
+    const insert = await supabase
+      .from('users')
+      .insert({
+        auth_id: req.authUser.id,
+        email,
+        username: baseUsername,
+        full_name: fullName,
+        location_city: 'Munich',
+        status: 'open_to_work',
+        is_admin: isAdmin,
+      })
+      .select('*')
+      .single()
+
+    if (insert.error) {
+      console.error('[users/me] auto-create failed:', insert.error)
+      return res.status(500).json({ error: insert.error.message })
+    }
+    row = insert.data
+  } else {
+    // Backfill admin flag if the team signed up before the seeding migration ran
+    const ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
+    if (!row.is_admin && row.email && ADMIN_EMAILS.includes(row.email.toLowerCase())) {
+      const upd = await supabase.from('users').update({ is_admin: true }).eq('id', row.id).select('*').single()
+      if (!upd.error && upd.data) row = upd.data
+    }
+  }
+
+  return res.json({ user: row })
+})
+
+usersRouter.patch('/me', requireAuth, async (req, res) => {
+  if (!req.authUser) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const parsed = updateMeSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+  }
+
+  const data = parsed.data
+  const update: Record<string, unknown> = {}
+  if (data.fullName !== undefined) update.full_name = data.fullName.trim()
+  if (data.bio !== undefined) update.bio = data.bio ? data.bio.trim() : null
+  if (data.university !== undefined) update.university = data.university.trim()
+  if (data.currentCompany !== undefined) update.current_company = data.currentCompany.trim()
+  if (data.avatarUrl !== undefined) update.avatar_url = data.avatarUrl ? data.avatarUrl.trim() : null
+  if (data.locationCity !== undefined) update.location_city = data.locationCity.trim()
+  if (data.status !== undefined) update.status = data.status
+  if (data.locationLat !== undefined) update.location_lat = data.locationLat
+  if (data.locationLng !== undefined) update.location_lng = data.locationLng
+  if (data.headline !== undefined) update.headline = data.headline
+  if (data.websiteUrl !== undefined) update.website_url = data.websiteUrl
+  if (data.githubUrl !== undefined) update.github_url = data.githubUrl
+  if (data.linkedinUrl !== undefined) update.linkedin_url = data.linkedinUrl
+  if (data.languages !== undefined) update.languages = data.languages
+
+  if (Object.keys(update).length === 0) {
+    return res.status(400).json({ error: 'No fields provided' })
+  }
+  update.updated_at = new Date().toISOString()
+
+  const result = await supabase.from('users').update(update).eq('auth_id', req.authUser.id).select('*').single()
+  if (result.error) {
+    return res.status(500).json({ error: result.error.message })
+  }
+
+  return res.json({ user: result.data })
+})
+
+// ── Role requests (member asking to be HR / company_owner) ────────────────
+const roleRequestSchema = z.object({
+  requestedRole: z.enum(['hr', 'company_owner']),
+  companyName: z.string().min(2).max(120).optional(),
+})
+
+usersRouter.post('/me/role-requests', requireAuth, async (req, res) => {
+  if (!req.appUserId || !req.authUser) return res.status(401).json({ error: 'Unauthorized' })
+  const parsed = roleRequestSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+
+  // Reject if there's already a pending request for the same role
+  const existing = await supabase
+    .from('role_requests')
+    .select('id')
+    .eq('user_id', req.appUserId)
+    .eq('requested_role', parsed.data.requestedRole)
+    .eq('status', 'pending')
+    .maybeSingle()
+  if (existing.error) return res.status(500).json({ error: existing.error.message })
+  if (existing.data) return res.status(409).json({ error: 'You already have a pending request for this role' })
+
+  const email = req.authUser.email ?? ''
+  const domain = email.includes('@') ? email.split('@')[1].toLowerCase() : null
+  // Naive heuristic: an "@company.com" email matching the company name is auto-trusted (still admin-reviewed)
+  const emailVerified = Boolean(
+    domain && parsed.data.companyName && domain.replace(/\.[a-z]+$/, '').includes(parsed.data.companyName.toLowerCase().replace(/\s+/g, ''))
+  )
+
+  const insert = await supabase
+    .from('role_requests')
+    .insert({
+      user_id: req.appUserId,
+      requested_role: parsed.data.requestedRole,
+      company_name: parsed.data.companyName ?? null,
+      email_domain: domain,
+      email_verified: emailVerified,
+    })
+    .select('*')
+    .single()
+  if (insert.error) return res.status(500).json({ error: insert.error.message })
+  return res.status(201).json({ request: insert.data })
+})
+
+usersRouter.get('/me/role-requests', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
+  const result = await supabase
+    .from('role_requests')
+    .select('*')
+    .eq('user_id', req.appUserId)
+    .order('created_at', { ascending: false })
+  if (result.error) return res.status(500).json({ error: result.error.message })
+  return res.json({ requests: result.data ?? [] })
+})
+
+usersRouter.get('/search', requireAuth, async (req, res) => {
+  const parsedQuery = searchUsersQuerySchema.safeParse(req.query)
+  if (!parsedQuery.success) {
+    return res.status(422).json({ error: 'Invalid query params', fields: parsedQuery.error.flatten() })
+  }
+  const { q, skill } = parsedQuery.data
+
+  let usersQuery = supabase
+    .from('users')
+    .select('id, full_name, username, avatar_url, university, current_company, status, created_at')
+    .order('created_at', { ascending: false })
+    .limit(50)
+
+  if (q) {
+    // ilike = case-insensitive LIKE in Postgres. Escape special chars to avoid OR syntax break.
+    const escaped = q.replace(/[,()]/g, ' ').trim()
+    if (escaped.length > 0) {
+      usersQuery = usersQuery.or(
+        `full_name.ilike.%${escaped}%,username.ilike.%${escaped}%,university.ilike.%${escaped}%,current_company.ilike.%${escaped}%`
+      )
+    }
+  }
+
+  const usersResult = await usersQuery
+  if (usersResult.error) {
+    return res.status(500).json({ error: usersResult.error.message })
+  }
+
+  let users = usersResult.data ?? []
+  if (skill) {
+    // Search via new skill_catalog + user_skills join
+    const catalogResult = await supabase
+      .from('skill_catalog')
+      .select('id')
+      .ilike('name', `%${skill}%`)
+    if (catalogResult.error) return res.status(500).json({ error: catalogResult.error.message })
+    const skillIds = (catalogResult.data ?? []).map((s) => s.id)
+    if (skillIds.length) {
+      const userSkillsResult = await supabase.from('user_skills').select('user_id').in('skill_id', skillIds)
+      if (userSkillsResult.error) return res.status(500).json({ error: userSkillsResult.error.message })
+      const ids = new Set((userSkillsResult.data ?? []).map((s) => s.user_id))
+      users = users.filter((u) => ids.has(u.id))
+    } else {
+      users = []
+    }
+  }
+
+  return res.json({ users })
+})
+
+usersRouter.get('/panel/:id', requireAuth, async (req, res) => {
+  try {
+    const params = userPanelParamSchema.safeParse(req.params)
+    if (!params.success) {
+      return res.status(422).json({ error: 'Invalid user id', fields: params.error.flatten() })
+    }
+    const userId = params.data.id
+
+    const userResult = await supabase
+      .from('users')
+      .select('id, full_name, username, avatar_url, bio, headline, location_city, status, university, current_company, referral_score, contact_email, linkedin_url, website_url, github_url, languages')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (userResult.error) return res.status(500).json({ error: userResult.error.message })
+    if (!userResult.data) return res.status(404).json({ error: 'User not found' })
+
+    // All extended queries via allSettled — any failure → empty result, never hang
+    const [skillsR, recentPostsR, eduR, expR, updatesR, referralsCountR] = await Promise.allSettled([
+      supabase.from('user_skills').select('skill_id, skill_catalog(id, name, category)').eq('user_id', userId).limit(8),
+      supabase.from('posts').select('id, title, body, image_url, channel_id, created_at, upvote_count, comment_count').eq('author_id', userId).order('created_at', { ascending: false }).limit(3),
+      supabase.from('user_education').select('id, institution, degree, field, start_year, end_year, description').eq('user_id', userId).order('sort_order').limit(6),
+      supabase.from('user_experience').select('id, company, role, start_date, end_date, description').eq('user_id', userId).order('sort_order').limit(6),
+      supabase.from('updates').select('id, content, created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(1),
+      supabase.from('referrals').select('id', { count: 'exact', head: true }).eq('referrer_id', userId).eq('status', 'submitted').eq('hr_flagged', false),
+    ])
+
+    const skillsData = (skillsR.status === 'fulfilled' && !skillsR.value.error)
+      ? (skillsR.value.data ?? []).map((row: any) => ({
+          id: row.skill_id,
+          name: row.skill_catalog?.name ?? '',
+          category: row.skill_catalog?.category ?? '',
+          is_verified: true,
+        }))
+      : []
+
+    const postsRaw = (recentPostsR.status === 'fulfilled' && !recentPostsR.value.error) ? (recentPostsR.value.data ?? []) : []
+    const channelIds = [...new Set(postsRaw.map((p: any) => p.channel_id).filter(Boolean) as string[])]
+    const channelsMap = new Map<string, { slug: string; name: string }>()
+    if (channelIds.length) {
+      const ch = await supabase.from('channels').select('id, slug, name').in('id', channelIds)
+      for (const c of (ch.data ?? [])) channelsMap.set(c.id, c)
+    }
+    const recentPosts = postsRaw.map((p: any) => ({ ...p, channel: p.channel_id ? channelsMap.get(p.channel_id) ?? null : null }))
+
+    return res.json({
+      user: userResult.data,
+      skills: skillsData,
+      education: (eduR.status === 'fulfilled' && !eduR.value.error) ? (eduR.value.data ?? []) : [],
+      experience: (expR.status === 'fulfilled' && !expR.value.error) ? (expR.value.data ?? []) : [],
+      recentPosts,
+      latestPost: recentPosts[0] ?? null,
+      latestUpdate: (updatesR.status === 'fulfilled' && !updatesR.value.error) ? (updatesR.value.data?.[0] ?? null) : null,
+      submittedReferralCount: (referralsCountR.status === 'fulfilled' && !referralsCountR.value.error) ? (referralsCountR.value.count ?? 0) : 0,
+    })
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('panel/:id unexpected error:', err)
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+  }
+})
+
+// ── Skill catalog (public) ────────────────────────────────────────────────
+usersRouter.get('/skills/catalog', async (_req, res) => {
+  const result = await supabase.from('skill_catalog').select('id, name, category').order('category').order('name')
+  if (result.error) return res.status(500).json({ error: result.error.message })
+  return res.json({ catalog: result.data ?? [] })
+})
+
+// ── Extended profile (education, experience, skills, languages) ───────────
+usersRouter.get('/me/profile-extended', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  try {
+    const [eduR, expR, skillsR, userR] = await Promise.allSettled([
+      supabase.from('user_education').select('*').eq('user_id', req.appUserId).order('sort_order'),
+      supabase.from('user_experience').select('*').eq('user_id', req.appUserId).order('sort_order'),
+      supabase.from('user_skills').select('skill_id, source, skill_catalog(id, name, category)').eq('user_id', req.appUserId),
+      supabase.from('users').select('languages').eq('id', req.appUserId).maybeSingle(),
+    ])
+    return res.json({
+      education: (eduR.status === 'fulfilled' && !eduR.value.error) ? (eduR.value.data ?? []) : [],
+      experience: (expR.status === 'fulfilled' && !expR.value.error) ? (expR.value.data ?? []) : [],
+      skills: (skillsR.status === 'fulfilled' && !skillsR.value.error)
+        ? (skillsR.value.data ?? []).map((row: any) => ({ skill_id: row.skill_id, source: row.source, ...row.skill_catalog }))
+        : [],
+      languages: (userR.status === 'fulfilled' && !userR.value.error) ? (userR.value.data?.languages ?? []) : [],
+    })
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('profile-extended error:', err)
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load extended profile' })
+  }
+})
+
+// ── Save education entries (full replace) ────────────────────────────────
+usersRouter.put('/me/education', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const items: Array<{ institution: string; degree?: string; field?: string; start_year?: number; end_year?: number; description?: string }> = req.body.items ?? req.body.education ?? []
+  await supabase.from('user_education').delete().eq('user_id', req.appUserId)
+  if (items.length > 0) {
+    const rows = items.map((item, idx) => {
+      const sy = item.start_year != null ? Number(String(item.start_year).slice(0, 4)) : null
+      const ey = item.end_year != null ? Number(String(item.end_year).slice(0, 4)) : null
+      return {
+        user_id: req.appUserId!,
+        institution: item.institution,
+        degree: item.degree ?? null,
+        field: item.field ?? null,
+        start_year: sy && !isNaN(sy) ? sy : null,
+        end_year: ey && !isNaN(ey) ? ey : null,
+        description: item.description ?? null,
+        sort_order: idx,
+      }
+    })
+    const insert = await supabase.from('user_education').insert(rows).select('*')
+    if (insert.error) return res.status(500).json({ error: insert.error.message })
+    return res.json({ education: insert.data })
+  }
+  return res.json({ education: [] })
+})
+
+// ── Save experience entries (full replace) ────────────────────────────────
+usersRouter.put('/me/experience', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const items: Array<{ company: string; role: string; start_date?: string; end_date?: string; description?: string }> = req.body.items ?? req.body.experience ?? []
+  await supabase.from('user_experience').delete().eq('user_id', req.appUserId)
+  if (items.length > 0) {
+    function toFullDate(d?: string): string | null {
+      if (!d || d === 'present') return d === 'present' ? null : null
+      const trimmed = d.trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+      if (/^\d{4}-\d{2}$/.test(trimmed)) return `${trimmed}-01`
+      if (/^\d{4}$/.test(trimmed)) return `${trimmed}-01-01`
+      return null
+    }
+    const rows = items.map((item, idx) => ({
+      user_id: req.appUserId!,
+      company: item.company,
+      role: item.role,
+      start_date: toFullDate(item.start_date),
+      end_date: item.end_date === 'present' ? null : toFullDate(item.end_date),
+      description: item.description ?? null,
+      sort_order: idx,
+    }))
+    const insert = await supabase.from('user_experience').insert(rows).select('*')
+    if (insert.error) return res.status(500).json({ error: insert.error.message })
+    return res.json({ experience: insert.data })
+  }
+  return res.json({ experience: [] })
+})
+
+// ── Save skills (full replace) ────────────────────────────────────────────
+usersRouter.put('/me/skills', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const skillIds: number[] = (req.body.skillIds ?? []).map(Number).filter(Boolean)
+  await supabase.from('user_skills').delete().eq('user_id', req.appUserId)
+  if (skillIds.length > 0) {
+    const rows = skillIds.map((id) => ({ user_id: req.appUserId!, skill_id: id, source: 'manual' }))
+    const insert = await supabase.from('user_skills').insert(rows)
+    if (insert.error) return res.status(500).json({ error: insert.error.message })
+  }
+  const updated = await supabase.from('user_skills').select('skill_id, source, skill_catalog(id, name, category)').eq('user_id', req.appUserId)
+  const skills = (updated.data ?? []).map((row: any) => ({ skill_id: row.skill_id, source: row.source, ...row.skill_catalog }))
+  return res.json({ skills })
+})
+
+// ── CV extraction via Claude ──────────────────────────────────────────────
+// Accepts JSON body: { pdfBase64?: string, text?: string, filename?: string }
+// (Avoids multipart/form-data which has issues with @vercel/node serverless.)
+usersRouter.post('/me/cv-extract', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+
+  const { pdfBase64, text: directText, filename } = (req.body ?? {}) as { pdfBase64?: string; text?: string; filename?: string }
+
+  let text = ''
+  try {
+    if (typeof directText === 'string' && directText.trim().length > 0) {
+      text = directText
+    } else if (typeof pdfBase64 === 'string' && pdfBase64.length > 0) {
+      const buf = Buffer.from(pdfBase64.replace(/^data:application\/pdf;base64,/, ''), 'base64')
+      if (buf.length > 12 * 1024 * 1024) {
+        return res.status(413).json({ error: 'File too large (max 12 MB)' })
+      }
+      try {
+        const pdfParse = (await import('pdf-parse')).default
+        const parsed = await pdfParse(buf)
+        text = parsed.text
+      } catch {
+        text = buf.toString('utf-8')
+      }
+    } else {
+      return res.status(422).json({ error: 'Provide either pdfBase64 or text' })
+    }
+  } catch (e) {
+    return res.status(422).json({ error: e instanceof Error ? e.message : 'Could not parse file' })
+  }
+
+  if (!text.trim()) return res.status(422).json({ error: 'Could not extract text from file' })
+  // filename is unused but accepted for client compatibility
+  void filename
+
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: `Extract structured profile data from this CV/resume text. Return ONLY a JSON object (no markdown, no explanation) with these fields (omit fields you cannot find):
+{
+  "name": "Full Name",
+  "headline": "Current role or professional headline (max 120 chars)",
+  "education": [{ "institution": "University Name", "degree": "Bachelor of Science", "field": "Computer Science", "start_year": 2018, "end_year": 2022 }],
+  "experience": [{ "company": "Company Name", "role": "Software Engineer", "start_date": "2022-01", "end_date": "2024-03" }],
+  "skills": ["Python", "React", "SQL"],
+  "languages": ["English", "German"]
+}
+
+CV Text:
+${text.slice(0, 8000)}`,
+      }],
+    })
+
+    const raw = message.content[0]?.type === 'text' ? message.content[0].text : ''
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return res.status(422).json({ error: 'Could not parse CV data' })
+    const parsed = JSON.parse(jsonMatch[0])
+
+    // Map skill names → skill_catalog IDs (case-insensitive)
+    const skillNames: string[] = Array.isArray(parsed.skills) ? parsed.skills.filter((s: unknown) => typeof s === 'string') : []
+    let skillIds: number[] = []
+    if (skillNames.length) {
+      const allCat = await supabase.from('skill_catalog').select('id, name')
+      const byLower = new Map<string, number>()
+      for (const row of (allCat.data ?? []) as Array<{ id: number; name: string }>) {
+        byLower.set(row.name.toLowerCase(), row.id)
+      }
+      const matched = new Set<number>()
+      for (const name of skillNames) {
+        const key = name.toLowerCase().trim()
+        if (byLower.has(key)) matched.add(byLower.get(key)!)
+        // Try partial matches (e.g. "React.js" → "React")
+        else {
+          for (const [catName, catId] of byLower) {
+            if (key.includes(catName) || catName.includes(key)) { matched.add(catId); break }
+          }
+        }
+      }
+      skillIds = [...matched]
+    }
+
+    // Normalize education / experience shape
+    const education = Array.isArray(parsed.education) ? parsed.education.map((e: any) => ({
+      institution: String(e.institution ?? ''),
+      degree: String(e.degree ?? ''),
+      field: String(e.field ?? ''),
+      start_year: e.start_year ? String(e.start_year) : '',
+      end_year: e.end_year ? String(e.end_year) : '',
+      description: String(e.description ?? ''),
+    })) : []
+    const experience = Array.isArray(parsed.experience) ? parsed.experience.map((e: any) => ({
+      company: String(e.company ?? ''),
+      role: String(e.role ?? ''),
+      start_date: e.start_date ? String(e.start_date) : '',
+      end_date: e.end_date ? String(e.end_date) : '',
+      description: String(e.description ?? ''),
+    })) : []
+
+    const extracted = {
+      headline: typeof parsed.headline === 'string' ? parsed.headline.slice(0, 120) : null,
+      bio: typeof parsed.bio === 'string' ? parsed.bio.slice(0, 500) : null,
+      education,
+      experience,
+      skillIds,
+      skillNames, // for display in diff preview
+      languages: Array.isArray(parsed.languages) ? parsed.languages.filter((l: unknown) => typeof l === 'string') : [],
+    }
+    return res.json({ extracted })
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'CV extraction failed' })
+  }
+})
+
+// ── "People you may know" suggestions ────────────────────────────────────
+usersRouter.get('/suggestions', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  try {
+    const connections = await supabase
+      .from('connections')
+      .select('requester_id, addressee_id')
+      .or(`requester_id.eq.${req.appUserId},addressee_id.eq.${req.appUserId}`)
+    const excludeIds = new Set<string>([req.appUserId])
+    const myConnectionIds: string[] = []
+    for (const c of connections.data ?? []) {
+      excludeIds.add(c.requester_id)
+      excludeIds.add(c.addressee_id)
+      const peerId = c.requester_id === req.appUserId ? c.addressee_id : c.requester_id
+      myConnectionIds.push(peerId)
+    }
+
+    const myUser = await supabase.from('users').select('university').eq('id', req.appUserId).maybeSingle()
+    const myUniversity = myUser.data?.university ?? null
+
+    const excluded = [...excludeIds]
+    const candidatesQuery = await supabase
+      .from('users')
+      .select('id, full_name, username, avatar_url, university, current_company')
+      .not('id', 'in', `(${excluded.join(',')})`)
+      .limit(40)
+
+    if (candidatesQuery.error) return res.status(500).json({ error: candidatesQuery.error.message })
+
+    const withMutuals = await Promise.all((candidatesQuery.data ?? []).map(async (u) => {
+      let mutual = 0
+      if (myConnectionIds.length > 0) {
+        const theirConns = await supabase
+          .from('connections')
+          .select('requester_id, addressee_id')
+          .or(`requester_id.eq.${u.id},addressee_id.eq.${u.id}`)
+          .eq('status', 'accepted')
+        const theirIds = new Set((theirConns.data ?? []).map((c) =>
+          c.requester_id === u.id ? c.addressee_id : c.requester_id
+        ))
+        mutual = myConnectionIds.filter((id) => theirIds.has(id)).length
+      }
+      const uniBonus = (myUniversity && u.university && u.university === myUniversity) ? 0.5 : 0
+      return { ...u, mutual_connections_count: mutual, _score: mutual + uniBonus }
+    }))
+
+    const sorted = withMutuals.sort((a, b) => b._score - a._score).slice(0, 10)
+    return res.json({ suggestions: sorted.map(({ _score, ...u }) => u) })
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load suggestions' })
+  }
+})
+
+// ── Public profile by ID ──────────────────────────────────────────────────
+usersRouter.get('/public/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = req.params.id
+    if (!userId) return res.status(422).json({ error: 'Invalid user id' })
+
+    // Fetch user core first — fail-fast if not found
+    const user = await supabase
+      .from('users')
+      .select('id, full_name, username, avatar_url, bio, headline, university, current_company, linkedin_url, website_url, github_url, languages, status, created_at')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (user.error) {
+      // eslint-disable-next-line no-console
+      console.error('public/:id user query error:', user.error)
+      return res.status(500).json({ error: user.error.message })
+    }
+    if (!user.data) return res.status(404).json({ error: 'User not found' })
+
+    // Fetch extended data with individual error handling — return empty arrays on any failure
+    // (so a missing table from an unrun migration doesn't break the whole endpoint)
+    const [eduResult, expResult, skillsResult] = await Promise.allSettled([
+      supabase.from('user_education').select('*').eq('user_id', userId).order('sort_order'),
+      supabase.from('user_experience').select('*').eq('user_id', userId).order('sort_order'),
+      supabase.from('user_skills').select('skill_id, skill_catalog(id, name, category)').eq('user_id', userId),
+    ])
+
+    const education = (eduResult.status === 'fulfilled' && !eduResult.value.error) ? (eduResult.value.data ?? []) : []
+    const experience = (expResult.status === 'fulfilled' && !expResult.value.error) ? (expResult.value.data ?? []) : []
+    const skills = (skillsResult.status === 'fulfilled' && !skillsResult.value.error)
+      ? (skillsResult.value.data ?? []).map((row: any) => ({ skill_id: row.skill_id, ...row.skill_catalog }))
+      : []
+
+    return res.json({ user: user.data, education, experience, skills })
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('public/:id unexpected error:', err)
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+  }
+})
+
+usersRouter.get('/:username', requireAuth, async (req, res) => {
+  const params = usernameParamSchema.safeParse(req.params)
+  if (!params.success) {
+    return res.status(422).json({ error: 'Invalid username', fields: params.error.flatten() })
+  }
+  const username = params.data.username
+  const result = await supabase
+    .from('users')
+    .select('id, full_name, username, avatar_url, bio, location_city, status, university, current_company, referral_score')
+    .eq('username', username)
+    .maybeSingle()
+
+  if (result.error) {
+    return res.status(500).json({ error: result.error.message })
+  }
+  if (!result.data) {
+    return res.status(404).json({ error: 'User not found' })
+  }
+
+  return res.json({ user: result.data })
+})

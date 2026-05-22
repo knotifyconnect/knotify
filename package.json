@@ -1,0 +1,16 @@
+{
+  "name": "nodenet",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @nodenet/api & npm run dev --workspace @nodenet/web",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "npm run lint --workspaces"
+  }
+}

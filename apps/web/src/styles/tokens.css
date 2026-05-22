@@ -1,0 +1,65 @@
+/* ─────────────────────────────────────────────────────────────
+   knotify · Design tokens — exact match to design-system.jsx
+   ───────────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --paper:        #F4EFE6;   /* primary background, warm cream */
+  --paper-deep:   #EBE4D6;   /* recessed */
+  --paper-soft:   #FAF6EE;   /* raised */
+
+  /* Ink (foreground hierarchy) */
+  --ink:          #1A1815;
+  --ink-soft:     #3A352D;
+  --ink-muted:    #6B6358;
+  --ink-faint:    #A29A8C;
+
+  /* Rules / borders */
+  --rule:         #D9D1BF;
+  --rule-soft:    #E5DCC8;
+
+  /* Brand accents (semantic) */
+  --signal:       #D8442B;   /* primary action / live */
+  --signal-deep:  #A8331F;
+  --signal-soft:  #F4D7CD;
+  --verd:         #1F6B5E;   /* verified, trust */
+  --verd-soft:    #C8DDD7;
+  --ochre:        #C8941F;   /* XP, achievements */
+  --ochre-soft:   #F0E0B5;
+  --plum:         #5C2A4F;   /* jobs / opportunity */
+  --plum-soft:    #E5D2DD;
+
+  /* Typography stacks */
+  --font-display: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
+  --font-text:    'IBM Plex Sans', 'Söhne', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* ── Legacy aliases (keeps existing Tailwind classes working) ── */
+  --bg-base:      var(--paper);
+  --bg-surface:   #FFFFFF;
+  --bg-elevated:  var(--paper-soft);
+  --bg-hover:     var(--paper-soft);
+  --bg-input:     var(--paper-soft);
+
+  --brand-500:    var(--signal);
+  --brand-400:    #E5614A;
+  --brand-300:    #EF8B78;
+  --brand-glow:   rgba(216,68,43,0.20);
+
+  --accent-amber: var(--ochre);
+  --accent-teal:  var(--verd);
+  --accent-red:   var(--signal);
+
+  --text-primary:   var(--ink);
+  --text-secondary: var(--ink-muted);
+  --text-muted:     var(--ink-faint);
+  --text-mono:      var(--verd);
+
+  --border-subtle:  var(--rule-soft);
+  --border-default: var(--rule);
+  --border-strong:  rgba(84,72,58,0.32);
+  --border-brand:   rgba(216,68,43,0.30);
+
+  --map-bg:     #EBE5D9;
+  --node-ring:  rgba(216,68,43,0.40);
+  --node-pulse: rgba(200,148,31,0.50);
+}
