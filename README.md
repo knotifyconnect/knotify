@@ -1,4 +1,4 @@
-# NodeNet Munich MVP
+# knotify Munich MVP
 
 Monorepo for NodeNet with:
 - `apps/web`: React + Vite frontend
