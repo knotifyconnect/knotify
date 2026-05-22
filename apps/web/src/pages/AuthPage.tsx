@@ -3,9 +3,11 @@ import type { FormEvent } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { apiPost } from '../lib/api'
+import { useSessionStore } from '../store/session'
 import { SignInCard2 } from '../components/ui/sign-in-card-2'
 
 export function AuthPage() {
+  const setToken = useSessionStore((s) => s.setToken)
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
@@ -46,6 +48,7 @@ export function AuthPage() {
         password: trimmedPassword,
       })
       if (loginError || !data.session) throw loginError ?? new Error('Missing session')
+      setToken(data.session.access_token)
       // onAuthStateChange in App.tsx fires SIGNED_IN and updates the token,
       // which switches AnimatedRoutes to ProtectedRoutes → redirects /auth → /home
     } catch (err) {
@@ -84,6 +87,7 @@ export function AuthPage() {
         password: trimmedPassword,
       })
       if (loginError || !data.session) throw loginError ?? new Error('Missing session')
+      setToken(data.session.access_token)
 
       await apiPost('/api/auth/complete-profile', {
         fullName: fullName.trim(),
@@ -127,3 +131,4 @@ export function AuthPage() {
     />
   )
 }
+
