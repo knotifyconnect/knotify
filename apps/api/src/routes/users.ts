@@ -200,7 +200,7 @@ usersRouter.get('/search', requireAuth, async (req, res) => {
 
   let usersQuery = supabase
     .from('users')
-    .select('id, full_name, username, avatar_url, university, current_company, status, created_at')
+    .select('id, full_name, username, avatar_url, location_city, university, current_company, status, created_at')
     .order('created_at', { ascending: false })
     .limit(50)
 
@@ -209,7 +209,7 @@ usersRouter.get('/search', requireAuth, async (req, res) => {
     const escaped = q.replace(/[,()]/g, ' ').trim()
     if (escaped.length > 0) {
       usersQuery = usersQuery.or(
-        `full_name.ilike.%${escaped}%,username.ilike.%${escaped}%,university.ilike.%${escaped}%,current_company.ilike.%${escaped}%`
+        `full_name.ilike.%${escaped}%,username.ilike.%${escaped}%,location_city.ilike.%${escaped}%,university.ilike.%${escaped}%,current_company.ilike.%${escaped}%`
       )
     }
   }
@@ -546,7 +546,7 @@ usersRouter.get('/suggestions', requireAuth, async (req, res) => {
     const excluded = [...excludeIds]
     const candidatesQuery = await supabase
       .from('users')
-      .select('id, full_name, username, avatar_url, university, current_company')
+      .select('id, full_name, username, avatar_url, location_city, university, current_company')
       .not('id', 'in', `(${excluded.join(',')})`)
       .limit(40)
 
@@ -585,7 +585,7 @@ usersRouter.get('/public/:id', requireAuth, async (req, res) => {
     // Fetch user core first — fail-fast if not found
     const user = await supabase
       .from('users')
-      .select('id, full_name, username, avatar_url, bio, headline, university, current_company, linkedin_url, website_url, github_url, languages, status, created_at')
+      .select('id, full_name, username, avatar_url, bio, headline, location_city, university, current_company, linkedin_url, website_url, github_url, languages, status, created_at')
       .eq('id', userId)
       .maybeSingle()
 
