@@ -948,7 +948,7 @@ export function MapPage() {
                     maxWidth: 380,
                   }}
                 >
-                  Your knot starts empty.
+                  Start your knot with 3 people.
                 </div>
                 <div
                   style={{
