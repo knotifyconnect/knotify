@@ -110,7 +110,7 @@ export function AppSidebar() {
         {/* Logo (mark + wordmark, design uses size 22) — clicks → /home */}
         <button
           type="button"
-          onClick={() => navigate('/home')}
+          onClick={() => navigate('/map')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -402,3 +402,4 @@ export function AppSidebar() {
     </>
   )
 }
+

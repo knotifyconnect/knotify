@@ -969,7 +969,7 @@ export function MapPage() {
                     Map API error: {mapError}
                   </div>
                 )}
-                {mapDebug && (
+                {false && mapDebug && (
                   <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', color: 'var(--ink-muted)', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", maxWidth: 540, textAlign: 'left' }}>
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>API debug:</div>
                     <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(mapDebug, null, 2)}</pre>
@@ -2285,3 +2285,4 @@ function meetingTimeLabel(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
+
