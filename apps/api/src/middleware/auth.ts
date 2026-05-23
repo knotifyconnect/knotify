@@ -35,24 +35,76 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  // Try SDK first (fastest path when it works)
   const { data: { user: sdkUser } } = await supabase.auth.getUser(token)
+  const httpUser = sdkUser ? null : await validateTokenHttp(token)
 
-  const authId = sdkUser?.id ?? (await validateTokenHttp(token))?.id
+  const authId = sdkUser?.id ?? httpUser?.id
+  const authEmail = sdkUser?.email ?? httpUser?.email
 
   if (!authId) {
     return res.status(401).json({ error: 'Invalid token' })
   }
 
-  // Build the minimal user object expected downstream
-  const authUser = sdkUser ?? { id: authId, email: undefined, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: '' }
+  const authUser = sdkUser ?? {
+    id: authId,
+    email: authEmail,
+    app_metadata: {},
+    user_metadata: {},
+    aud: 'authenticated',
+    created_at: '',
+  }
 
-  const lookup = await supabase.from('users').select('id, is_admin, is_hr').eq('auth_id', authId).maybeSingle()
+  let lookup = (await supabase
+    .from('users')
+    .select('id, is_admin, is_hr')
+    .eq('auth_id', authId)
+    .maybeSingle()).data
+
+  if (!lookup) {
+    const email = authEmail ?? `user-${authId.slice(0, 8)}@unknown.app`
+    const baseUsername = `user_${authId.replace(/-/g, '').slice(0, 12)}`
+    const stem = (email.split('@')[0] ?? 'New user').replace(/[._+-]+/g, ' ')
+    const fullName = stem.charAt(0).toUpperCase() + stem.slice(1)
+
+    const ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
+    const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase())
+
+    const insert = await supabase
+      .from('users')
+      .insert({
+        auth_id: authId,
+        email,
+        username: baseUsername,
+        full_name: fullName,
+        location_city: 'Munich',
+        status: 'open_to_work',
+        is_admin: isAdmin,
+      })
+      .select('id, is_admin, is_hr')
+      .single()
+
+    if (insert.error) {
+      const retry = await supabase
+        .from('users')
+        .select('id, is_admin, is_hr')
+        .eq('auth_id', authId)
+        .maybeSingle()
+
+      if (retry.data) {
+        lookup = retry.data
+      } else {
+        console.error('[auth] profile auto-create failed:', insert.error)
+        return res.status(500).json({ error: insert.error.message })
+      }
+    } else {
+      lookup = insert.data
+    }
+  }
 
   req.authUser = authUser as typeof req.authUser
-  req.appUserId = lookup.data?.id
-  req.isAdmin = Boolean(lookup.data?.is_admin)
-  req.isHr = Boolean(lookup.data?.is_hr)
+  req.appUserId = lookup.id
+  req.isAdmin = Boolean(lookup.is_admin)
+  req.isHr = Boolean(lookup.is_hr)
   next()
 }
 

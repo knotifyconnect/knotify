@@ -28,7 +28,12 @@ type Connection = {
   requester_id: string
   addressee_id: string
   status: 'pending' | 'accepted' | 'declined'
-  user: { id: string } | null
+  user: {
+    id: string
+    full_name?: string | null
+    username?: string | null
+    avatar_url?: string | null
+  } | null
 }
 
 type RelationState = 'none' | 'pending_outgoing' | 'pending_incoming' | 'connected'
@@ -52,6 +57,7 @@ export function DiscoverPage() {
   const [connectionIds, setConnectionIds] = useState<Record<string, string>>({}) // userId → connectionId
   const [activeFilter, setActiveFilter] = useState('All')
   const [meId, setMeId] = useState<string | null>(null)
+  const [incomingRequests, setIncomingRequests] = useState<Connection[]>([])
 
   async function loadRelations() {
     try {
@@ -67,6 +73,10 @@ export function DiscoverPage() {
         if (c.status === 'pending' && c.requester_id === meResult.user.id) map[otherUserId] = 'pending_outgoing'
         if (c.status === 'pending' && c.addressee_id === meResult.user.id) map[otherUserId] = 'pending_incoming'
       }
+      const incoming = connectionsResult.connections.filter(
+        (c) => c.status === 'pending' && c.addressee_id === meResult.user.id
+      )
+      setIncomingRequests(incoming)
       setRelations(map)
       setConnectionIds(ids)
     } catch {
@@ -144,6 +154,7 @@ export function DiscoverPage() {
       )
       if (!incoming) throw new Error('Incoming request not found')
       await apiPatch(`/api/connections/${incoming.id}`, { status: 'accepted' })
+      setIncomingRequests((prev) => prev.filter((c) => c.id !== incoming.id))
       setRelations((prev) => ({ ...prev, [connectionUserId]: 'connected' }))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to accept')
