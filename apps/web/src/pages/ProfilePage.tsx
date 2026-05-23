@@ -29,8 +29,9 @@ type Me = {
   full_name: string
   username: string
   avatar_url?: string | null
-  bio: string | null
+    bio: string | null
   headline: string | null
+  location_city: string | null
   university: string | null
   current_company: string | null
   website_url: string | null
@@ -353,7 +354,8 @@ function OwnProfileView() {
       const data = await apiPatch<{ user: Me }>('/api/users/me', {
         fullName: me.full_name,
         bio: me.bio ?? '',
-        headline: me.headline ?? '',
+                headline: me.headline ?? '',
+        locationCity: me.location_city ?? '',
         university: me.university ?? '',
         currentCompany: me.current_company ?? '',
         websiteUrl: me.website_url ?? '',
@@ -595,8 +597,13 @@ function OwnProfileView() {
     )
   }
 
-  const pill = statusMeta(me.status)
+    const pill = statusMeta(me.status)
   const userSkills = skillCatalog.filter((s) => userSkillIds.includes(s.id))
+  const profileMeta = [
+    me.location_city,
+    me.current_company,
+    me.university,
+  ].filter(Boolean).join(' · ') || `@${me.username}`
   const skillsByCategory = skillCatalog.reduce<Record<string, SkillCatalogItem[]>>((acc, s) => {
     if (!acc[s.category]) acc[s.category] = []
     acc[s.category].push(s)
@@ -653,7 +660,7 @@ function OwnProfileView() {
               <KPill color={pill.color}>{pill.label}</KPill>
             </div>
             <div style={{ fontSize: 13.5, color: 'var(--ink-muted)', marginBottom: 8 }}>
-              @{me.username} · {me.current_company ?? me.university ?? 'Munich'}
+              {profileMeta}
             </div>
 
             {/* Headline */}
@@ -728,7 +735,8 @@ function OwnProfileView() {
           <SectionHead label="Basic info" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {([
-              { label: 'Full name', key: 'full_name' as const },
+                            { label: 'Full name', key: 'full_name' as const },
+              { label: 'City', key: 'location_city' as const },
               { label: 'University', key: 'university' as const },
               { label: 'Current company', key: 'current_company' as const },
               { label: 'Website', key: 'website_url' as const },
@@ -1289,8 +1297,9 @@ type PublicUser = {
   full_name: string
   username: string
   avatar_url: string | null
-  bio: string | null
+    bio: string | null
   headline: string | null
+  location_city: string | null
   university: string | null
   current_company: string | null
   website_url: string | null
@@ -1430,7 +1439,7 @@ function PublicProfileView({ userId }: { userId: string }) {
               <KPill color={pill.color}>{pill.label}</KPill>
             </div>
             <div style={{ fontSize: 13, color: 'var(--ink-muted)', marginBottom: 6 }}>
-              @{u.username} · {u.current_company ?? u.university ?? 'Munich'}
+                            @{u.username} · {[u.location_city, u.current_company ?? u.university].filter(Boolean).join(' · ') || 'knotify'}
             </div>
             {u.headline && (
               <div style={{ fontSize: 14, color: 'var(--ink-soft)', marginBottom: 6, fontStyle: 'italic', fontFamily: "'Fraunces', Georgia, serif" }}>
