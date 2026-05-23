@@ -31,7 +31,7 @@ function ProtectedRoutes() {
   return (
     <AppLayout>
       <Routes>
-        <Route path="/" element={<Navigate to="/home" replace />} />
+        <Route path="/" element={<Navigate to="/map" replace />} />
         <Route path="/home" element={<HomePage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
@@ -42,8 +42,8 @@ function ProtectedRoutes() {
         <Route path="/cafes" element={<CafesPage />} />
         <Route path="/hr" element={<HrPage />} />
         <Route path="/admin" element={<AdminPage />} />
-        <Route path="/auth" element={<Navigate to="/home" replace />} />
-        <Route path="*" element={<Navigate to="/home" replace />} />
+        <Route path="/auth" element={<Navigate to="/map" replace />} />
+        <Route path="*" element={<Navigate to="/map" replace />} />
       </Routes>
     </AppLayout>
   )
@@ -108,3 +108,4 @@ export default function App() {
     </AppErrorBoundary>
   )
 }
+
