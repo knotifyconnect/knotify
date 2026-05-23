@@ -28,7 +28,7 @@ app.use(express.json({ limit: '15mb' }))
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: process.env.NODE_ENV === 'development' ? 10000 : 300,
+    max: process.env.NODE_ENV === 'development' ? 10000 : 3000,
     standardHeaders: true,
     legacyHeaders: false,
   })
