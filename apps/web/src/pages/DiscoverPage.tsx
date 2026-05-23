@@ -266,6 +266,57 @@ export function DiscoverPage() {
       )}
 
       {/* ─── "People you may know" (shown when no search) ───────────────── */}
+      {showSuggestions && incomingRequests.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink-faint)', marginBottom: 12 }}>
+            Pending requests
+          </div>
+
+          <div style={{ display: 'grid', gap: 10 }}>
+            {incomingRequests.map((connection) => {
+              const requesterId = connection.requester_id
+              const requester = connection.user
+              const name = requester?.full_name ?? 'Someone'
+              const username = requester?.username ?? 'user'
+              const avatarUrl = requester?.avatar_url ?? null
+
+              return (
+                <KCard
+                  key={connection.id}
+                  style={{ padding: '14px 16px', cursor: 'pointer' }}
+                  onClick={() => navigate('/profile/' + requesterId)}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <KAvatar name={name} src={avatarUrl} size={42} />
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {name}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                        @{username} wants to connect with you.
+                      </div>
+                    </div>
+
+                    <KBtn
+                      variant="verd"
+                      size="sm"
+                      disabled={pending[requesterId]}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void acceptIncoming(requesterId)
+                      }}
+                    >
+                      Accept
+                    </KBtn>
+                  </div>
+                </KCard>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {showSuggestions && suggestions.length > 0 && (
         <div style={{ marginBottom: 28 }}>
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink-faint)', marginBottom: 12 }}>
