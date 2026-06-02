@@ -1,13 +1,14 @@
-/**
+﻿/**
  * knotify · Auth Screen
- * Warm editorial sign-in / sign-up
+ * Warm editorial sign-in / sign-up / password reset request
  */
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { KnotifyLogo, KnotifyMark, KPill } from '@/lib/knotify'
 
-type AuthMode = 'login' | 'signup'
+type AuthMode = 'login' | 'signup' | 'forgot'
+type MessageTone = 'error' | 'success'
 
 type SignInCard2Props = {
   mode: AuthMode
@@ -16,7 +17,8 @@ type SignInCard2Props = {
   fullName: string
   username: string
   loading: boolean
-  error?: string | null
+  message?: string | null
+  messageTone?: MessageTone
   onModeChange: (mode: AuthMode) => void
   onEmailChange: (value: string) => void
   onPasswordChange: (value: string) => void
@@ -72,6 +74,54 @@ const inputStyle: React.CSSProperties = {
   fontFamily: "'IBM Plex Sans', sans-serif",
 }
 
+function getHeaderCopy(mode: AuthMode) {
+  if (mode === 'forgot') {
+    return {
+      pill: 'account recovery',
+      title: (
+        <>
+          Reset your
+          <br />
+          <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>
+            password.
+          </span>
+        </>
+      ),
+      subtitle: 'Enter your email and we will send a secure reset link.',
+    }
+  }
+
+  if (mode === 'login') {
+    return {
+      pill: 'for members',
+      title: (
+        <>
+          Welcome back
+          <br />
+          <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>
+            to your knot.
+          </span>
+        </>
+      ),
+      subtitle: 'Sign in to continue to knotify.',
+    }
+  }
+
+  return {
+    pill: 'new member',
+    title: (
+      <>
+        Start your
+        <br />
+        <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>
+          knot.
+        </span>
+      </>
+    ),
+    subtitle: 'Create your account to get started.',
+  }
+}
+
 export function SignInCard2({
   mode,
   email,
@@ -79,7 +129,8 @@ export function SignInCard2({
   fullName,
   username,
   loading,
-  error,
+  message,
+  messageTone = 'error',
   onModeChange,
   onEmailChange,
   onPasswordChange,
@@ -88,6 +139,9 @@ export function SignInCard2({
   onSubmit,
 }: SignInCard2Props) {
   const [showPassword, setShowPassword] = useState(false)
+  const header = getHeaderCopy(mode)
+  const showSignupFields = mode === 'signup'
+  const showPasswordField = mode !== 'forgot'
 
   return (
     <div
@@ -101,7 +155,6 @@ export function SignInCard2({
         padding: '24px 16px',
       }}
     >
-      {/* Left editorial panel — desktop only */}
       <div
         style={{
           position: 'fixed',
@@ -118,12 +171,10 @@ export function SignInCard2({
         }}
         className="hidden lg:flex"
       >
-        {/* Top */}
         <div>
           <KnotifyLogo size={20} markColor="var(--signal)" textColor="var(--paper)" />
         </div>
 
-        {/* Middle */}
         <div>
           <div
             style={{
@@ -154,7 +205,6 @@ export function SignInCard2({
           </div>
         </div>
 
-        {/* Bottom */}
         <div
           style={{
             fontSize: 11,
@@ -168,7 +218,6 @@ export function SignInCard2({
         </div>
       </div>
 
-      {/* Right: Form panel */}
       <div
         style={{
           width: '100%',
@@ -179,14 +228,12 @@ export function SignInCard2({
         }}
         className="lg:ml-[42%] lg:pl-16 lg:pr-8"
       >
-        {/* Mobile logo */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }} className="lg:hidden">
           <KnotifyLogo size={22} />
         </div>
 
-        {/* Header */}
         <div style={{ marginBottom: 8 }}>
-          <KPill color="signal">{mode === 'login' ? 'for members' : 'new member'}</KPill>
+          <KPill color="signal">{header.pill}</KPill>
         </div>
         <h1
           style={{
@@ -198,71 +245,53 @@ export function SignInCard2({
             margin: '12px 0 6px',
           }}
         >
-          {mode === 'login' ? (
-            <>
-              Welcome back
-              <br />
-              <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>
-                to your knot.
-              </span>
-            </>
-          ) : (
-            <>
-              Start your
-              <br />
-              <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>
-                knot.
-              </span>
-            </>
-          )}
+          {header.title}
         </h1>
         <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', marginBottom: 28 }}>
-          {mode === 'login'
-            ? 'Sign in to continue to knotify.'
-            : 'Create your account to get started.'}
+          {header.subtitle}
         </p>
 
-        {/* Mode toggle */}
-        <div
-          style={{
-            display: 'flex',
-            background: 'var(--paper-soft)',
-            borderRadius: 12,
-            padding: 4,
-            gap: 4,
-            marginBottom: 24,
-            border: '0.5px solid var(--rule)',
-          }}
-        >
-          {(['login', 'signup'] as AuthMode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => onModeChange(m)}
-              disabled={loading}
-              style={{
-                flex: 1,
-                padding: '8px 0',
-                borderRadius: 9,
-                border: 'none',
-                background: mode === m ? 'white' : 'transparent',
-                color: mode === m ? 'var(--ink)' : 'var(--ink-muted)',
-                fontFamily: "'IBM Plex Sans', sans-serif",
-                fontSize: 13.5,
-                fontWeight: mode === m ? 500 : 400,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                boxShadow: mode === m ? '0 1px 4px rgba(84,72,58,0.12)' : 'none',
-              }}
-            >
-              {m === 'login' ? 'Sign in' : 'Sign up'}
-            </button>
-          ))}
-        </div>
+        {mode !== 'forgot' && (
+          <div
+            style={{
+              display: 'flex',
+              background: 'var(--paper-soft)',
+              borderRadius: 12,
+              padding: 4,
+              gap: 4,
+              marginBottom: 24,
+              border: '0.5px solid var(--rule)',
+            }}
+          >
+            {(['login', 'signup'] as AuthMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => onModeChange(m)}
+                disabled={loading}
+                style={{
+                  flex: 1,
+                  padding: '8px 0',
+                  borderRadius: 9,
+                  border: 'none',
+                  background: mode === m ? 'white' : 'transparent',
+                  color: mode === m ? 'var(--ink)' : 'var(--ink-muted)',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
+                  fontSize: 13.5,
+                  fontWeight: mode === m ? 500 : 400,
+                  cursor: loading ? 'wait' : 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: mode === m ? '0 1px 4px rgba(84,72,58,0.12)' : 'none',
+                }}
+              >
+                {m === 'login' ? 'Sign in' : 'Sign up'}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* Form */}
         <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {mode === 'signup' && (
+          {showSignupFields && (
             <div>
               <FieldLabel>Full name</FieldLabel>
               <FieldBox>
@@ -279,7 +308,7 @@ export function SignInCard2({
             </div>
           )}
 
-          {mode === 'signup' && (
+          {showSignupFields && (
             <div>
               <FieldLabel>Username</FieldLabel>
               <FieldBox>
@@ -312,65 +341,75 @@ export function SignInCard2({
             </FieldBox>
           </div>
 
-          <div>
-            <FieldLabel>Password</FieldLabel>
-            <FieldBox>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => onPasswordChange(e.target.value)}
-                placeholder="········"
-                style={inputStyle}
-                required
-                disabled={loading}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((p) => !p)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 4,
-                  cursor: 'pointer',
-                  color: 'var(--ink-faint)',
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                {showPassword ? <Eye size={15} /> : <EyeOff size={15} />}
-              </button>
-            </FieldBox>
-          </div>
-
-          {mode === 'login' && (
-            <div style={{ textAlign: 'right' }}>
-              <a
-                href="mailto:hello@knotify.app?subject=Trouble signing in"
-                style={{
-                  fontSize: 12,
-                  color: 'var(--signal)',
-                  cursor: 'pointer',
-                  fontFamily: "'IBM Plex Sans', sans-serif",
-                  textDecoration: 'none',
-                }}
-              >
-                Trouble signing in? →
-              </a>
+          {showPasswordField && (
+            <div>
+              <FieldLabel>Password</FieldLabel>
+              <FieldBox>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => onPasswordChange(e.target.value)}
+                  placeholder="········"
+                  style={inputStyle}
+                  required
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((p) => !p)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 4,
+                    cursor: 'pointer',
+                    color: 'var(--ink-faint)',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  {showPassword ? <Eye size={15} /> : <EyeOff size={15} />}
+                </button>
+              </FieldBox>
             </div>
           )}
 
-          {error && (
+          {mode === 'login' && (
+            <div style={{ textAlign: 'right' }}>
+              <button
+                type="button"
+                onClick={() => onModeChange('forgot')}
+                disabled={loading}
+                style={{
+                  fontSize: 12,
+                  color: 'var(--signal)',
+                  cursor: loading ? 'wait' : 'pointer',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
+                  textDecoration: 'none',
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                }}
+              >
+                Trouble signing in? →
+              </button>
+            </div>
+          )}
+
+          {message && (
             <div
               style={{
                 padding: '10px 14px',
                 borderRadius: 10,
-                background: 'var(--signal-soft)',
-                border: '0.5px solid rgba(216,68,43,0.25)',
-                color: 'var(--signal-deep)',
+                background: messageTone === 'success' ? 'rgba(65, 128, 92, 0.1)' : 'var(--signal-soft)',
+                border:
+                  messageTone === 'success'
+                    ? '0.5px solid rgba(65, 128, 92, 0.25)'
+                    : '0.5px solid rgba(216,68,43,0.25)',
+                color: messageTone === 'success' ? 'var(--verd)' : 'var(--signal-deep)',
                 fontSize: 13,
               }}
             >
-              {error}
+              {message}
             </div>
           )}
 
@@ -411,7 +450,9 @@ export function SignInCard2({
             ) : (
               <>
                 <KnotifyMark size={16} color="#fff" />
-                {mode === 'login' ? 'Sign in' : 'Create account'}
+                {mode === 'login' && 'Sign in'}
+                {mode === 'signup' && 'Create account'}
+                {mode === 'forgot' && 'Send reset link'}
               </>
             )}
           </button>
@@ -425,7 +466,7 @@ export function SignInCard2({
             marginTop: 20,
           }}
         >
-          {mode === 'login' ? "Don't have an account? " : 'Already a member? '}
+          {mode === 'forgot' ? 'Remembered your password? ' : mode === 'login' ? "Don't have an account? " : 'Already a member? '}
           <button
             type="button"
             onClick={() => onModeChange(mode === 'login' ? 'signup' : 'login')}

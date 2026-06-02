@@ -20,6 +20,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { ToastContainer } from './components/ui/Toast'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { ImpressumPage } from './pages/ImpressumPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 
 const LAST_ACTIVE_AT_KEY = 'knotify:lastActiveAt'
 const INACTIVITY_REENTRY_MS = 2 * 24 * 60 * 60 * 1000
@@ -81,7 +82,7 @@ function ProtectedRoutes() {
         <Route path="/cafes" element={<CafesPage />} />
         <Route path="/hr" element={<HrPage />} />
         <Route path="/admin" element={<AdminPage />} />
-        <Route path="/auth" element={<Navigate to="/map" replace />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />`n        <Route path="/auth" element={<Navigate to="/map" replace />} />
         <Route path="*" element={<Navigate to="/map" replace />} />
       </Routes>
     </AppLayout>
@@ -94,7 +95,7 @@ function PublicRoutes() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/auth" element={<AuthPage />} />
       <Route path="/login" element={<AuthPage />} />
-      <Route path="/signup" element={<AuthPage />} />
+      <Route path="/signup" element={<AuthPage />} />`n      <Route path="/forgot-password" element={<AuthPage />} />`n      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/impressum" element={<ImpressumPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -260,4 +261,5 @@ export default function App() {
     </AppErrorBoundary>
   )
 }
+
 

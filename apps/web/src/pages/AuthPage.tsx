@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { apiPost } from '../lib/api'
 import { SignInCard2 } from '../components/ui/sign-in-card-2'
+
+type AuthMode = 'login' | 'signup' | 'forgot'
+type MessageTone = 'error' | 'success'
 
 type SupabaseAuthUserLike = {
   email_confirmed_at?: string | null
@@ -18,26 +21,58 @@ function isEmailConfirmed(user: SupabaseAuthUserLike | null | undefined) {
 export function AuthPage() {
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [messageTone, setMessageTone] = useState<MessageTone>('error')
+
+  function showError(value: string) {
+    setMessage(value)
+    setMessageTone('error')
+  }
+
+  function showSuccess(value: string) {
+    setMessage(value)
+    setMessageTone('success')
+  }
+
+  function changeMode(nextMode: AuthMode) {
+    setMode(nextMode)
+    setMessage(null)
+    setPassword('')
+  }
 
   useEffect(() => {
+    const passwordReset = searchParams.get('passwordReset') === '1'
+    const verified = searchParams.get('verified') === '1'
+
     if (location.pathname === '/signup') {
-      setMode('signup')
+      changeMode('signup')
+      return
+    }
+    if (location.pathname === '/forgot-password') {
+      changeMode('forgot')
       return
     }
     if (location.pathname === '/login') {
-      setMode('login')
+      changeMode('login')
+
+      if (passwordReset) {
+        showSuccess('Password updated. Sign in with your new password.')
+      } else if (verified) {
+        showSuccess('Email confirmed. Sign in to continue.')
+      }
+
       return
     }
+
     const requestedMode = searchParams.get('mode')
-    if (requestedMode === 'signup' || requestedMode === 'login') {
-      setMode(requestedMode)
+    if (requestedMode === 'signup' || requestedMode === 'login' || requestedMode === 'forgot') {
+      changeMode(requestedMode)
     }
   }, [location.pathname, searchParams])
 
@@ -67,10 +102,12 @@ export function AuthPage() {
 
   async function login() {
     setLoading(true)
-    setError(null)
+    setMessage(null)
+
     try {
       const normalizedEmail = email.trim().toLowerCase()
       const trimmedPassword = password.trim()
+
       if (!normalizedEmail || !trimmedPassword) {
         throw new Error('Email and password are required')
       }
@@ -91,13 +128,14 @@ export function AuthPage() {
 
       await completeProfileFromMetadata(data.user).catch(() => undefined)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Login failed'
-      if (message.toLowerCase().includes('invalid login credentials')) {
-        setError('Invalid email or password.')
-      } else if (message.toLowerCase().includes('email not confirmed')) {
-        setError('Email not confirmed. Check your inbox and verify your email before logging in.')
+      const value = err instanceof Error ? err.message : 'Login failed'
+
+      if (value.toLowerCase().includes('invalid login credentials')) {
+        showError('Invalid email or password.')
+      } else if (value.toLowerCase().includes('email not confirmed')) {
+        showError('Email not confirmed. Check your inbox and verify your email before logging in.')
       } else {
-        setError(message)
+        showError(value)
       }
     } finally {
       setLoading(false)
@@ -106,7 +144,8 @@ export function AuthPage() {
 
   async function signup() {
     setLoading(true)
-    setError(null)
+    setMessage(null)
+
     try {
       const normalizedEmail = email.trim().toLowerCase()
       const trimmedPassword = password.trim()
@@ -142,13 +181,46 @@ export function AuthPage() {
       await supabase.auth.signOut()
       setMode('login')
       setPassword('')
-      setError('Signup created. Check your email inbox and confirm your account before logging in.')
+      showSuccess('Signup created. Check your email inbox and confirm your account before logging in.')
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Sign up failed'
-      if (message.toLowerCase().includes('email not confirmed')) {
-        setError('Signup created. Check your email inbox and confirm your account before logging in.')
+      const value = err instanceof Error ? err.message : 'Sign up failed'
+
+      if (value.toLowerCase().includes('email not confirmed')) {
+        showSuccess('Signup created. Check your email inbox and confirm your account before logging in.')
       } else {
-        setError(message)
+        showError(value)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function sendPasswordReset() {
+    setLoading(true)
+    setMessage(null)
+
+    try {
+      const normalizedEmail = email.trim().toLowerCase()
+
+      if (!normalizedEmail) {
+        throw new Error('Enter your email address to receive a reset link.')
+      }
+
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+
+      if (resetError) throw resetError
+
+      showSuccess('If an account exists for this email, we sent a password reset link.')
+    } catch (err) {
+      const value = err instanceof Error ? err.message : 'Could not send reset link'
+      const normalizedValue = value.toLowerCase()
+
+      if (normalizedValue.includes('rate limit') || normalizedValue.includes('too many')) {
+        showError('Too many reset emails sent. Please try again later.')
+      } else {
+        showError(value)
       }
     } finally {
       setLoading(false)
@@ -157,7 +229,18 @@ export function AuthPage() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    void (mode === 'login' ? login() : signup())
+
+    if (mode === 'login') {
+      void login()
+      return
+    }
+
+    if (mode === 'signup') {
+      void signup()
+      return
+    }
+
+    void sendPasswordReset()
   }
 
   return (
@@ -168,8 +251,9 @@ export function AuthPage() {
       fullName={fullName}
       username={username}
       loading={loading}
-      error={error}
-      onModeChange={setMode}
+      message={message}
+      messageTone={messageTone}
+      onModeChange={changeMode}
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
       onFullNameChange={setFullName}
@@ -178,3 +262,5 @@ export function AuthPage() {
     />
   )
 }
+
+
