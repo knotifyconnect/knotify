@@ -1,2288 +1,1615 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet, apiPatch, apiPost } from '../lib/api'
-import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '../lib/knotify'
+import { apiDelete, apiGet, apiPatch } from '../lib/api'
+import { KAvatar, KBtn, KCard } from '../lib/knotify'
 
-type MapNode = {
+type UserStatus = 'studying' | 'open_to_work' | 'employed' | string
+type ConnectionStatus = 'pending' | 'accepted' | 'declined'
+
+type ConnectionUser = {
   id: string
-  full_name: string
-  username: string
+  full_name: string | null
+  username: string | null
   avatar_url: string | null
-  is_online: boolean
-  referral_score: number
-  current_company: string | null
+  headline?: string | null
+  location_city?: string | null
+  university?: string | null
+  current_company?: string | null
+  status?: UserStatus | null
 }
 
-type PanelSkill = { id: string; name: string; is_verified: boolean }
-
-type PanelEdu = {
+type Connection = {
   id: string
-  institution: string
-  degree: string | null
-  field: string | null
-  start_year: number | null
-  end_year: number | null
-  description: string | null
-}
-
-type PanelExp = {
-  id: string
-  company: string
-  role: string
-  start_date: string | null
-  end_date: string | null
-  description: string | null
-}
-
-type PanelPost = {
-  id: string
-  title: string | null
-  body: string
-  image_url: string | null
+  requester_id: string
+  addressee_id: string
+  status: ConnectionStatus
   created_at: string
-  upvote_count: number
-  comment_count: number
-  channel: { slug: string; name: string } | null
+  updated_at: string
+  user: ConnectionUser | null
 }
 
-type PanelData = {
-  user: {
+type MeResponse = {
+  user: ConnectionUser
+}
+
+type ConnectionsResponse = {
+  connections: Connection[]
+}
+
+type PeerEdge = {
+  id: string
+  source_id: string
+  target_id: string
+  status: 'accepted'
+}
+
+type ConnectionMapResponse = {
+  firstDegreeNodes: Array<{
     id: string
-    full_name: string
-    username: string
+    full_name: string | null
+    username: string | null
     avatar_url: string | null
-    bio: string | null
-    headline: string | null
-    status: string
-    university: string | null
-    current_company: string | null
-    referral_score: number
-    linkedin_url: string | null
-    website_url: string | null
-    github_url: string | null
-    languages: string[] | null
-  }
-  skills: PanelSkill[]
-  education: PanelEdu[]
-  experience: PanelExp[]
-  recentPosts: PanelPost[]
-  latestPost: PanelPost | null
-  latestUpdate: { id: string; content: string; created_at: string } | null
-  submittedReferralCount: number
+    current_company?: string | null
+  }>
+  secondDegreeNodes: Array<{
+    id: string
+    full_name: string | null
+    username: string | null
+    avatar_url: string | null
+    current_company?: string | null
+  }>
+  peerEdges?: PeerEdge[]
 }
 
-type AskReactionMap = Record<string, { count: number; mine: boolean }>
+type RelationshipTab = 'Connected' | 'Incoming' | 'Sent'
+type StatusFilter = 'All' | 'open_to_work' | 'studying' | 'employed'
 
-type Ask = {
-  id: string
-  user_id: string
-  content: string
-  status: 'open' | 'resolved'
-  resolved_at: string | null
-  created_at: string
-  reactions: AskReactionMap
-  reply_count: number
+const RELATIONSHIP_TABS: RelationshipTab[] = ['Connected', 'Incoming', 'Sent']
+const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
+  { value: 'All', label: 'Any status' },
+  { value: 'open_to_work', label: 'Open' },
+  { value: 'studying', label: 'Studying' },
+  { value: 'employed', label: 'Employed' },
+]
+
+function clean(value?: string | null) {
+  return value?.trim() || ''
 }
 
-type AskReply = {
-  id: string
-  ask_id: string
-  user_id: string
-  body: string
-  created_at: string
-  author: { id: string; full_name: string; username: string; avatar_url: string | null } | null
+function firstName(value?: string | null) {
+  return clean(value).split(' ')[0] || 'Someone'
 }
 
-const ASK_EMOJIS = ['❤️', '👍', '🙌', '💡', '🔥', '🤝'] as const
-
-type GraphNode = MapNode & {
-  x: number
-  y: number
-  vx: number
-  vy: number
-  degree: 1 | 2
-  imgEl?: HTMLImageElement
+function statusLabel(status?: UserStatus | null) {
+  if (status === 'open_to_work') return 'Open to work'
+  if (status === 'employed') return 'Employed'
+  if (status === 'studying') return 'Studying'
+  return clean(status) || 'Profile'
 }
 
-// ─── Canvas graph ─────────────────────────────────────────────────────────────
-function NetworkGraph({
-  nodes,
-  selected,
-  onSelectNode,
-  onSelectSelf,
-}: {
-  nodes: GraphNode[]
-  selected: GraphNode | null
-  onSelectNode: (n: GraphNode) => void
-  onSelectSelf?: () => void
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const rafRef = useRef<number>(0)
-  const nodesRef = useRef<GraphNode[]>(nodes)
+function formatDate(value?: string | null) {
+  if (!value) return 'Recently'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Recently'
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+}
 
-  useEffect(() => { nodesRef.current = nodes }, [nodes])
+function searchableText(connection: Connection) {
+  const user = connection.user
+  return [
+    user?.full_name,
+    user?.username,
+    user?.headline,
+    user?.location_city,
+    user?.university,
+    user?.current_company,
+    user?.status,
+    connection.status,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
 
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    // Use CSS pixel dimensions — the context is already scaled by DPR in ResizeObserver
-    const W = canvas.offsetWidth
-    const H = canvas.offsetHeight
+function relationLabel(tab: RelationshipTab) {
+  if (tab === 'Incoming') return 'Needs decision'
+  if (tab === 'Sent') return 'Waiting'
+  return 'In your knot'
+}
 
-    ctx.clearRect(0, 0, W, H)
-
-    const ns = nodesRef.current
-    const first = ns.filter((n) => n.degree === 1)
-    const second = ns.filter((n) => n.degree === 2)
-
-    // Simulated center "me" node
-    const cx = W / 2
-    const cy = H / 2
-
-    // Draw edges: center → first degree
-    for (const n of first) {
-      ctx.beginPath()
-      ctx.moveTo(cx, cy)
-      ctx.lineTo(n.x, n.y)
-      ctx.strokeStyle = selected?.id === n.id ? 'rgba(216,68,43,0.45)' : 'rgba(84,72,58,0.15)'
-      ctx.lineWidth = selected?.id === n.id ? 1.5 : 0.8
-      ctx.stroke()
-    }
-
-    // Draw edges: first → second degree (random pairings)
-    for (let i = 0; i < second.length; i++) {
-      const s = second[i]
-      const parent = first[i % Math.max(first.length, 1)]
-      if (!parent) continue
-      ctx.beginPath()
-      ctx.moveTo(parent.x, parent.y)
-      ctx.lineTo(s.x, s.y)
-      ctx.strokeStyle = 'rgba(84,72,58,0.08)'
-      ctx.lineWidth = 0.5
-      ctx.stroke()
-    }
-
-    // Draw second degree nodes (small dots)
-    for (const n of second) {
-      ctx.beginPath()
-      ctx.arc(n.x, n.y, 10, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(244,239,230,0.9)'
-      ctx.strokeStyle = 'rgba(84,72,58,0.2)'
-      ctx.lineWidth = 0.8
-      ctx.fill()
-      ctx.stroke()
-
-      // Initials inside the dot
-      ctx.fillStyle = 'rgba(84,72,58,0.7)'
-      ctx.font = 'bold 8px "IBM Plex Sans"'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(n.full_name.charAt(0).toUpperCase(), n.x, n.y)
-
-      // First-name caption beneath the dot
-      const firstName = n.full_name.split(' ')[0] ?? ''
-      if (firstName) {
-        ctx.fillStyle = 'rgba(84,72,58,0.55)'
-        ctx.font = '9px "IBM Plex Sans"'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'top'
-        ctx.fillText(firstName.length > 10 ? firstName.slice(0, 9) + '…' : firstName, n.x, n.y + 12)
-      }
-    }
-
-    // Draw first degree nodes (avatar circles)
-    for (const n of first) {
-      const r = n.degree === 1 ? 22 : 14
-      const isSelected = selected?.id === n.id
-
-      ctx.save()
-      ctx.beginPath()
-      ctx.arc(n.x, n.y, r, 0, Math.PI * 2)
-      ctx.clip()
-
-      if (n.imgEl?.complete && n.imgEl.naturalWidth > 0) {
-        ctx.drawImage(n.imgEl, n.x - r, n.y - r, r * 2, r * 2)
-      } else {
-        // Fallback: colored initial circle
-        const colors = ['#E8E0D5','#F5E6D3','#E0EAE8','#F0E8F0','#FAECD8','#F5E8E6','#E6EBF5','#E8F0E8']
-        let h = 0
-        for (let i = 0; i < n.full_name.length; i++) h = (h * 31 + n.full_name.charCodeAt(i)) >>> 0
-        ctx.fillStyle = colors[h % colors.length]
-        ctx.fillRect(n.x - r, n.y - r, r * 2, r * 2)
-        ctx.restore()
-        ctx.save()
-        ctx.fillStyle = '#5C4A36'
-        ctx.font = `bold ${r * 0.7}px "Fraunces"`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(n.full_name.charAt(0).toUpperCase(), n.x, n.y)
-      }
-
-      ctx.restore()
-
-      // Border ring
-      ctx.beginPath()
-      ctx.arc(n.x, n.y, r, 0, Math.PI * 2)
-      ctx.strokeStyle = isSelected ? '#D8442B' : n.is_online ? '#1F6B5E' : 'rgba(84,72,58,0.22)'
-      ctx.lineWidth = isSelected ? 2.5 : 1.5
-      ctx.stroke()
-
-      // Glow when selected
-      if (isSelected) {
-        ctx.beginPath()
-        ctx.arc(n.x, n.y, r + 6, 0, Math.PI * 2)
-        ctx.strokeStyle = 'rgba(216,68,43,0.18)'
-        ctx.lineWidth = 5
-        ctx.stroke()
-      }
-
-      // Online dot
-      if (n.is_online) {
-        ctx.beginPath()
-        ctx.arc(n.x + r * 0.7, n.y + r * 0.7, 4, 0, Math.PI * 2)
-        ctx.fillStyle = '#1F6B5E'
-        ctx.fill()
-        ctx.strokeStyle = 'var(--paper)'
-        ctx.lineWidth = 1.5
-        ctx.stroke()
-      }
-
-      // Name label below the node
-      const labelText = n.full_name.length > 22 ? n.full_name.slice(0, 20) + '…' : n.full_name
-      ctx.font = `${isSelected ? 600 : 500} 11px "IBM Plex Sans", sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'top'
-      // Soft paper-tinted plate behind text for legibility on the dotted bg
-      const tw = ctx.measureText(labelText).width
-      const padX = 5, padY = 2
-      const lx = n.x - tw / 2 - padX
-      const ly = n.y + r + 6
-      ctx.fillStyle = 'rgba(244,239,230,0.92)'
-      ctx.beginPath()
-      // Hand-rolled rounded rect (compat: roundRect not in all Safari versions)
-      const rw = tw + padX * 2
-      const rh = 16
-      const rr = 5
-      ctx.moveTo(lx + rr, ly)
-      ctx.arcTo(lx + rw, ly, lx + rw, ly + rh, rr)
-      ctx.arcTo(lx + rw, ly + rh, lx, ly + rh, rr)
-      ctx.arcTo(lx, ly + rh, lx, ly, rr)
-      ctx.arcTo(lx, ly, lx + rw, ly, rr)
-      ctx.closePath()
-      ctx.fill()
-      ctx.fillStyle = isSelected ? '#D8442B' : '#1A1815'
-      ctx.fillText(labelText, n.x, ly + padY)
-    }
-
-    // Center "you" node
-    const youR = 28
-    ctx.beginPath()
-    ctx.arc(cx, cy, youR, 0, Math.PI * 2)
-    ctx.fillStyle = '#1A1815'
-    ctx.fill()
-    ctx.fillStyle = '#F4EFE6'
-    ctx.font = `italic 500 14px "Fraunces"`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText('you', cx, cy)
-    // Signal accent ring
-    ctx.beginPath()
-    ctx.arc(cx, cy, youR + 4, 0, Math.PI * 2)
-    ctx.strokeStyle = 'rgba(216,68,43,0.22)'
-    ctx.lineWidth = 2
-    ctx.stroke()
-  }, [selected])
-
-  // Physics tick
-  useEffect(() => {
-    const tick = () => {
-      const ns = nodesRef.current
-      const canvas = canvasRef.current
-      if (!canvas) return
-      // Use CSS pixel dimensions — matches DPR-scaled context
-      const W = canvas.offsetWidth
-      const H = canvas.offsetHeight
-      const cx = W / 2
-      const cy = H / 2
-
-      for (const n of ns) {
-        if (n.degree === 2) continue
-        // Spring: pull node toward a ring at target distance from center
-        const dx = n.x - cx
-        const dy = n.y - cy
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        // Scale target ring radius to canvas size so graph fills the space nicely
-        const targetRing = Math.min(W, H) * 0.22
-        const diff = dist - targetRing
-        n.vx -= (dx / Math.max(dist, 1)) * diff * 0.06
-        n.vy -= (dy / Math.max(dist, 1)) * diff * 0.06
-
-        // Repulsion between first-degree nodes
-        for (const m of ns) {
-          if (m === n || m.degree === 2) continue
-          const ex = n.x - m.x
-          const ey = n.y - m.y
-          const ed = Math.sqrt(ex * ex + ey * ey)
-          const minDist = 90
-          if (ed < minDist && ed > 0) {
-            n.vx += (ex / ed) * (minDist - ed) * 0.018
-            n.vy += (ey / ed) * (minDist - ed) * 0.018
-          }
-        }
-
-        // Damping + bounds with margin
-        n.vx *= 0.82
-        n.vy *= 0.82
-        n.x = Math.max(40, Math.min(W - 40, n.x + n.vx))
-        n.y = Math.max(40, Math.min(H - 40, n.y + n.vy))
-      }
-
-      // Update second degree positions relative to parent
-      const first = ns.filter((n) => n.degree === 1)
-      const second = ns.filter((n) => n.degree === 2)
-      for (let i = 0; i < second.length; i++) {
-        const s = second[i]
-        const parent = first[i % Math.max(first.length, 1)]
-        if (!parent) continue
-        const angle = (i * 137.5 * Math.PI) / 180
-        // Slightly larger orbit so first-name caption fits under the dot
-        const target = { x: parent.x + Math.cos(angle) * 68, y: parent.y + Math.sin(angle) * 68 }
-        s.x += (target.x - s.x) * 0.12
-        s.y += (target.y - s.y) * 0.12
-      }
-
-      draw()
-      rafRef.current = requestAnimationFrame(tick)
-    }
-
-    rafRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [draw])
-
-  // Handle resize
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ro = new ResizeObserver(() => {
-      const dpr = window.devicePixelRatio || 1
-      // Setting width/height resets context state — apply scale fresh each time
-      canvas.width = canvas.offsetWidth * dpr
-      canvas.height = canvas.offsetHeight * dpr
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.setTransform(1, 0, 0, 1, 0, 0) // reset any prior transform
-        ctx.scale(dpr, dpr)
-      }
-    })
-    // Fire once immediately to set initial size before first tick
-    const dprInit = window.devicePixelRatio || 1
-    canvas.width = canvas.offsetWidth * dprInit
-    canvas.height = canvas.offsetHeight * dprInit
-    const ctxInit = canvas.getContext('2d')
-    if (ctxInit) { ctxInit.setTransform(1, 0, 0, 1, 0, 0); ctxInit.scale(dprInit, dprInit) }
-    ro.observe(canvas)
-    return () => ro.disconnect()
-  }, [])
-
-  // Click hit-test
-  function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-
-    // Check center "you" hit first
-    const cx = canvas.offsetWidth / 2
-    const cy = canvas.offsetHeight / 2
-    if (Math.sqrt((cx - x) ** 2 + (cy - y) ** 2) < 32) {
-      onSelectSelf?.()
-      return
-    }
-
-    const ns = nodesRef.current.filter((n) => n.degree === 1)
-    for (const n of ns) {
-      const dx = n.x - x
-      const dy = n.y - y
-      if (Math.sqrt(dx * dx + dy * dy) < 28) {
-        onSelectNode(n)
-        return
-      }
+function relationTone(tab: RelationshipTab) {
+  if (tab === 'Incoming') {
+    return {
+      background: 'var(--verd-soft)',
+      color: 'var(--verd)',
+      border: 'rgba(31,107,94,0.28)',
     }
   }
 
+  if (tab === 'Sent') {
+    return {
+      background: 'var(--signal-soft)',
+      color: 'var(--signal)',
+      border: 'rgba(216,68,43,0.28)',
+    }
+  }
+
+  return {
+    background: 'var(--paper-soft)',
+    color: 'var(--ink-muted)',
+    border: 'var(--rule)',
+  }
+}
+
+function userContext(user?: ConnectionUser | null) {
+  if (!user) return 'No profile context yet'
   return (
-    <canvas
-      ref={canvasRef}
-      onClick={handleClick}
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'block',
-        cursor: 'crosshair',
-      }}
-    />
+    clean(user.headline) ||
+    clean(user.current_company) ||
+    clean(user.university) ||
+    clean(user.location_city) ||
+    statusLabel(user.status)
   )
 }
 
-// ─── MapPage ──────────────────────────────────────────────────────────────────
+function relationshipReason(connection: Connection, tab: RelationshipTab) {
+  const user = connection.user
+  const name = firstName(user?.full_name)
+  const context = userContext(user)
+
+  if (tab === 'Incoming') return `${name} asked to connect. Accept only if the context is real.`
+  if (tab === 'Sent') return `You reached out to ${name}. Waiting for them to respond.`
+
+  if (clean(user?.headline)) return clean(user?.headline)
+  if (clean(user?.current_company)) return `Connected through ${clean(user?.current_company)} context.`
+  if (clean(user?.university)) return `Connected through ${clean(user?.university)} context.`
+  if (clean(user?.location_city)) return `Connected through ${clean(user?.location_city)} context.`
+  if (context !== 'Profile') return `Connected profile: ${context}.`
+
+  return 'Connected, but profile context is still thin. Open the profile before asking for help.'
+}
+
+function nextAction(connection: Connection, tab: RelationshipTab) {
+  const user = connection.user
+  const hasRealContext =
+    Boolean(clean(user?.headline)) ||
+    Boolean(clean(user?.current_company)) ||
+    Boolean(clean(user?.university)) ||
+    Boolean(clean(user?.location_city))
+
+  if (tab === 'Incoming') return 'Open the profile first. Accept only if this relationship can become useful.'
+  if (tab === 'Sent') return 'Do not spam. Wait unless you have a specific reason to follow up.'
+  if (!hasRealContext) return 'This connection is weakly contextualized. Add memory before asking for help.'
+  return 'Keep this person warm with a specific reason: advice, referral path, project overlap, or local context.'
+}
+
+function emptyMessage(tab: RelationshipTab, hasQuery: boolean) {
+  if (hasQuery) {
+    return {
+      title: 'No match found.',
+      body: 'Try searching by name, username, headline, city, university, company, or status.',
+    }
+  }
+
+  if (tab === 'Incoming') {
+    return {
+      title: 'No requests need your decision.',
+      body: 'Nothing is waiting on you right now.',
+    }
+  }
+
+  if (tab === 'Sent') {
+    return {
+      title: 'No requests waiting.',
+      body: 'When you send connection requests from Discover, they will appear here.',
+    }
+  }
+
+  return {
+    title: 'No one is in your knot yet.',
+    body: 'Start from Discover and connect with people who have real context.',
+  }
+}
+
+function otherUserId(connection: Connection, meId: string | null) {
+  return connection.user?.id ?? (connection.requester_id === meId ? connection.addressee_id : connection.requester_id)
+}
+
 export function MapPage() {
   const navigate = useNavigate()
-  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
-  const [panelData, setPanelData] = useState<PanelData | null>(null)
-  const [panelLoading, setPanelLoading] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [pendingRequests, setPendingRequests] = useState<number>(0)
   const [meId, setMeId] = useState<string | null>(null)
-  const [meUser, setMeUser] = useState<{ id: string; full_name: string; username: string; avatar_url: string | null } | null>(null)
-  const [asks, setAsks] = useState<Ask[]>([])
-  // Map of userId → their latest open ask (for canvas bubble overlay)
-  const [latestAskByUser, setLatestAskByUser] = useState<Record<string, Ask>>({})
-  const [asksLoading, setAsksLoading] = useState(false)
-  const [newAskText, setNewAskText] = useState('')
-  const [postingAsk, setPostingAsk] = useState(false)
-  const [expandedAskId, setExpandedAskId] = useState<string | null>(null)
-  const [asksReplies, setAsksReplies] = useState<Record<string, AskReply[]>>({})
-  const [replyDraft, setReplyDraft] = useState<Record<string, string>>({})
-  // Ask bubble popup
-  const [askPopup, setAskPopup] = useState<{ ask: Ask; userName: string; avatarUrl: string | null } | null>(null)
-  const [popupRepliesLoading, setPopupRepliesLoading] = useState(false)
+  const [meUser, setMeUser] = useState<ConnectionUser | null>(null)
+  const [connections, setConnections] = useState<Connection[]>([])
+  const [peerEdges, setPeerEdges] = useState<PeerEdge[]>([])
+  const [activeTab, setActiveTab] = useState<RelationshipTab>('Connected')
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [accepting, setAccepting] = useState<Record<string, boolean>>({})
+  const [removing, setRemoving] = useState<Record<string, boolean>>({})
 
-  // Pending incoming connection requests + my id
-  useEffect(() => {
-    let mounted = true
-    Promise.all([
-      apiGet<{ user: { id: string; full_name: string; username: string; avatar_url: string | null } }>('/api/users/me'),
-      apiGet<{ connections: Array<{ status: string; requester_id: string; addressee_id: string }> }>('/api/connections'),
-    ]).then(([me, cx]) => {
-      if (!mounted) return
-      setMeId(me.user.id)
-      setMeUser(me.user)
-      const incoming = (cx.connections ?? []).filter((c) => c.status === 'pending' && c.addressee_id === me.user.id).length
-      setPendingRequests(incoming)
-    }).catch(() => { /* ignore */ })
-    return () => { mounted = false }
-  }, [])
-
-  // Build a synthetic GraphNode for self so we can re-use the same panel
-  function selectSelf() {
-    if (!meUser) return
-    const synthetic: GraphNode = {
-      id: meUser.id,
-      full_name: meUser.full_name,
-      username: meUser.username,
-      avatar_url: meUser.avatar_url,
-      is_online: true,
-      referral_score: 0,
-      current_company: null,
-      x: 0, y: 0, vx: 0, vy: 0,
-      degree: 1,
-    }
-    setSelectedNode(synthetic)
-    setPanelOpen(true)
-    setPanelLoading(true)
-    setPanelData(null)
-    apiGet<PanelData>(`/api/users/panel/${meUser.id}`)
-      .then((data) => setPanelData(data))
-      .catch(() => {})
-      .finally(() => setPanelLoading(false))
-  }
-
-  // Load every node's latest open ask whenever graphNodes change
-  useEffect(() => {
-    let cancelled = false
-    const ids = graphNodes.filter((n) => n.degree === 1).map((n) => n.id)
-    if (meId) ids.push(meId)
-    if (ids.length === 0) { setLatestAskByUser({}); return }
-    // Fetch all in parallel; populate map
-    Promise.all(ids.map(async (id) => {
-      try {
-        const d = await apiGet<{ asks: Ask[] }>(`/api/asks/by-user/${id}`)
-        const open = (d.asks ?? []).find((a) => a.status === 'open')
-        return open ? [id, open] as const : null
-      } catch { return null }
-    })).then((results) => {
-      if (cancelled) return
-      const map: Record<string, Ask> = {}
-      for (const r of results) { if (r) map[r[0]] = r[1] }
-      setLatestAskByUser(map)
-    })
-    return () => { cancelled = true }
-  }, [graphNodes, meId])
-
-  // Load asks whenever the selected node changes
-  useEffect(() => {
-    const targetId = selectedNode?.id ?? (panelOpen ? null : meId)
-    if (!targetId) { setAsks([]); return }
-    let mounted = true
-    setAsksLoading(true)
-    apiGet<{ asks: Ask[] }>(`/api/asks/by-user/${targetId}`)
-      .then((d) => { if (mounted) setAsks(d.asks ?? []) })
-      .catch(() => { if (mounted) setAsks([]) })
-      .finally(() => { if (mounted) setAsksLoading(false) })
-    return () => { mounted = false }
-  }, [selectedNode?.id, meId, panelOpen])
-
-  async function postAsk() {
-    const content = newAskText.trim()
-    if (!content || !meId) return
-    setPostingAsk(true)
-    try {
-      const res = await apiPost<{ ask: Ask }>('/api/asks', { content })
-      setAsks((prev) => [res.ask, ...prev])
-      // Update the bubble overlay map so the new ask appears on the graph immediately
-      setLatestAskByUser((prev) => ({ ...prev, [meId]: res.ask }))
-      setNewAskText('')
-    } catch { /* ignore */ }
-    finally { setPostingAsk(false) }
-  }
-
-  async function reactToAsk(askId: string, emoji: string) {
-    // Optimistic
-    setAsks((prev) => prev.map((a) => {
-      if (a.id !== askId) return a
-      const cur = a.reactions[emoji]
-      const next: AskReactionMap = { ...a.reactions }
-      if (cur?.mine) {
-        const nextCount = cur.count - 1
-        if (nextCount <= 0) delete next[emoji]
-        else next[emoji] = { count: nextCount, mine: false }
-      } else {
-        next[emoji] = { count: (cur?.count ?? 0) + 1, mine: true }
-      }
-      return { ...a, reactions: next }
-    }))
-    try { await apiPost(`/api/asks/${askId}/react`, { emoji }) }
-    catch { /* revert by reloading */
-      try {
-        const targetId = selectedNode?.id ?? meId
-        if (targetId) {
-          const d = await apiGet<{ asks: Ask[] }>(`/api/asks/by-user/${targetId}`)
-          setAsks(d.asks ?? [])
-        }
-      } catch { /* noop */ }
-    }
-  }
-
-  async function resolveAsk(askId: string) {
-    try {
-      await apiPost(`/api/asks/${askId}/resolve`, {})
-      setAsks((prev) => prev.map((a) => a.id === askId ? { ...a, status: 'resolved', resolved_at: new Date().toISOString() } : a))
-      // Remove from canvas bubble map (resolved asks shouldn't show as bubbles)
-      setLatestAskByUser((prev) => {
-        const next = { ...prev }
-        for (const userId of Object.keys(next)) {
-          if (next[userId].id === askId) delete next[userId]
-        }
-        return next
-      })
-    } catch { /* noop */ }
-  }
-
-  async function loadReplies(askId: string) {
-    if (asksReplies[askId]) { setExpandedAskId(expandedAskId === askId ? null : askId); return }
-    try {
-      const d = await apiGet<{ replies: AskReply[] }>(`/api/asks/${askId}/replies`)
-      setAsksReplies((prev) => ({ ...prev, [askId]: d.replies ?? [] }))
-      setExpandedAskId(askId)
-    } catch { /* noop */ }
-  }
-
-  async function openAskPopup(ask: Ask, userName: string, avatarUrl: string | null) {
-    setAskPopup({ ask, userName, avatarUrl })
-    if (!asksReplies[ask.id]) {
-      setPopupRepliesLoading(true)
-      try {
-        const d = await apiGet<{ replies: AskReply[] }>(`/api/asks/${ask.id}/replies`)
-        setAsksReplies((prev) => ({ ...prev, [ask.id]: d.replies ?? [] }))
-      } catch { /* noop */ } finally { setPopupRepliesLoading(false) }
-    }
-  }
-
-  // Keep popup ask in sync with reactions/reply_count updates
-  useEffect(() => {
-    if (!askPopup) return
-    const live = asks.find((a) => a.id === askPopup.ask.id) ?? latestAskByUser[askPopup.ask.user_id]
-    if (live && (live !== askPopup.ask)) setAskPopup((prev) => prev ? { ...prev, ask: live } : null)
-  }, [asks, latestAskByUser])
-
-  async function postReply(askId: string) {
-    const body = (replyDraft[askId] ?? '').trim()
-    if (!body) return
-    try {
-      const res = await apiPost<{ reply: AskReply }>(`/api/asks/${askId}/replies`, { body })
-      setAsksReplies((prev) => ({ ...prev, [askId]: [...(prev[askId] ?? []), res.reply] }))
-      setAsks((prev) => prev.map((a) => a.id === askId ? { ...a, reply_count: a.reply_count + 1 } : a))
-      if (askPopup?.ask.id === askId) setAskPopup((prev) => prev ? { ...prev, ask: { ...prev.ask, reply_count: prev.ask.reply_count + 1 } } : null)
-      setReplyDraft((prev) => ({ ...prev, [askId]: '' }))
-    } catch { /* noop */ }
-  }
-
-  function shareAsk(ask: Ask) {
-    const url = `${window.location.origin}/profile/${ask.user_id}`
-    const text = `"${ask.content}" — ${selectedNode?.full_name ?? 'on knotify'}`
-    if (navigator.share) {
-      void navigator.share({ title: 'Ask on knotify', text, url }).catch(() => {})
-    } else {
-      void navigator.clipboard.writeText(`${text}\n${url}`).catch(() => {})
-    }
-  }
-
-  const [mapError, setMapError] = useState<string | null>(null)
-  const [mapDebug, setMapDebug] = useState<Record<string, unknown> | null>(null)
-
-  useEffect(() => {
-    let mounted = true
+  async function loadRelationships() {
     setLoading(true)
-    setMapError(null)
-    // Build the knot client-side from /api/connections (the SAME endpoint that
-    // populates the "Your Knot · 3" badge). This bypasses /api/connections/map
-    // entirely so we don't depend on its (currently broken) server-side filtering.
-    Promise.all([
-      apiGet<{ user: { id: string } }>('/api/users/me'),
-      apiGet<{ connections: Array<{ id: string; requester_id: string; addressee_id: string; status: string; user: { id: string; full_name: string; username: string; avatar_url: string | null } | null }> }>('/api/connections'),
-    ])
-      .then(([meData, cxData]) => {
-        if (!mounted) return
-        const meId = meData.user.id
-        const accepted = (cxData.connections ?? []).filter((c) => c.status === 'accepted')
-        setMapDebug({
-          version: 'client-side-v1',
-          meId,
-          totalConns: (cxData.connections ?? []).length,
-          acceptedConns: accepted.length,
-        })
+    setError(null)
 
-        // Build first-degree nodes from the enriched user data already in the response
-        const firstDegreeRaw: MapNode[] = accepted
-          .map((c) => c.user)
-          .filter((u): u is { id: string; full_name: string; username: string; avatar_url: string | null } => u !== null)
-          .map((u) => ({
-            id: u.id,
-            full_name: u.full_name,
-            username: u.username,
-            avatar_url: u.avatar_url,
-            is_online: false,
-            referral_score: 0,
-            current_company: null,
-          }))
-
-        // Use actual canvas CSS size, fallback to reasonable graph area defaults
-        const canvasEl = document.querySelector('canvas') as HTMLCanvasElement | null
-        const W = canvasEl?.offsetWidth || 860
-        const H = canvasEl?.offsetHeight || 680
-        const cx = W / 2; const cy = H / 2
-
-        const firstNodes: GraphNode[] = firstDegreeRaw.map((n, i) => {
-          const angle = (i / Math.max(firstDegreeRaw.length, 1)) * Math.PI * 2
-          const r = 130
-          const gn: GraphNode = {
-            ...n,
-            x: cx + Math.cos(angle) * r,
-            y: cy + Math.sin(angle) * r,
-            vx: 0,
-            vy: 0,
-            degree: 1,
-          }
-          if (n.avatar_url) {
-            const img = new Image()
-            img.crossOrigin = 'anonymous'
-            img.src = n.avatar_url
-            gn.imgEl = img
-          }
-          return gn
-        })
-
-        setGraphNodes(firstNodes)
-      })
-      .catch((err) => {
-        if (!mounted) return
-        // eslint-disable-next-line no-console
-        console.error('knot build error:', err)
-        setMapError(err instanceof Error ? err.message : 'Failed to load knot')
-        setGraphNodes([])
-      })
-      .finally(() => { if (mounted) setLoading(false) })
-    return () => { mounted = false }
-  }, [])
-
-  const filteredNodes = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return graphNodes
-    return graphNodes.filter(
-      (n) =>
-        n.full_name.toLowerCase().includes(q) ||
-        n.username.toLowerCase().includes(q)
-    )
-  }, [graphNodes, searchQuery])
-
-  async function onSelectNode(node: GraphNode) {
-    setSelectedNode(node)
-    setPanelOpen(true)
-    setPanelLoading(true)
-    setPanelData(null)
     try {
-      const data = await apiGet<PanelData>(`/api/users/panel/${node.id}`)
-      setPanelData(data)
-    } catch {
-      // noop
+      const [meResult, connectionResult, mapResult] = await Promise.all([
+        apiGet<MeResponse>('/api/users/me'),
+        apiGet<ConnectionsResponse>('/api/connections'),
+        apiGet<ConnectionMapResponse>('/api/connections/map'),
+      ])
+
+      setMeId(meResult.user.id)
+      setMeUser(meResult.user)
+      setConnections(connectionResult.connections ?? [])
+      setPeerEdges(mapResult.peerEdges ?? [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load Your Knot')
+      setConnections([])
+      setPeerEdges([])
     } finally {
-      setPanelLoading(false)
+      setLoading(false)
     }
   }
 
-  const firstDegree = graphNodes.filter((n) => n.degree === 1)
-  const secondDegree = graphNodes.filter((n) => n.degree === 2)
+  useEffect(() => {
+    void loadRelationships()
+  }, [])
 
-  const activeThisWeek = firstDegree.filter((n) => n.is_online).length || Math.min(firstDegree.length, 12)
-  const hasConnections = firstDegree.length > 0
+  const incoming = useMemo(() => {
+    if (!meId) return []
+    return connections.filter((c) => c.status === 'pending' && c.addressee_id === meId)
+  }, [connections, meId])
+
+  const sent = useMemo(() => {
+    if (!meId) return []
+    return connections.filter((c) => c.status === 'pending' && c.requester_id === meId)
+  }, [connections, meId])
+
+  const connected = useMemo(() => connections.filter((c) => c.status === 'accepted'), [connections])
+
+  const selectedConnection = useMemo(() => {
+    return connections.find((connection) => connection.id === selectedConnectionId) ?? null
+  }, [connections, selectedConnectionId])
+
+  const selectedTab: RelationshipTab = selectedConnection
+    ? selectedConnection.status === 'accepted'
+      ? 'Connected'
+      : selectedConnection.addressee_id === meId
+        ? 'Incoming'
+        : 'Sent'
+    : activeTab
+
+  const activeRows = useMemo(() => {
+    const rows = activeTab === 'Incoming' ? incoming : activeTab === 'Sent' ? sent : connected
+    const q = query.trim().toLowerCase()
+
+    return rows.filter((connection) => {
+      const matchesQuery = !q || searchableText(connection).includes(q)
+      const matchesStatus = statusFilter === 'All' || connection.user?.status === statusFilter
+      return matchesQuery && matchesStatus
+    })
+  }, [activeTab, connected, incoming, query, sent, statusFilter])
+
+  const maintenanceItems = useMemo(() => {
+    const weak = connected
+      .filter((connection) => userContext(connection.user) === 'Profile')
+      .slice(0, 2)
+      .map((connection) => ({ connection, label: 'Weak context', body: 'Open profile before asking for help.' }))
+
+    const bridged = connected
+      .filter((connection) =>
+        peerEdges.some((edge) => edge.source_id === otherUserId(connection, meId) || edge.target_id === otherUserId(connection, meId))
+      )
+      .slice(0, 2)
+      .map((connection) => ({ connection, label: 'Mutual bridge', body: 'This person shares ties inside your knot.' }))
+
+    return [...bridged, ...weak].slice(0, 3)
+  }, [connected, meId, peerEdges])
+
+  const hasAnyRelationship = incoming.length + sent.length + connected.length > 0
+  const hasQuery = query.trim().length > 0 || statusFilter !== 'All'
+  const empty = emptyMessage(activeTab, hasQuery)
+
+  async function acceptIncoming(connection: Connection) {
+    if (!meId || connection.addressee_id !== meId) return
+
+    setAccepting((prev) => ({ ...prev, [connection.id]: true }))
+    setError(null)
+
+    try {
+      await apiPatch(`/api/connections/${connection.id}`, { status: 'accepted' })
+      setConnections((prev) =>
+        prev.map((item) =>
+          item.id === connection.id
+            ? { ...item, status: 'accepted', updated_at: new Date().toISOString() }
+            : item
+        )
+      )
+      setSelectedConnectionId(connection.id)
+      setActiveTab('Connected')
+      void loadRelationships()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to accept request')
+    } finally {
+      setAccepting((prev) => ({ ...prev, [connection.id]: false }))
+    }
+  }
+
+  async function declineIncoming(connection: Connection) {
+    if (!meId || connection.addressee_id !== meId) return
+
+    setRemoving((prev) => ({ ...prev, [connection.id]: true }))
+    setError(null)
+
+    try {
+      await apiPatch(`/api/connections/${connection.id}`, { status: 'declined' })
+      setConnections((prev) => prev.filter((item) => item.id !== connection.id))
+      if (selectedConnectionId === connection.id) setSelectedConnectionId(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to decline request')
+    } finally {
+      setRemoving((prev) => ({ ...prev, [connection.id]: false }))
+    }
+  }
+
+  async function removeRelationship(connection: Connection) {
+    const tab = connection.status === 'accepted' ? 'Connected' : connection.addressee_id === meId ? 'Incoming' : 'Sent'
+    const label = tab === 'Connected' ? 'Remove this person from your knot?' : tab === 'Sent' ? 'Cancel this request?' : 'Decline this request?'
+    if (!window.confirm(label)) return
+
+    if (tab === 'Incoming') {
+      await declineIncoming(connection)
+      return
+    }
+
+    setRemoving((prev) => ({ ...prev, [connection.id]: true }))
+    setError(null)
+
+    try {
+      await apiDelete(`/api/connections/${connection.id}`)
+      setConnections((prev) => prev.filter((item) => item.id !== connection.id))
+      setPeerEdges((prev) => prev.filter((edge) => edge.id !== connection.id))
+      if (selectedConnectionId === connection.id) setSelectedConnectionId(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove relationship')
+    } finally {
+      setRemoving((prev) => ({ ...prev, [connection.id]: false }))
+    }
+  }
+
+  function focusConnection(connection: Connection, tab: RelationshipTab) {
+    setQuery('')
+    setActiveTab(tab)
+    setSelectedConnectionId(connection.id)
+  }
+
+  function clearFocus() {
+    setSelectedConnectionId(null)
+  }
+
+  function messageUser(userId: string) {
+    navigate(`/messages?to=${userId}`)
+  }
+
+  function inviteCoffee(userId: string) {
+    navigate(`/messages?to=${userId}&action=coffee`)
+  }
+
+  function RelationshipCard({ connection, tab }: { connection: Connection; tab: RelationshipTab }) {
+    const user = connection.user
+    const userId = otherUserId(connection, meId)
+    const name = clean(user?.full_name) || 'Unknown person'
+    const username = clean(user?.username) || 'user'
+    const city = clean(user?.location_city)
+    const university = clean(user?.university)
+    const company = clean(user?.current_company)
+    const tone = relationTone(tab)
+    const selected = connection.id === selectedConnectionId
+
+    return (
+      <KCard
+        style={{
+          padding: 15,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          minHeight: 190,
+          border: selected ? '0.5px solid var(--signal)' : '0.5px solid var(--rule)',
+          boxShadow: selected ? '0 18px 48px rgba(216,68,43,0.14)' : undefined,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+            <KAvatar name={name} src={user?.avatar_url ?? null} size={46} />
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontFamily: "'Fraunces', Georgia, serif",
+                  fontSize: 18,
+                  color: 'var(--ink)',
+                  letterSpacing: -0.25,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {name}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
+                @{username}
+              </div>
+            </div>
+          </div>
+
+          <span
+            style={{
+              padding: '4px 9px',
+              borderRadius: 999,
+              background: tone.background,
+              color: tone.color,
+              border: `0.5px solid ${tone.border}`,
+              fontSize: 11,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {relationLabel(tab)}
+          </span>
+        </div>
+
+        <div style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.45 }}>
+          {relationshipReason(connection, tab)}
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 'auto' }}>
+          <MetaPill label={statusLabel(user?.status)} />
+          {city && <MetaPill label={city} />}
+          {university && <MetaPill label={university} />}
+          {company && <MetaPill label={company} />}
+        </div>
+
+        <div
+          style={{
+            paddingTop: 12,
+            borderTop: '0.5px solid var(--rule-soft)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 8,
+            alignItems: 'center',
+          }}
+        >
+          <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+            {tab === 'Connected' ? 'Added' : tab === 'Incoming' ? 'Requested' : 'Sent'} {formatDate(connection.updated_at || connection.created_at)}
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {tab === 'Connected' && (
+              <>
+                <KBtn variant="ghost" size="sm" onClick={() => messageUser(userId)}>
+                  Message
+                </KBtn>
+                <KBtn variant="signal" size="sm" onClick={() => inviteCoffee(userId)}>
+                  Coffee
+                </KBtn>
+              </>
+            )}
+
+            <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${userId}`)}>
+              Profile
+            </KBtn>
+
+            {tab === 'Incoming' && (
+              <KBtn
+                variant="verd"
+                size="sm"
+                disabled={Boolean(accepting[connection.id])}
+                onClick={() => void acceptIncoming(connection)}
+              >
+                {accepting[connection.id] ? 'Accepting...' : 'Accept'}
+              </KBtn>
+            )}
+          </div>
+        </div>
+      </KCard>
+    )
+  }
 
   return (
     <div
       style={{
-        // Position fixed to take over the full viewport beside the sidebar.
-        // More robust than negative margins on AppLayout's responsive padding.
-        position: 'fixed',
-        top: 0,
-        right: 0,
-        bottom: 0,
+        minHeight: '100%',
         background: 'var(--paper)',
         color: 'var(--ink)',
         fontFamily: "'IBM Plex Sans', sans-serif",
-        display: 'flex',
-        overflow: 'hidden',
-        zIndex: 1,
       }}
-      className="left-0 md:left-[220px]"
     >
-      {/* ── CENTER: graph canvas ─────────────────────────────────────── */}
-      <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        {/* Top header */}
-        <div
-          style={{
-            padding: '16px 24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 16,
-            borderBottom: '0.5px solid var(--rule-soft)',
-            flexShrink: 0,
-            background: 'var(--paper)',
-            position: 'relative',
-            zIndex: 5,
-            minWidth: 0,
-          }}
-        >
-          <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
-            <div
-              style={{
-                fontSize: 10,
-                color: 'var(--ink-muted)',
-                letterSpacing: 1.2,
-                textTransform: 'uppercase',
-                fontFamily: "'IBM Plex Sans', sans-serif",
-              }}
-            >
-              Your knot · today
-            </div>
-            <div
-              style={{
-                fontFamily: "'Fraunces', Georgia, serif",
-                fontSize: 'clamp(16px, 2vw, 22px)',
-                fontWeight: 400,
-                letterSpacing: -0.3,
-                marginTop: 2,
-                lineHeight: 1.15,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              <span style={{ fontStyle: 'italic' }}>{firstDegree.length} strong.</span> {activeThisWeek} active this week.
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <div
-              style={{
-                padding: '7px 12px',
-                borderRadius: 8,
-                border: '0.5px solid var(--rule)',
-                background: 'var(--paper-soft)',
-                fontSize: 12,
-                color: 'var(--ink-soft)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              <svg width={13} height={13} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                <circle cx="8" cy="8" r="5.5" />
-                <path d="M12 12l4 4" />
-              </svg>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search"
-                className="w-[110px] md:w-[160px]"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  outline: 'none',
-                  fontSize: 12,
-                  color: 'var(--ink)',
-                  fontFamily: "'IBM Plex Sans', sans-serif",
-                }}
-              />
-              <span
-                className="hidden md:inline-block"
-                style={{
-                  marginLeft: 32,
-                  fontSize: 10,
-                  color: 'var(--ink-faint)',
-                  padding: '2px 6px',
-                  border: '0.5px solid var(--rule)',
-                  borderRadius: 4,
-                  fontFamily: "'IBM Plex Mono', monospace",
-                }}
-              >
-                ⌘K
-              </span>
-            </div>
-            <KBtn variant="ghost" size="sm" onClick={selectSelf} disabled={!meUser}>
-              📋 My asks
-            </KBtn>
-            <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>
-              + Invite
-            </KBtn>
-          </div>
-        </div>
+      <div style={{ maxWidth: 'none', margin: '0 auto', padding: '2px 0 24px' }}>
+        <TopCommandBar
+          connectedCount={connected.length}
+          incomingCount={incoming.length}
+          sentCount={sent.length}
+          loading={loading}
+          onDiscover={() => navigate('/discover')}
+          onRefresh={() => void loadRelationships()}
+        />
 
-        {/* Graph area with dotted bg */}
-        <div
-          style={{
-            flex: 1,
-            position: 'relative',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-          }}
-        >
-          {/* dotted bg */}
-          <div
+        {error && (
+          <KCard
             style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: 'radial-gradient(rgba(217,209,191,0.5) 1px, transparent 1px)',
-              backgroundSize: '14px 14px',
-              opacity: 0.7,
-              pointerEvents: 'none',
-            }}
-          />
-
-          {/* The canvas graph (or empty state) */}
-          <div style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
-            {loading ? (
-              <div
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--ink-faint)',
-                  fontFamily: "'Fraunces', Georgia, serif",
-                  fontStyle: 'italic',
-                }}
-              >
-                Loading your knot…
-              </div>
-            ) : !hasConnections ? (
-              <div
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexDirection: 'column',
-                  gap: 16,
-                  padding: 24,
-                  textAlign: 'center',
-                }}
-              >
-                {/* "you" node centered */}
-                <div
-                  style={{
-                    width: 72,
-                    height: 72,
-                    borderRadius: '50%',
-                    background: 'var(--ink)',
-                    color: 'var(--paper)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontFamily: "'Fraunces', Georgia, serif",
-                    fontStyle: 'italic',
-                    fontSize: 18,
-                    fontWeight: 500,
-                    boxShadow: '0 0 0 6px rgba(216,68,43,0.18)',
-                  }}
-                >
-                  you
-                </div>
-                <div
-                  style={{
-                    fontFamily: "'Fraunces', Georgia, serif",
-                    fontSize: 22,
-                    fontStyle: 'italic',
-                    color: 'var(--ink)',
-                    letterSpacing: -0.3,
-                    fontWeight: 500,
-                    maxWidth: 380,
-                  }}
-                >
-                  Start your knot with 3 people.
-                </div>
-                <div
-                  style={{
-                    fontSize: 13.5,
-                    color: 'var(--ink-muted)',
-                    lineHeight: 1.5,
-                    maxWidth: 360,
-                    fontFamily: "'IBM Plex Sans', sans-serif",
-                  }}
-                >
-                  Find a person worth knowing — every connection makes the graph come alive.
-                </div>
-                <KBtn variant="signal" size="md" onClick={() => navigate('/discover')}>
-                  Discover people
-                </KBtn>
-                {mapError && (
-                  <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.25)', color: 'var(--signal)', fontSize: 12, fontFamily: "'IBM Plex Mono', monospace", maxWidth: 480 }}>
-                    Map API error: {mapError}
-                  </div>
-                )}
-                {false && mapDebug && (
-                  <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', color: 'var(--ink-muted)', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", maxWidth: 540, textAlign: 'left' }}>
-                    <div style={{ fontWeight: 600, marginBottom: 4 }}>API debug:</div>
-                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(mapDebug, null, 2)}</pre>
-                  </div>
-                )}
-                {pendingRequests > 0 && (
-                  <div
-                    onClick={() => navigate('/discover')}
-                    style={{
-                      marginTop: 6,
-                      padding: '10px 16px',
-                      borderRadius: 12,
-                      background: 'var(--signal-soft)',
-                      border: '0.5px solid rgba(216,68,43,0.25)',
-                      color: 'var(--signal)',
-                      fontSize: 13,
-                      cursor: 'pointer',
-                      fontWeight: 500,
-                    }}
-                  >
-                    🔔 You have {pendingRequests} pending connection request{pendingRequests === 1 ? '' : 's'} — click to review
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <NetworkGraph
-                  nodes={filteredNodes}
-                  selected={selectedNode}
-                  onSelectNode={onSelectNode}
-                  onSelectSelf={selectSelf}
-                />
-                {/* Ask bubble overlays — positioned next to each node */}
-                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-                  {filteredNodes.filter((n) => n.degree === 1 && latestAskByUser[n.id]).map((n) => {
-                    const ask = latestAskByUser[n.id]
-                    const reactionEntries = Object.entries(ask.reactions)
-                    return (
-                      <button
-                        key={`ask-${n.id}`}
-                        type="button"
-                        onClick={() => openAskPopup(ask, n.full_name, n.avatar_url)}
-                        style={{
-                          position: 'absolute',
-                          left: n.x + 28,
-                          top: n.y - 36,
-                          maxWidth: 210,
-                          padding: '7px 11px',
-                          borderRadius: 14,
-                          background: 'var(--paper)',
-                          border: '0.5px solid var(--signal)',
-                          boxShadow: '0 4px 18px rgba(216,68,43,0.2)',
-                          fontSize: 11,
-                          color: 'var(--ink)',
-                          lineHeight: 1.35,
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          pointerEvents: 'auto',
-                          fontFamily: "'IBM Plex Sans', sans-serif",
-                        }}
-                      >
-                        <div style={{ fontSize: 8.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--signal)', fontWeight: 600, marginBottom: 3 }}>
-                          📌 Ask · tap to reply
-                        </div>
-                        <div style={{ wordBreak: 'break-word', WebkitLineClamp: 2, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                          {ask.content}
-                        </div>
-                        {(reactionEntries.length > 0 || ask.reply_count > 0) && (
-                          <div style={{ fontSize: 10, marginTop: 5, display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
-                            {reactionEntries.slice(0, 4).map(([emoji, { count }]) => (
-                              <span key={emoji} style={{ padding: '1px 5px', borderRadius: 8, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.2)', fontSize: 10 }}>{emoji} {count}</span>
-                            ))}
-                            {ask.reply_count > 0 && <span style={{ color: 'var(--ink-faint)' }}>💬 {ask.reply_count}</span>}
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })}
-                  {/* Self ask bubble at center */}
-                  {meId && latestAskByUser[meId] && (() => {
-                    const canvasEl = document.querySelector('canvas') as HTMLCanvasElement | null
-                    const cx = canvasEl?.offsetWidth ? canvasEl.offsetWidth / 2 : 400
-                    const cy = canvasEl?.offsetHeight ? canvasEl.offsetHeight / 2 : 300
-                    const ask = latestAskByUser[meId]
-                    const reactionEntries = Object.entries(ask.reactions)
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => openAskPopup(ask, meUser?.full_name ?? 'You', meUser?.avatar_url ?? null)}
-                        style={{
-                          position: 'absolute',
-                          left: cx + 36,
-                          top: cy - 36,
-                          maxWidth: 230,
-                          padding: '7px 11px',
-                          borderRadius: 14,
-                          background: 'var(--ink)',
-                          color: 'var(--paper)',
-                          border: '0.5px solid var(--signal)',
-                          boxShadow: '0 4px 18px rgba(216,68,43,0.25)',
-                          fontSize: 11,
-                          lineHeight: 1.35,
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          pointerEvents: 'auto',
-                          fontFamily: "'IBM Plex Sans', sans-serif",
-                        }}
-                      >
-                        <div style={{ fontSize: 8.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(216,68,43,0.85)', fontWeight: 600, marginBottom: 3 }}>
-                          📌 Your ask · tap to manage
-                        </div>
-                        <div style={{ wordBreak: 'break-word', WebkitLineClamp: 2, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                          {ask.content}
-                        </div>
-                        {(reactionEntries.length > 0 || ask.reply_count > 0) && (
-                          <div style={{ fontSize: 10, marginTop: 5, display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
-                            {reactionEntries.slice(0, 4).map(([emoji, { count }]) => (
-                              <span key={emoji} style={{ padding: '1px 5px', borderRadius: 8, background: 'rgba(244,239,230,0.15)', border: '0.5px solid rgba(244,239,230,0.25)', fontSize: 10 }}>{emoji} {count}</span>
-                            ))}
-                            {ask.reply_count > 0 && <span style={{ color: 'rgba(244,239,230,0.6)' }}>💬 {ask.reply_count}</span>}
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })()}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Style chips bottom-left */}
-          <div
-            style={{
-              position: 'absolute',
-              left: 20,
-              bottom: 20,
-              padding: 6,
-              background: 'var(--paper-soft)',
-              borderRadius: 999,
-              border: '0.5px solid var(--rule)',
-              display: 'flex',
-              gap: 4,
+              marginTop: 14,
+              padding: 14,
+              border: '0.5px solid rgba(216,68,43,0.35)',
+              background: 'var(--signal-soft)',
+              color: 'var(--signal)',
+              fontSize: 13,
             }}
           >
-            {(['organic', 'constellation', 'rings'] as const).map((s) => (
-              <div
-                key={s}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: 999,
-                  background: s === 'organic' ? 'var(--ink)' : 'transparent',
-                  color: s === 'organic' ? 'var(--paper-soft)' : 'var(--ink-soft)',
-                  fontSize: 11.5,
-                  fontWeight: 500,
-                  textTransform: 'capitalize',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  fontFamily: "'IBM Plex Sans', sans-serif",
-                }}
-              >
-                {s}
-              </div>
-            ))}
-          </div>
-
-          {/* Legend top-right */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 20,
-              right: 20,
-              padding: 12,
-              borderRadius: 12,
-              background: 'var(--paper-soft)',
-              border: '0.5px solid var(--rule)',
-              fontSize: 11,
-              color: 'var(--ink-muted)',
-              lineHeight: 1.7,
-              fontFamily: "'IBM Plex Sans', sans-serif",
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 5, background: 'var(--signal)' }} />
-              ripple = activity
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 14, height: 1, background: 'var(--ink)', opacity: 0.4 }} />
-              direct (1°)
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div
-                style={{
-                  width: 14,
-                  height: 1,
-                  background: 'var(--ink)',
-                  opacity: 0.4,
-                  borderTop: '1px dashed var(--ink)',
-                }}
-              />
-              possible intro (2°)
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── RIGHT: selection panel + activity rail ──────────────────── */}
-      {/* Desktop: persistent 320px column.
-          Mobile: bottom-sheet drawer that slides up when a node is tapped. */}
-      <div
-        className={[
-          // Mobile visibility — only show when panelOpen
-          panelOpen ? 'flex' : 'hidden',
-          'md:flex',
-          // Mobile: bottom-sheet positioning
-          'fixed bottom-0 left-0 right-0 z-30 max-h-[70vh] w-full rounded-t-2xl shadow-[0_-10px_30px_rgba(26,24,21,0.12)]',
-          // Desktop: in-flow column
-          'md:static md:max-h-none md:rounded-none md:shadow-none md:w-[320px]',
-          // Layout
-          'flex-col gap-4 overflow-y-auto',
-        ].join(' ')}
-        style={{
-          padding: 18,
-          borderLeft: '0.5px solid var(--rule)',
-          background: 'var(--paper-soft)',
-          flexShrink: 0,
-        }}
-      >
-        {/* Selected node card */}
-        {selectedNode ? (
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 16,
-              background: 'var(--paper)',
-              border: '0.5px solid var(--rule)',
-              position: 'relative',
-            }}
-          >
-            {/* Close button — shown only on mobile (the desktop rail is always open) */}
-            <button
-              type="button"
-              onClick={() => setPanelOpen(false)}
-              className="md:hidden"
-              style={{
-                position: 'absolute',
-                top: 8,
-                right: 8,
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                border: 'none',
-                background: 'var(--paper-soft)',
-                color: 'var(--ink-muted)',
-                cursor: 'pointer',
-                fontSize: 16,
-                lineHeight: 1,
-              }}
-              aria-label="Close panel"
-            >
-              ×
-            </button>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <KAvatar name={selectedNode.full_name} src={selectedNode.avatar_url} size={48} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <div
-                    style={{
-                      fontFamily: "'Fraunces', Georgia, serif",
-                      fontSize: 17,
-                      fontWeight: 500,
-                      letterSpacing: -0.2,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {selectedNode.full_name}
-                  </div>
-                  <VerifiedBadge size={12} />
-                </div>
-                <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 2 }}>
-                  @{selectedNode.username}
-                  {selectedNode.current_company && <> · {selectedNode.current_company}</>}
-                </div>
-                {panelData?.user.university && (
-                  <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>
-                    {panelData.user.university}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Headline */}
-            {panelData?.user.headline && (
-              <div style={{ marginTop: 10, fontSize: 13, color: 'var(--ink)', fontStyle: 'italic', fontFamily: "'Fraunces', Georgia, serif", fontWeight: 500 }}>
-                {panelData.user.headline}
-              </div>
-            )}
-
-            {/* Bio */}
-            {panelData?.user.bio && (
-              <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.5 }}>
-                {panelData.user.bio}
-              </div>
-            )}
-
-            {/* Links */}
-            {panelData && (panelData.user.website_url || panelData.user.github_url || panelData.user.linkedin_url) && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 10 }}>
-                {panelData.user.website_url && (
-                  <a href={panelData.user.website_url.startsWith('http') ? panelData.user.website_url : `https://${panelData.user.website_url}`} target="_blank" rel="noopener noreferrer"
-                    style={{ padding: '3px 9px', borderRadius: 999, border: '0.5px solid var(--rule)', fontSize: 10.5, color: 'var(--ink)', textDecoration: 'none', fontFamily: "'IBM Plex Sans'" }}>🌐 Site</a>
-                )}
-                {panelData.user.github_url && (
-                  <a href={panelData.user.github_url.startsWith('http') ? panelData.user.github_url : `https://github.com/${panelData.user.github_url}`} target="_blank" rel="noopener noreferrer"
-                    style={{ padding: '3px 9px', borderRadius: 999, border: '0.5px solid var(--rule)', fontSize: 10.5, color: 'var(--ink)', textDecoration: 'none', fontFamily: "'IBM Plex Sans'" }}>⌥ GitHub</a>
-                )}
-                {panelData.user.linkedin_url && (
-                  <a href={panelData.user.linkedin_url.startsWith('http') ? panelData.user.linkedin_url : `https://linkedin.com/in/${panelData.user.linkedin_url}`} target="_blank" rel="noopener noreferrer"
-                    style={{ padding: '3px 9px', borderRadius: 999, border: '0.5px solid var(--rule)', fontSize: 10.5, color: 'var(--ink)', textDecoration: 'none', fontFamily: "'IBM Plex Sans'" }}>💼 LinkedIn</a>
-                )}
-              </div>
-            )}
-
-            {/* Languages */}
-            {panelData?.user.languages && panelData.user.languages.length > 0 && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Languages</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {panelData.user.languages.map((lang) => (
-                    <span key={lang} style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 999, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', color: 'var(--ink)' }}>{lang}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Skills */}
-            {panelData && panelData.skills.length > 0 && (
-              <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {panelData.skills.slice(0, 6).map((s) => (
-                  <span
-                    key={s.id}
-                    style={{
-                      fontSize: 10.5,
-                      padding: '2px 7px',
-                      borderRadius: 999,
-                      background: s.is_verified ? 'var(--verd-soft)' : 'transparent',
-                      color: s.is_verified ? 'var(--verd)' : 'var(--ink-muted)',
-                      border: s.is_verified ? '0.5px solid rgba(31,107,94,0.25)' : '0.5px solid var(--rule)',
-                      fontFamily: "'IBM Plex Sans', sans-serif",
-                    }}
-                  >
-                    {s.is_verified && <span style={{ marginRight: 3 }}>✓</span>}
-                    {s.name}
-                  </span>
-                ))}
-                {panelData.skills.length > 6 && (
-                  <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 999, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-                    +{panelData.skills.length - 6}
-                  </span>
-                )}
-              </div>
-            )}
-
-            <div
-              style={{
-                marginTop: 12,
-                padding: 10,
-                borderRadius: 10,
-                background: 'var(--paper-deep)',
-                fontSize: 11.5,
-                lineHeight: 1.4,
-              }}
-            >
-              <div
-                style={{
-                  color: 'var(--ink-muted)',
-                  letterSpacing: 0.4,
-                  textTransform: 'uppercase',
-                  fontSize: 10,
-                  marginBottom: 4,
-                }}
-              >
-                tie strength
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div
-                  style={{
-                    flex: 1,
-                    height: 4,
-                    borderRadius: 2,
-                    background: 'var(--rule)',
-                    position: 'relative',
-                  }}
-                >
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      width: `${Math.min(selectedNode.referral_score, 100)}%`,
-                      background: 'var(--signal)',
-                      borderRadius: 2,
-                    }}
-                  />
-                </div>
-                <div
-                  style={{
-                    fontFamily: "'Fraunces', Georgia, serif",
-                    fontStyle: 'italic',
-                    fontSize: 14,
-                  }}
-                >
-                  {selectedNode.referral_score}
-                </div>
-              </div>
-              {panelData && panelData.submittedReferralCount > 0 && (
-                <div style={{ marginTop: 6, color: 'var(--ink-muted)', fontSize: 11 }}>
-                  Has submitted {panelData.submittedReferralCount} warm referral{panelData.submittedReferralCount === 1 ? '' : 's'}.
-                </div>
-              )}
-            </div>
-
-            {/* Milestone timeline: experience + education interleaved */}
-            {panelData && (panelData.experience.length > 0 || panelData.education.length > 0) && (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>Career & education</div>
-                <div style={{ position: 'relative' }}>
-                  <div style={{ position: 'absolute', left: 6, top: 4, bottom: 4, width: 1, background: 'var(--rule-soft)' }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {[
-                      ...panelData.experience.map((e) => ({ kind: 'exp' as const, year: e.start_date ? parseInt(e.start_date.slice(0, 4)) : 0, data: e })),
-                      ...panelData.education.map((e) => ({ kind: 'edu' as const, year: e.start_year ?? 0, data: e })),
-                    ]
-                      .sort((a, b) => b.year - a.year)
-                      .slice(0, 5)
-                      .map((item, i) => (
-                        <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                          <div style={{
-                            width: 13, height: 13, borderRadius: '50%', flexShrink: 0, marginTop: 2,
-                            background: item.kind === 'exp' ? 'var(--ink)' : 'var(--paper)',
-                            border: `1.5px solid ${item.kind === 'exp' ? 'var(--ink)' : 'var(--rule)'}`,
-                          }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {item.kind === 'exp' ? item.data.role : item.data.institution}
-                            </div>
-                            <div style={{ fontSize: 11, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {item.kind === 'exp' ? item.data.company : [item.data.degree, item.data.field].filter(Boolean).join(' · ')}
-                            </div>
-                            <div style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 1 }}>
-                              {item.kind === 'exp'
-                                ? `${item.data.start_date?.slice(0, 7) ?? ''}${item.data.end_date ? ` → ${item.data.end_date.slice(0, 7)}` : ' → now'}`
-                                : `${item.data.start_year ?? ''}${item.data.end_year ? ` → ${item.data.end_year}` : ''}`}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 3 recent Pulse posts */}
-            {panelData && (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>Recent pulse</div>
-                {panelData.recentPosts.length === 0 ? (
-                  panelData.latestUpdate ? (
-                    <div style={{ padding: 10, borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
-                      <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>
-                        Working on now · {new Date(panelData.latestUpdate.created_at).toLocaleDateString()}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-                        {panelData.latestUpdate.content.slice(0, 110)}{panelData.latestUpdate.content.length > 110 ? '…' : ''}
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: "'Fraunces', Georgia, serif" }}>
-                      {selectedNode.full_name.split(' ')[0]} hasn't posted yet.
-                    </div>
-                  )
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {panelData.recentPosts.map((post) => (
-                      <div
-                        key={post.id}
-                        onClick={() => navigate('/home')}
-                        style={{ borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)', overflow: 'hidden', cursor: 'pointer' }}
-                      >
-                        {post.image_url && (
-                          <img src={post.image_url} alt="" style={{ width: '100%', maxHeight: 100, objectFit: 'cover', display: 'block' }} />
-                        )}
-                        <div style={{ padding: '8px 10px' }}>
-                          <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 3 }}>
-                            {new Date(post.created_at).toLocaleDateString()}
-                            {post.channel && <span style={{ color: 'var(--signal)', marginLeft: 4 }}>#{post.channel.slug}</span>}
-                          </div>
-                          {post.title && (
-                            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 13, fontWeight: 500, color: 'var(--ink)', marginBottom: 2, letterSpacing: -0.1 }}>
-                              {post.title}
-                            </div>
-                          )}
-                          <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>
-                            {post.body}
-                          </div>
-                          <div style={{ display: 'flex', gap: 8, marginTop: 5, fontSize: 10, color: 'var(--ink-faint)' }}>
-                            <span>↑ {post.upvote_count}</span>
-                            <span>💬 {post.comment_count}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {/* ── Professional Asks ───────────────────────────────────── */}
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-                  Professional asks
-                </div>
-                {asksLoading && <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontStyle: 'italic' }}>loading…</span>}
-              </div>
-
-              {/* New ask composer (only when viewing my own node) */}
-              {meId && selectedNode.id === meId && (
-                <div style={{ marginBottom: 10, padding: 10, borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
-                  <textarea
-                    value={newAskText}
-                    onChange={(e) => setNewAskText(e.target.value.slice(0, 280))}
-                    placeholder="What do you need? (e.g. 'Intro to a CV agent founder')"
-                    rows={2}
-                    style={{ width: '100%', padding: '7px 9px', borderRadius: 8, border: '0.5px solid var(--rule)', background: 'var(--paper)', fontSize: 12, fontFamily: "'IBM Plex Sans'", color: 'var(--ink)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.4 }}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-                    <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>{newAskText.length}/280</span>
-                    <KBtn variant="signal" size="sm" disabled={!newAskText.trim() || postingAsk} onClick={postAsk}>
-                      {postingAsk ? '…' : 'Post ask'}
-                    </KBtn>
-                  </div>
-                </div>
-              )}
-
-              {asks.length === 0 && !asksLoading ? (
-                <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: "'Fraunces', Georgia, serif" }}>
-                  {meId && selectedNode.id === meId
-                    ? 'You have no open asks yet. Post one above so your knot can help.'
-                    : `${selectedNode.full_name.split(' ')[0]} hasn't posted any asks yet.`}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {asks.map((ask) => {
-                    const reactionEntries = Object.entries(ask.reactions)
-                    const isOwn = meId === ask.user_id
-                    const isResolved = ask.status === 'resolved'
-                    const isExpanded = expandedAskId === ask.id
-                    return (
-                      <div
-                        key={ask.id}
-                        style={{
-                          padding: 10,
-                          borderRadius: 10,
-                          background: isResolved ? 'var(--paper-deep)' : 'var(--paper-soft)',
-                          border: `0.5px solid ${isResolved ? 'var(--rule-soft)' : 'var(--rule)'}`,
-                          opacity: isResolved ? 0.65 : 1,
-                        }}
-                      >
-                        {/* Header pill: status + age */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                          <span style={{
-                            fontSize: 9, padding: '1px 7px', borderRadius: 999, fontFamily: "'IBM Plex Sans'",
-                            background: isResolved ? 'var(--verd-soft)' : 'var(--signal-soft)',
-                            color: isResolved ? 'var(--verd)' : 'var(--signal)',
-                            border: `0.5px solid ${isResolved ? 'rgba(31,107,94,0.25)' : 'rgba(216,68,43,0.25)'}`,
-                            fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase',
-                          }}>
-                            {isResolved ? '✓ Resolved' : 'Open'}
-                          </span>
-                          <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>
-                            {new Date(ask.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-
-                        {/* Content */}
-                        <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.45, marginBottom: 8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                          {ask.content}
-                        </div>
-
-                        {/* Reactions row */}
-                        {reactionEntries.length > 0 && (
-                          <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-                            {reactionEntries.sort((a, b) => b[1].count - a[1].count).map(([emoji, { count, mine }]) => (
-                              <button
-                                key={emoji}
-                                onClick={() => reactToAsk(ask.id, emoji)}
-                                disabled={isResolved}
-                                style={{
-                                  padding: '2px 7px', borderRadius: 12, fontSize: 11, cursor: isResolved ? 'default' : 'pointer',
-                                  border: `0.5px solid ${mine ? 'var(--signal)' : 'var(--rule)'}`,
-                                  background: mine ? 'var(--signal-soft)' : 'var(--paper)',
-                                  display: 'flex', alignItems: 'center', gap: 3,
-                                  fontFamily: "'IBM Plex Sans'",
-                                }}
-                              >
-                                {emoji} <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{count}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Action row */}
-                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                          {/* Quick react buttons */}
-                          {!isResolved && (
-                            <div style={{ display: 'flex', gap: 2, padding: '3px 6px', borderRadius: 999, background: 'var(--paper)', border: '0.5px solid var(--rule-soft)' }}>
-                              {ASK_EMOJIS.map((e) => (
-                                <button
-                                  key={e}
-                                  onClick={() => reactToAsk(ask.id, e)}
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '1px 3px', transition: 'transform 0.1s' }}
-                                  onMouseEnter={(ev) => { (ev.currentTarget as HTMLButtonElement).style.transform = 'scale(1.3)' }}
-                                  onMouseLeave={(ev) => { (ev.currentTarget as HTMLButtonElement).style.transform = 'scale(1)' }}
-                                  title={`React with ${e}`}
-                                >
-                                  {e}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                          <button
-                            onClick={() => loadReplies(ask.id)}
-                            style={{ padding: '3px 8px', borderRadius: 8, border: '0.5px solid var(--rule-soft)', background: 'var(--paper)', cursor: 'pointer', fontSize: 11, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", display: 'flex', alignItems: 'center', gap: 3 }}
-                          >
-                            💬 {ask.reply_count}
-                          </button>
-                          <button
-                            onClick={() => shareAsk(ask)}
-                            style={{ padding: '3px 8px', borderRadius: 8, border: '0.5px solid var(--rule-soft)', background: 'var(--paper)', cursor: 'pointer', fontSize: 11, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'" }}
-                            title="Share"
-                          >
-                            ↗ Share
-                          </button>
-                          {isOwn && !isResolved && (
-                            <button
-                              onClick={() => resolveAsk(ask.id)}
-                              style={{ padding: '3px 10px', borderRadius: 8, border: '0.5px solid var(--verd)', background: 'transparent', cursor: 'pointer', fontSize: 11, color: 'var(--verd)', fontFamily: "'IBM Plex Sans'", fontWeight: 600, marginLeft: 'auto' }}
-                            >
-                              ✓ Mark resolved
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Replies (expanded) */}
-                        {isExpanded && (
-                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '0.5px dashed var(--rule)' }}>
-                            {(asksReplies[ask.id] ?? []).length === 0 ? (
-                              <div style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>
-                                No replies yet.
-                              </div>
-                            ) : (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                                {(asksReplies[ask.id] ?? []).map((r) => (
-                                  <div key={r.id} style={{ padding: '6px 9px', borderRadius: 8, background: 'var(--paper)', border: '0.5px solid var(--rule-soft)' }}>
-                                    <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 2 }}>
-                                      <strong style={{ color: 'var(--ink)' }}>{r.author?.full_name ?? 'Someone'}</strong>
-                                      <span style={{ marginLeft: 6, color: 'var(--ink-faint)' }}>{new Date(r.created_at).toLocaleDateString()}</span>
-                                    </div>
-                                    <div style={{ fontSize: 12, color: 'var(--ink)', lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{r.body}</div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
-                              <textarea
-                                value={replyDraft[ask.id] ?? ''}
-                                onChange={(e) => setReplyDraft((prev) => ({ ...prev, [ask.id]: e.target.value.slice(0, 800) }))}
-                                placeholder="Reply…"
-                                rows={1}
-                                style={{ flex: 1, padding: '5px 8px', borderRadius: 8, border: '0.5px solid var(--rule)', background: 'var(--paper)', fontSize: 12, fontFamily: "'IBM Plex Sans'", color: 'var(--ink)', outline: 'none', resize: 'none', lineHeight: 1.4, boxSizing: 'border-box' }}
-                                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void postReply(ask.id) } }}
-                              />
-                              <KBtn variant="signal" size="sm" disabled={!(replyDraft[ask.id] ?? '').trim()} onClick={() => postReply(ask.id)}>↵</KBtn>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
-              <KBtn variant="ink" size="sm" fullWidth onClick={() => navigate(`/messages?to=${selectedNode.id}`)}>
-                Message
-              </KBtn>
-              <KBtn variant="signal" size="sm" onClick={() => navigate(`/messages?to=${selectedNode.id}&action=coffee`)}>
-                ☕ Coffee
-              </KBtn>
-            </div>
-            {panelLoading && (
-              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--ink-faint)', textAlign: 'center' }}>
-                Loading details…
-              </div>
-            )}
-          </div>
-        ) : (
-          <div
-            style={{
-              padding: 16,
-              borderRadius: 16,
-              background: 'var(--paper)',
-              border: '0.5px solid var(--rule)',
-              fontSize: 12.5,
-              color: 'var(--ink-muted)',
-              lineHeight: 1.5,
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontStyle: 'italic',
-              textAlign: 'center',
-            }}
-          >
-            Click a node to inspect.
-          </div>
+            {error}
+          </KCard>
         )}
 
-        {/* Pulse · live */}
-        <PulseLiveSection />
-
-        {/* Real upcoming meeting */}
-        <UpcomingMeetingSection />
-      </div>
-
-      {/* ── Ask popup modal ─────────────────────────────────────────── */}
-      {askPopup && (
-        <div
-          onClick={(e) => { if (e.target === e.currentTarget) setAskPopup(null) }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 100,
-            background: 'rgba(26,24,21,0.55)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
+        <KnotStage
+          meId={meId}
+          meName={meUser?.full_name ?? 'You'}
+          meAvatar={meUser?.avatar_url ?? null}
+          connected={connected}
+          incoming={incoming}
+          sent={sent}
+          peerEdges={peerEdges}
+          selectedConnection={selectedConnection}
+          selectedTab={selectedTab}
+          query={query}
+          onQueryChange={(value) => {
+            setSelectedConnectionId(null)
+            setQuery(value)
           }}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: 520,
-              maxHeight: '88vh',
-              borderRadius: 20,
-              background: 'var(--paper)',
-              border: '0.5px solid var(--rule)',
-              boxShadow: '0 24px 60px rgba(26,24,21,0.22)',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}
-          >
-            {/* Header */}
-            <div
-              style={{
-                padding: '14px 18px',
-                borderBottom: '0.5px solid var(--rule-soft)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                flexShrink: 0,
-              }}
-            >
-              <KAvatar name={askPopup.userName} src={askPopup.avatarUrl} size={36} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 15, fontWeight: 500, letterSpacing: -0.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {askPopup.userName}
+          accepting={accepting}
+          removing={removing}
+          onSelect={focusConnection}
+          onClear={clearFocus}
+          onAccept={(connection) => void acceptIncoming(connection)}
+          onRemove={(connection) => void removeRelationship(connection)}
+          onViewProfile={(userId) => navigate(`/profile/${userId}`)}
+          onMessage={messageUser}
+          onInviteCoffee={inviteCoffee}
+        />
+
+        <section style={{ marginTop: 18 }}>
+          <KCard style={{ padding: 10, marginBottom: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                  {RELATIONSHIP_TABS.map((tab) => {
+                    const count = tab === 'Incoming' ? incoming.length : tab === 'Sent' ? sent.length : connected.length
+                    const selected = activeTab === tab
+
+                    return (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => {
+                          setSelectedConnectionId(null)
+                          setActiveTab(tab)
+                        }}
+                        style={{
+                          border: selected ? '0.5px solid var(--ink)' : '0.5px solid var(--rule)',
+                          background: selected ? 'var(--ink)' : 'var(--paper)',
+                          color: selected ? 'var(--paper)' : 'var(--ink-muted)',
+                          borderRadius: 999,
+                          padding: '7px 11px',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {tab === 'Connected' ? 'In your knot' : tab} ({count})
+                      </button>
+                    )
+                  })}
                 </div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 1 }}>
-                  <span
+
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                  Showing {activeRows.length} result{activeRows.length === 1 ? '' : 's'}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    minWidth: 260,
+                    flex: '1 1 360px',
+                    padding: '7px 10px',
+                    borderRadius: 12,
+                    border: '0.5px solid var(--rule)',
+                    background: 'var(--paper-soft)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>Search</span>
+                  <input
+                    value={query}
+                    onChange={(event) => {
+                      setSelectedConnectionId(null)
+                      setQuery(event.target.value)
+                    }}
+                    placeholder="Name, city, university, company, status..."
                     style={{
-                      fontSize: 9.5,
-                      letterSpacing: '0.14em',
-                      textTransform: 'uppercase',
-                      fontWeight: 600,
-                      padding: '1px 6px',
-                      borderRadius: 6,
-                      background: askPopup.ask.status === 'open' ? 'var(--signal-soft)' : 'var(--paper-soft)',
-                      color: askPopup.ask.status === 'open' ? 'var(--signal)' : 'var(--verd)',
-                      border: `0.5px solid ${askPopup.ask.status === 'open' ? 'rgba(216,68,43,0.2)' : 'var(--rule)'}`,
+                      flex: 1,
+                      minWidth: 0,
+                      border: 'none',
+                      outline: 'none',
+                      background: 'transparent',
+                      color: 'var(--ink)',
+                      fontSize: 13,
+                      fontFamily: "'IBM Plex Sans', sans-serif",
+                    }}
+                  />
+                </div>
+
+                {STATUS_FILTERS.map((filter) => {
+                  const selected = statusFilter === filter.value
+
+                  return (
+                    <button
+                      key={filter.value}
+                      type="button"
+                      onClick={() => {
+                        setSelectedConnectionId(null)
+                        setStatusFilter(filter.value)
+                      }}
+                      style={{
+                        border: selected ? '0.5px solid var(--ink)' : '0.5px solid var(--rule)',
+                        background: selected ? 'var(--ink)' : 'var(--paper)',
+                        color: selected ? 'var(--paper)' : 'var(--ink-muted)',
+                        borderRadius: 999,
+                        padding: '7px 10px',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {filter.label}
+                    </button>
+                  )
+                })}
+
+                {(query || selectedConnectionId || statusFilter !== 'All') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedConnectionId(null)
+                      setQuery('')
+                      setStatusFilter('All')
+                    }}
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--ink-faint)',
+                      cursor: 'pointer',
+                      fontSize: 12,
                     }}
                   >
-                    {askPopup.ask.status === 'open' ? '● open' : '✓ resolved'}
-                  </span>
-                  <span style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
-                    {new Date(askPopup.ask.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAskPopup(null)}
-                style={{ width: 30, height: 30, borderRadius: '50%', border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', color: 'var(--ink-muted)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* Scrollable body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {/* Ask content */}
-              <div
-                style={{
-                  padding: '12px 14px',
-                  borderRadius: 12,
-                  background: 'var(--paper-soft)',
-                  border: '0.5px solid var(--rule-soft)',
-                  fontSize: 14,
-                  color: 'var(--ink)',
-                  lineHeight: 1.55,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  fontFamily: "'IBM Plex Sans', sans-serif",
-                }}
-              >
-                {askPopup.ask.content}
-              </div>
-
-              {/* Existing reactions display */}
-              {Object.keys(askPopup.ask.reactions).length > 0 && (
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                  {Object.entries(askPopup.ask.reactions)
-                    .sort((a, b) => b[1].count - a[1].count)
-                    .map(([emoji, { count, mine }]) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        disabled={askPopup.ask.status === 'resolved'}
-                        onClick={() => reactToAsk(askPopup.ask.id, emoji)}
-                        style={{
-                          padding: '3px 9px',
-                          borderRadius: 14,
-                          border: `0.5px solid ${mine ? 'var(--signal)' : 'var(--rule)'}`,
-                          background: mine ? 'var(--signal-soft)' : 'var(--paper)',
-                          cursor: askPopup.ask.status === 'resolved' ? 'default' : 'pointer',
-                          fontSize: 13,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          fontFamily: "'IBM Plex Sans'",
-                          transition: 'transform 0.1s',
-                        }}
-                        onMouseEnter={(e) => { if (askPopup.ask.status !== 'resolved') (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.06)' }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)' }}
-                      >
-                        {emoji} <span style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{count}</span>
-                      </button>
-                    ))}
-                </div>
-              )}
-
-              {/* React buttons row */}
-              {askPopup.ask.status === 'open' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginRight: 2, fontFamily: "'IBM Plex Sans'" }}>React:</span>
-                  <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderRadius: 999, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
-                    {ASK_EMOJIS.map((e) => (
-                      <button
-                        key={e}
-                        type="button"
-                        onClick={() => reactToAsk(askPopup.ask.id, e)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '2px 4px', transition: 'transform 0.1s' }}
-                        onMouseEnter={(ev) => { (ev.currentTarget as HTMLButtonElement).style.transform = 'scale(1.35)' }}
-                        onMouseLeave={(ev) => { (ev.currentTarget as HTMLButtonElement).style.transform = 'scale(1)' }}
-                        title={`React with ${e}`}
-                      >
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Replies section */}
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--ink-muted)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8, fontFamily: "'IBM Plex Sans'" }}>
-                  Replies · {askPopup.ask.reply_count}
-                </div>
-                {popupRepliesLoading ? (
-                  <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '12px 0', fontFamily: "'Fraunces', Georgia, serif" }}>
-                    Loading replies…
-                  </div>
-                ) : (asksReplies[askPopup.ask.id] ?? []).length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '12px 0', fontFamily: "'Fraunces', Georgia, serif" }}>
-                    No replies yet. Be the first.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(asksReplies[askPopup.ask.id] ?? []).map((r) => (
-                      <div
-                        key={r.id}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: 10,
-                          background: 'var(--paper-soft)',
-                          border: '0.5px solid var(--rule-soft)',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                          <KAvatar name={r.author?.full_name ?? '?'} src={r.author?.avatar_url ?? null} size={22} />
-                          <span style={{ fontWeight: 500, fontSize: 12, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'" }}>
-                            {r.author?.full_name ?? 'Someone'}
-                          </span>
-                          <span style={{ fontSize: 10, color: 'var(--ink-faint)', marginLeft: 'auto', fontFamily: "'IBM Plex Sans'" }}>
-                            {new Date(r.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: "'IBM Plex Sans'" }}>
-                          {r.body}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                    Reset
+                  </button>
                 )}
               </div>
             </div>
+          </KCard>
 
-            {/* Footer: reply input + owner controls */}
-            <div
-              style={{
-                padding: '12px 18px',
-                borderTop: '0.5px solid var(--rule-soft)',
-                flexShrink: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-              }}
-            >
-              {askPopup.ask.status === 'open' && (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                  <textarea
-                    value={replyDraft[askPopup.ask.id] ?? ''}
-                    onChange={(e) => setReplyDraft((prev) => ({ ...prev, [askPopup.ask.id]: e.target.value.slice(0, 800) }))}
-                    placeholder="Write a reply…"
-                    rows={2}
-                    style={{
-                      flex: 1,
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: '0.5px solid var(--rule)',
-                      background: 'var(--paper-soft)',
-                      fontSize: 13,
-                      fontFamily: "'IBM Plex Sans'",
-                      color: 'var(--ink)',
-                      outline: 'none',
-                      resize: 'none',
-                      lineHeight: 1.4,
-                      boxSizing: 'border-box',
-                    }}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void postReply(askPopup.ask.id) } }}
-                  />
-                  <KBtn
-                    variant="signal"
-                    size="sm"
-                    disabled={!(replyDraft[askPopup.ask.id] ?? '').trim()}
-                    onClick={() => postReply(askPopup.ask.id)}
-                  >
-                    Send
+          {loading ? (
+            <KCard style={{ padding: 38, textAlign: 'center', color: 'var(--ink-faint)', fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic' }}>
+              Loading Your Knot...
+            </KCard>
+          ) : activeRows.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 14, alignItems: 'stretch' }}>
+              {activeRows.map((connection) => (
+                <RelationshipCard key={`${activeTab}-${connection.id}`} connection={connection} tab={activeTab} />
+              ))}
+            </div>
+          ) : (
+            <KCard style={{ padding: 42, textAlign: 'center' }}>
+              <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 24, fontStyle: 'italic', color: 'var(--ink)', marginBottom: 8 }}>
+                {empty.title}
+              </div>
+              <div style={{ fontSize: 14, color: 'var(--ink-muted)', maxWidth: 460, margin: '0 auto', lineHeight: 1.55 }}>
+                {empty.body}
+              </div>
+
+              {!hasAnyRelationship && activeTab === 'Connected' && (
+                <div style={{ marginTop: 18 }}>
+                  <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>
+                    Start from Discover
                   </KBtn>
                 </div>
               )}
-              {/* Owner controls */}
-              {meId === askPopup.ask.user_id && askPopup.ask.status === 'open' && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <button
-                    type="button"
-                    onClick={async () => { await resolveAsk(askPopup.ask.id); setAskPopup(null) }}
-                    style={{ padding: '5px 14px', borderRadius: 8, border: '0.5px solid var(--verd)', background: 'transparent', cursor: 'pointer', fontSize: 12, color: 'var(--verd)', fontFamily: "'IBM Plex Sans'", fontWeight: 600 }}
+            </KCard>
+          )}
+        </section>
+
+        {maintenanceItems.length > 0 && (
+          <section style={{ marginTop: 18 }}>
+            <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 10 }}>
+              Network maintenance
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+              {maintenanceItems.map((item) => {
+                const user = item.connection.user
+                const name = clean(user?.full_name) || 'Unknown person'
+                return (
+                  <KCard
+                    key={`maintenance-${item.label}-${item.connection.id}`}
+                    style={{ padding: 13, display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}
+                    onClick={() => focusConnection(item.connection, 'Connected')}
                   >
-                    ✓ Mark resolved
-                  </button>
-                </div>
-              )}
+                    <KAvatar name={name} src={user?.avatar_url ?? null} size={34} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.label}: {name}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 2 }}>
+                        {item.body}
+                      </div>
+                    </div>
+                  </KCard>
+                )
+              })}
             </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── PulseLiveSection — live posts from connections + global feed ─────────
-type PulsePost = {
-  id: string
-  title: string | null
-  body: string
-  image_url: string | null
-  created_at: string
-  upvote_count: number
-  comment_count: number
-  author: { full_name: string; username: string; avatar_url: string | null } | null
-  channel: { slug: string; name: string } | null
-}
-
-function PulseLiveSection() {
-  const navigate = useNavigate()
-  const [items, setItems] = useState<PulsePost[]>([])
-
-  useEffect(() => {
-    let mounted = true
-    apiGet<{ posts: PulsePost[] }>('/api/posts?scope=all&sort=new&limit=4')
-      .then((data) => {
-        if (mounted) setItems((data.posts ?? []).slice(0, 4))
-      })
-      .catch(() => {
-        if (mounted) setItems([])
-      })
-    return () => {
-      mounted = false
-    }
-  }, [])
-
-  const palette = ['var(--verd)', 'var(--signal)', 'var(--plum)', 'var(--ochre)']
-
-  function timeShort(iso: string) {
-    const diff = Date.now() - new Date(iso).getTime()
-    const mins = Math.floor(diff / 60000)
-    if (mins < 60) return `${Math.max(1, mins)}m`
-    const hours = Math.floor(mins / 60)
-    if (hours < 24) return `${hours}h`
-    const days = Math.floor(hours / 24)
-    return `${days}d`
-  }
-
-  return (
-    <div>
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--ink-muted)',
-          letterSpacing: 0.5,
-          textTransform: 'uppercase',
-          marginBottom: 10,
-          display: 'flex',
-          justifyContent: 'space-between',
-          fontFamily: "'IBM Plex Sans', sans-serif",
-        }}
-      >
-        <span>Pulse · live</span>
-        {items.length > 0 && <span style={{ color: 'var(--signal)' }}>● {items.length}</span>}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {items.length === 0 ? (
-          <div
-            style={{
-              padding: 12,
-              borderRadius: 10,
-              background: 'var(--paper)',
-              border: '0.5px solid var(--rule-soft)',
-              fontSize: 11.5,
-              color: 'var(--ink-faint)',
-              fontStyle: 'italic',
-              textAlign: 'center',
-              fontFamily: "'Fraunces', Georgia, serif",
-            }}
-          >
-            The knot is quiet.
-          </div>
-        ) : (
-          items.map((it, i) => (
-            <div
-              key={it.id}
-              onClick={() => navigate('/home')}
-              style={{
-                padding: 10,
-                borderRadius: 12,
-                background: 'var(--paper)',
-                border: '0.5px solid var(--rule-soft)',
-                display: 'flex',
-                gap: 10,
-                fontFamily: "'IBM Plex Sans', sans-serif",
-                cursor: 'pointer',
-                transition: 'background 0.12s ease',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'var(--paper-soft)' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'var(--paper)' }}
-            >
-              {/* Color rail / image thumb */}
-              {it.image_url ? (
-                <img
-                  src={it.image_url}
-                  alt=""
-                  style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
-                />
-              ) : (
-                <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: palette[i % palette.length], flexShrink: 0 }} />
-              )}
-
-              <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.4 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                  <span style={{ fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {it.author?.full_name ?? 'Someone'}
-                  </span>
-                  {it.channel && (
-                    <span style={{ color: 'var(--signal)', fontSize: 10.5 }}>· #{it.channel.slug}</span>
-                  )}
-                  <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-faint)', flexShrink: 0 }}>
-                    {timeShort(it.created_at)}
-                  </span>
-                </div>
-                {it.title && (
-                  <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {it.title}
-                  </div>
-                )}
-                <div style={{ color: 'var(--ink-muted)', marginTop: 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>
-                  {it.body}
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 10.5, color: 'var(--ink-faint)' }}>
-                  <span>↑ {it.upvote_count}</span>
-                  <span>💬 {it.comment_count}</span>
-                </div>
-              </div>
-            </div>
-          ))
+          </section>
         )}
       </div>
     </div>
   )
 }
 
-// ─── UpcomingMeetingSection — real "Tomorrow · IRL" data ─────────────────────
-type UpcomingMeeting = {
-  id: string
-  scheduled_at: string
-  status: 'proposed' | 'confirmed' | 'declined' | 'cancelled' | 'completed'
-  location_text: string | null
-  am_initiator: boolean
-  peer: { id: string; full_name: string; username: string; avatar_url: string | null } | null
-  cafe: { id: string; name: string; slug: string; address: string | null } | null
+function TopCommandBar({
+  connectedCount,
+  incomingCount,
+  sentCount,
+  loading,
+  onDiscover,
+  onRefresh,
+}: {
+  connectedCount: number
+  incomingCount: number
+  sentCount: number
+  loading: boolean
+  onDiscover: () => void
+  onRefresh: () => void
+}) {
+  return (
+    <KCard
+      style={{
+        padding: '6px 8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        flexWrap: 'wrap',
+        background: 'rgba(244,239,230,0.66)',
+        backdropFilter: 'blur(10px)',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 3 }}>
+          Your Knot
+        </div>
+        <div
+          style={{
+            fontFamily: "'Fraunces', Georgia, serif",
+            fontSize: 'clamp(16px, 1.55vw, 21px)',
+            lineHeight: 1,
+            color: 'var(--ink)',
+            letterSpacing: -0.28,
+          }}
+        >
+          Maintain the relationships worth keeping.
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <MiniMetric label="In knot" value={connectedCount} tone="neutral" />
+        <MiniMetric label="Decide" value={incomingCount} tone="incoming" />
+        <MiniMetric label="Waiting" value={sentCount} tone="sent" />
+        <KBtn variant="signal" size="sm" onClick={onDiscover}>
+          Discover
+        </KBtn>
+        <KBtn variant="ghost" size="sm" onClick={onRefresh} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </KBtn>
+      </div>
+    </KCard>
+  )
 }
 
-function UpcomingMeetingSection() {
-  const [meetings, setMeetings] = useState<UpcomingMeeting[]>([])
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
-
-  function load() {
-    apiGet<{ meetings: UpcomingMeeting[] }>('/api/meetings/upcoming')
-      .then((d) => setMeetings(d.meetings ?? []))
-      .catch(() => setMeetings([]))
-      .finally(() => setLoading(false))
-  }
-
-  useEffect(() => { load() }, [])
-
-  async function respond(id: string, status: 'confirmed' | 'declined' | 'cancelled') {
-    setBusy(true)
-    try {
-      await apiPatch(`/api/meetings/${id}`, { status })
-      load()
-    } catch {
-      // ignore
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const next = meetings[0] ?? null
-  const headerLabel = next ? meetingDayLabel(next.scheduled_at) : 'Next · IRL'
+function MiniMetric({ label, value, tone }: { label: string; value: number; tone: 'neutral' | 'incoming' | 'sent' }) {
+  const color = tone === 'incoming' ? 'var(--verd)' : tone === 'sent' ? 'var(--signal)' : 'var(--ink)'
 
   return (
-    <div>
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--ink-muted)',
-          letterSpacing: 0.5,
-          textTransform: 'uppercase',
-          marginBottom: 10,
-          fontFamily: "'IBM Plex Sans', sans-serif",
-        }}
-      >
-        {headerLabel}
-      </div>
-      {loading ? (
-        <div
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            background: 'var(--paper)',
-            border: '0.5px solid var(--rule-soft)',
-            fontSize: 12,
-            color: 'var(--ink-faint)',
-            fontStyle: 'italic',
-            fontFamily: "'Fraunces', Georgia, serif",
-            textAlign: 'center',
-          }}
-        >
-          Loading…
-        </div>
-      ) : !next ? (
-        <div
-          style={{
-            padding: 14,
-            borderRadius: 12,
-            background: 'var(--paper)',
-            border: '0.5px dashed var(--rule)',
-            fontSize: 12.5,
-            color: 'var(--ink-muted)',
-            lineHeight: 1.5,
-            textAlign: 'center',
-          }}
-        >
-          <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 14, color: 'var(--ink)' }}>
-            Nothing planned.
-          </span>
-          <br />
-          Plan a coffee with someone in your knot — the card lights up here.
-        </div>
-      ) : (
-        <div
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            background: next.status === 'confirmed' ? 'var(--signal)' : 'var(--ink)',
-            color: '#fff',
-            fontFamily: "'IBM Plex Sans', sans-serif",
-          }}
-        >
-          <div style={{ fontSize: 10, opacity: 0.8, letterSpacing: 1, textTransform: 'uppercase' }}>
-            {meetingTimeLabel(next.scheduled_at)}
-            {next.status === 'proposed' && <span style={{ marginLeft: 6 }}>· proposed</span>}
-          </div>
-          <div
-            style={{
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontSize: 17,
-              fontWeight: 400,
-              marginTop: 4,
-              lineHeight: 1.2,
-            }}
-          >
-            Coffee with {next.peer?.full_name ?? 'a friend'}
-            {next.cafe && (
-              <>
-                <br />
-                <span style={{ fontStyle: 'italic', opacity: 0.85 }}>at {next.cafe.name}.</span>
-              </>
-            )}
-            {!next.cafe && next.location_text && (
-              <>
-                <br />
-                <span style={{ fontStyle: 'italic', opacity: 0.85 }}>at {next.location_text}.</span>
-              </>
-            )}
-          </div>
-          {/* Action row — invitee can confirm/decline; initiator can cancel */}
-          {next.status === 'proposed' && !next.am_initiator && (
-            <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => respond(next.id, 'confirmed')}
-                style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.18)', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}
-              >
-                Confirm
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => respond(next.id, 'declined')}
-                style={{ padding: '6px 10px', borderRadius: 8, border: '0.5px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}
-              >
-                Decline
-              </button>
-            </div>
-          )}
-          {next.status === 'proposed' && next.am_initiator && (
-            <div style={{ marginTop: 8, fontSize: 11, opacity: 0.75 }}>
-              Awaiting {next.peer?.full_name ?? 'response'}…
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => respond(next.id, 'cancelled')}
-                style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 6, border: '0.5px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+    <div
+      style={{
+        minWidth: 62,
+        padding: '6px 9px',
+        borderRadius: 999,
+        border: '0.5px solid var(--rule)',
+        background: 'var(--paper)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7,
+      }}
+    >
+      <span style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+        {label}
+      </span>
+      <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 17, lineHeight: 1, color }}>
+        {value}
+      </span>
     </div>
   )
 }
 
-function meetingDayLabel(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const diffDays = Math.round((target - today) / 86400000)
-  if (diffDays === 0) return 'Today · IRL'
-  if (diffDays === 1) return 'Tomorrow · IRL'
-  if (diffDays < 7) return `In ${diffDays} days · IRL`
-  return 'Upcoming · IRL'
+function KnotStage({
+  meId,
+  meName,
+  meAvatar,
+  connected,
+  incoming,
+  sent,
+  peerEdges,
+  selectedConnection,
+  selectedTab,
+  query,
+  onQueryChange,
+  accepting,
+  removing,
+  onSelect,
+  onClear,
+  onAccept,
+  onRemove,
+  onViewProfile,
+  onMessage,
+  onInviteCoffee,
+}: {
+  meId: string | null
+  meName: string
+  meAvatar: string | null
+  connected: Connection[]
+  incoming: Connection[]
+  sent: Connection[]
+  peerEdges: PeerEdge[]
+  selectedConnection: Connection | null
+  selectedTab: RelationshipTab
+  query: string
+  onQueryChange: (value: string) => void
+  accepting: Record<string, boolean>
+  removing: Record<string, boolean>
+  onSelect: (connection: Connection, tab: RelationshipTab) => void
+  onClear: () => void
+  onAccept: (connection: Connection) => void
+  onRemove: (connection: Connection) => void
+  onViewProfile: (userId: string) => void
+  onMessage: (userId: string) => void
+  onInviteCoffee: (userId: string) => void
+}) {
+  const normalizedGraphQuery = query.trim().toLowerCase()
+  const hasGraphQuery = normalizedGraphQuery.length > 0
+
+  const nodes = useMemo(() => {
+    const ordered: Array<{ connection: Connection; tab: RelationshipTab }> = [
+      ...incoming.map((connection) => ({ connection, tab: 'Incoming' as const })),
+      ...connected.map((connection) => ({ connection, tab: 'Connected' as const })),
+      ...sent.map((connection) => ({ connection, tab: 'Sent' as const })),
+    ].slice(0, 20)
+
+    if (ordered.length === 0) return []
+
+    const count = ordered.length
+
+    return ordered.map(({ connection, tab }, index) => {
+      const angle = ((index / count) * Math.PI * 2) - Math.PI / 2
+      const wave = Math.sin(index * 1.73) * 18
+      const radius = tab === 'Connected' ? 215 + wave : 285 + wave
+      const x = 500 + Math.cos(angle) * radius
+      const y = 295 + Math.sin(angle) * radius * 0.55
+      const user = connection.user
+      const name = clean(user?.full_name) || 'Unknown person'
+      const userId = otherUserId(connection, meId)
+
+      return {
+        connection,
+        tab,
+        userId,
+        x,
+        y,
+        name,
+        initial: name.charAt(0).toUpperCase(),
+        avatarUrl: user?.avatar_url ?? null,
+        context: userContext(user),
+        matchesQuery: !normalizedGraphQuery || searchableText(connection).includes(normalizedGraphQuery),
+      }
+    })
+  }, [connected, incoming, meId, normalizedGraphQuery, sent])
+
+  const selectedNode = selectedConnection
+    ? nodes.find((node) => node.connection.id === selectedConnection.id) ?? null
+    : null
+
+  const nodesByUserId = useMemo(() => new Map(nodes.map((node) => [node.userId, node])), [nodes])
+
+  const visiblePeerEdges = useMemo(() => {
+    return peerEdges
+      .map((edge) => {
+        const source = nodesByUserId.get(edge.source_id)
+        const target = nodesByUserId.get(edge.target_id)
+        if (!source || !target) return null
+        return { ...edge, source, target }
+      })
+      .filter(Boolean) as Array<PeerEdge & { source: (typeof nodes)[number]; target: (typeof nodes)[number] }>
+  }, [nodesByUserId, peerEdges])
+
+  const selectedPeerNames = useMemo(() => {
+    if (!selectedNode) return []
+    return visiblePeerEdges
+      .filter((edge) => edge.source.userId === selectedNode.userId || edge.target.userId === selectedNode.userId)
+      .map((edge) => (edge.source.userId === selectedNode.userId ? edge.target.name : edge.source.name))
+      .slice(0, 4)
+  }, [selectedNode, visiblePeerEdges])
+
+  const selectedPeerUserIds = useMemo(() => {
+    if (!selectedNode) return new Set<string>()
+
+    return new Set(
+      visiblePeerEdges
+        .filter((edge) => edge.source.userId === selectedNode.userId || edge.target.userId === selectedNode.userId)
+        .map((edge) => (edge.source.userId === selectedNode.userId ? edge.target.userId : edge.source.userId))
+    )
+  }, [selectedNode, visiblePeerEdges])
+
+  const hasRelationships = nodes.length > 0
+
+  return (
+    <KCard
+      style={{
+        marginTop: 5,
+        padding: 0,
+        overflow: 'hidden',
+        minHeight: 'calc(100vh - 78px)',
+        border: 'none',
+        background: 'transparent',
+        boxShadow: 'none',
+        borderRadius: 0,
+      }}
+    >
+      <div
+        style={{
+          position: 'relative',
+          minHeight: 'calc(100vh - 78px)',
+        }}
+        className="your-knot-stage"
+      >
+        <div
+          style={{
+            position: 'relative',
+            overflow: 'hidden',
+            minHeight: 'calc(100vh - 78px)',
+            borderRadius: 0,
+            background:
+              'linear-gradient(180deg, rgba(244,239,230,0.88), rgba(244,239,230,0.58)), radial-gradient(rgba(84,72,58,0.10) 1px, transparent 1px)',
+            backgroundSize: '100% 100%, 18px 18px',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: 12,
+              zIndex: 8,
+              width: 'min(390px, calc(100% - 380px))',
+              padding: '7px 10px',
+              borderRadius: 14,
+              border: '0.5px solid var(--rule)',
+              background: 'rgba(244,239,230,0.84)',
+              backdropFilter: 'blur(12px)',
+              boxShadow: '0 12px 36px rgba(26,24,21,0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+            }}
+          >
+            <span style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', whiteSpace: 'nowrap' }}>
+              Find
+            </span>
+            <input
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="Search your knot..."
+              style={{
+                flex: 1,
+                minWidth: 0,
+                border: 'none',
+                outline: 'none',
+                background: 'transparent',
+                color: 'var(--ink)',
+                fontSize: 13,
+                fontFamily: "'IBM Plex Sans', sans-serif",
+              }}
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => onQueryChange('')}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--ink-faint)',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {!hasRelationships ? (
+            <div
+              style={{
+                height: 'calc(100vh - 78px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center',
+                padding: 24,
+                color: 'var(--ink-muted)',
+                lineHeight: 1.5,
+              }}
+            >
+              Start from Discover. Once relationships exist, the knot becomes visible here.
+            </div>
+          ) : (
+            <>
+              <svg
+                viewBox="0 0 1000 590"
+                preserveAspectRatio="xMidYMid meet"
+                aria-hidden="true"
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+              >
+                <defs>
+                  <radialGradient id="knotCenterGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="rgba(84,72,58,0.10)" />
+                    <stop offset="58%" stopColor="rgba(84,72,58,0.04)" />
+                    <stop offset="100%" stopColor="rgba(84,72,58,0)" />
+                  </radialGradient>
+                </defs>
+
+                <circle cx="500" cy="295" r="260" fill="url(#knotCenterGlow)" />
+
+                {/* Only real peerEdges draw person-to-person ties. No decorative node rings. */}
+
+                {nodes.map((node, index) => {
+                  const selected = selectedConnection?.id === node.connection.id
+                  const related = selectedPeerUserIds.has(node.userId)
+                  const muted = Boolean(selectedConnection) && !selected && !related
+                  const searchHit = hasGraphQuery && node.matchesQuery
+                  const searchMuted = hasGraphQuery && !node.matchesQuery
+
+                  const stroke = selected
+                    ? 'rgba(26,24,21,0.28)'
+                    : searchHit
+                      ? 'rgba(26,24,21,0.34)'
+                      : related
+                        ? 'rgba(84,72,58,0.14)'
+                        : muted || searchMuted
+                          ? 'rgba(84,72,58,0.035)'
+                          : node.tab === 'Incoming'
+                          ? 'rgba(31,107,94,0.34)'
+                          : node.tab === 'Sent'
+                            ? 'rgba(216,68,43,0.28)'
+                            : 'rgba(84,72,58,0.20)'
+
+                  const c1x = 500 + (node.x - 500) * 0.34 + Math.sin(index * 2.1) * 38
+                  const c1y = 295 + (node.y - 295) * 0.28 - Math.cos(index * 1.4) * 28
+                  const c2x = 500 + (node.x - 500) * 0.72 - Math.cos(index * 1.9) * 32
+                  const c2y = 295 + (node.y - 295) * 0.74 + Math.sin(index * 1.2) * 24
+
+                  return (
+                    <path
+                      key={`strand-${node.connection.id}`}
+                      d={`M 500 295 C ${c1x} ${c1y}, ${c2x} ${c2y}, ${node.x} ${node.y}`}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={selected ? 1.2 : searchHit ? 1.25 : related ? 0.85 : muted || searchMuted ? 0.28 : node.tab === 'Connected' ? 0.85 : 1.1}
+                      strokeDasharray={node.tab === 'Connected' ? 'none' : '8 8'}
+                      strokeLinecap="round"
+                    />
+                  )
+                })}
+
+                {visiblePeerEdges.map((edge, index) => {
+                  const selected =
+                    selectedConnection?.id === edge.source.connection.id ||
+                    selectedConnection?.id === edge.target.connection.id
+
+                  if (selectedConnection && !selected) return null
+                  if (hasGraphQuery && !edge.source.matchesQuery && !edge.target.matchesQuery) return null
+
+                  const midX = (edge.source.x + edge.target.x) / 2
+                  const midY = (edge.source.y + edge.target.y) / 2
+                  const awayX = midX + (midX - 500) * 0.34 + Math.sin(index * 1.7) * 12
+                  const awayY = midY + (midY - 295) * 0.52 - Math.cos(index * 1.3) * 10
+                  const softX = midX + (midX - 500) * 0.18 + Math.sin(index * 1.7) * 10
+                  const softY = midY + (midY - 295) * 0.32 - Math.cos(index * 1.3) * 8
+                  const curveX = selected ? awayX : softX
+                  const curveY = selected ? awayY : softY
+                  const pathD = `M ${edge.source.x} ${edge.source.y} Q ${curveX} ${curveY} ${edge.target.x} ${edge.target.y}`
+
+                  return (
+                    <path
+                      key={`peer-${edge.source_id}-${edge.target_id}`}
+                      d={pathD}
+                      fill="none"
+                      stroke={selected ? 'rgba(26,24,21,0.38)' : hasGraphQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
+                      strokeWidth={selected ? 1.45 : 0.85}
+                      strokeDasharray={selected ? 'none' : '6 10'}
+                      strokeLinecap="round"
+                    />
+                  )
+                })}
+
+                <circle cx="500" cy="295" r="108" fill="rgba(244,239,230,0.22)" />
+                <circle cx="500" cy="295" r="82" fill="rgba(255,252,246,0.22)" />
+                <circle cx="500" cy="295" r="82" fill="none" stroke="rgba(84,72,58,0.10)" strokeWidth="1.2" />
+                <circle cx="500" cy="295" r="56" fill="rgba(255,252,246,0.30)" />
+              </svg>
+
+              <button
+                type="button"
+                onClick={onClear}
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: 112,
+                  height: 112,
+                  borderRadius: 999,
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--ink)',
+                  cursor: 'pointer',
+                  boxShadow: 'none',
+                  zIndex: 3,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 0,
+                }}
+                title={`Clear focus for ${meName}`}
+              >
+                <KAvatar
+                  name={meName}
+                  src={meAvatar}
+                  size={meAvatar ? 86 : 82}
+                  style={{
+                    border: meAvatar ? '3px solid rgba(255,252,246,0.96)' : '1px solid rgba(84,72,58,0.16)',
+                    background: meAvatar
+                      ? 'var(--paper)'
+                      : 'linear-gradient(135deg, rgba(238,242,255,0.96), rgba(255,252,246,0.98))',
+                    color: 'var(--indigo, #4455c7)',
+                    boxShadow: meAvatar
+                      ? '0 18px 48px rgba(26,24,21,0.18), 0 0 0 9px rgba(255,252,246,0.42)'
+                      : '0 16px 42px rgba(26,24,21,0.10), 0 0 0 9px rgba(255,252,246,0.42)',
+                  }}
+                />
+              </button>
+
+              {nodes.map((node) => {
+                const selected = selectedConnection?.id === node.connection.id
+                const related = selectedPeerUserIds.has(node.userId)
+                const muted = Boolean(selectedConnection) && !selected && !related
+                const searchHit = hasGraphQuery && node.matchesQuery
+                const searchMuted = hasGraphQuery && !node.matchesQuery
+                const statusColor = selected
+                  ? 'var(--ink)'
+                  : related
+                    ? 'rgba(26,24,21,0.68)'
+                    : node.tab === 'Incoming'
+                      ? 'var(--verd)'
+                      : node.tab === 'Sent'
+                        ? 'var(--signal)'
+                        : 'var(--ink-muted)'
+                const border = selected
+                  ? 'rgba(26,24,21,0.58)'
+                  : searchHit
+                    ? 'rgba(26,24,21,0.62)'
+                    : related
+                      ? 'rgba(84,72,58,0.46)'
+                    : node.tab === 'Incoming'
+                      ? 'rgba(31,107,94,0.30)'
+                      : node.tab === 'Sent'
+                        ? 'rgba(216,68,43,0.30)'
+                        : 'var(--rule)'
+
+                return (
+                  <button
+                    key={node.connection.id}
+                    type="button"
+                    onClick={() => onSelect(node.connection, node.tab)}
+                    style={{
+                      position: 'absolute',
+                      left: `${node.x / 10}%`,
+                      top: `${node.y / 5.9}%`,
+                      transform: 'translate(-50%, -50%)',
+                      width: selected ? 196 : searchHit ? 190 : related ? 180 : 166,
+                      minHeight: 54,
+                      padding: '8px 10px',
+                      borderRadius: 16,
+                      border: `0.5px solid ${border}`,
+                      borderLeft: selected ? '4px solid var(--ink)' : searchHit ? '4px solid var(--ink)' : related ? '3px solid rgba(84,72,58,0.34)' : `0.5px solid ${border}`,
+                      background: selected ? 'linear-gradient(180deg, rgba(255,252,246,0.98), rgba(244,239,230,0.94))' : searchHit ? 'rgba(255,252,246,0.98)' : related ? 'rgba(244,239,230,0.96)' : 'rgba(244,239,230,0.72)',
+                      color: 'var(--ink)',
+                      cursor: 'pointer',
+                      boxShadow: selected ? '0 22px 58px rgba(26,24,21,0.16)' : searchHit ? '0 18px 44px rgba(26,24,21,0.13)' : related ? '0 14px 34px rgba(26,24,21,0.08)' : '0 4px 14px rgba(26,24,21,0.02)',
+                      display: 'grid',
+                      gridTemplateColumns: '30px minmax(0, 1fr)',
+                      gap: 8,
+                      alignItems: 'center',
+                      textAlign: 'left',
+                      zIndex: selected ? 5 : searchHit ? 4 : related ? 3 : 2,
+                      opacity: muted || searchMuted ? 0.12 : 1,
+                    }}
+                    title={`${node.name} - ${relationLabel(node.tab)}`}
+                  >
+                    <KAvatar
+                      name={node.name}
+                      src={node.avatarUrl}
+                      size={30}
+                      style={{
+                        borderRadius: 10,
+                        border: selected ? '0.5px solid rgba(26,24,21,0.24)' : related ? '0.5px solid rgba(84,72,58,0.30)' : '0.5px solid var(--rule)',
+                        background: selected ? 'var(--paper-soft)' : related ? 'var(--paper)' : 'var(--paper-soft)',
+                        boxShadow: node.avatarUrl ? '0 4px 12px rgba(26,24,21,0.08)' : undefined,
+                      }}
+                    />
+
+                    <span style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {node.name}
+                      </span>
+                      <span
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          marginTop: 3,
+                          fontSize: 10.8,
+                          color: selected ? 'var(--ink-muted)' : related ? 'rgba(84,72,58,0.78)' : 'var(--ink-muted)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: statusColor,
+                            display: 'inline-block',
+                            flex: '0 0 auto',
+                          }}
+                        />
+                        {selected ? node.context : searchHit ? 'Search match' : related ? `Also knows ${firstName(selectedNode?.name)}` : node.tab === 'Connected' ? node.context : relationLabel(node.tab)}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 14,
+                  bottom: 14,
+                  zIndex: 5,
+                  padding: '8px 11px',
+                  borderRadius: 999,
+                  background: 'rgba(244,239,230,0.86)',
+                  border: '0.5px solid var(--rule)',
+                  color: 'var(--ink-muted)',
+                  fontSize: 12,
+                  backdropFilter: 'blur(10px)',
+                }}
+              >
+                {connected.length} connected · {visiblePeerEdges.length} inner ties · {incoming.length} decisions · {sent.length} waiting
+              </div>
+
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  top: 12,
+                  zIndex: 6,
+                  padding: '6px 8px',
+                  borderRadius: 999,
+                  border: '0.5px solid var(--rule)',
+                  background: 'rgba(244,239,230,0.84)',
+                  backdropFilter: 'blur(12px)',
+                  boxShadow: '0 12px 36px rgba(26,24,21,0.06)',
+                }}
+              >
+                <WebLegendRow />
+              </div>
+
+              {selectedConnection && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: 18,
+                    top: 78,
+                    zIndex: 7,
+                    width: 336,
+                    maxHeight: 'calc(100% - 100px)',
+                    overflowY: 'auto',
+                    borderRadius: 22,
+                    boxShadow: '0 28px 80px rgba(26,24,21,0.16)',
+                  }}
+                >
+                  <SelectedRelationshipPanel
+                    connection={selectedConnection}
+                    tab={selectedTab}
+                    mutualNames={selectedPeerNames}
+                    accepting={Boolean(accepting[selectedConnection.id])}
+                    removing={Boolean(removing[selectedConnection.id])}
+                    onClear={onClear}
+                    onAccept={() => onAccept(selectedConnection)}
+                    onRemove={() => onRemove(selectedConnection)}
+                    onMessage={() => onMessage(otherUserId(selectedConnection, meId))}
+                    onInviteCoffee={() => onInviteCoffee(otherUserId(selectedConnection, meId))}
+                    onViewProfile={() => onViewProfile(otherUserId(selectedConnection, meId))}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+      </div>
+    </KCard>
+  )
 }
 
-function meetingTimeLabel(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+function WebLegendRow() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
+      <WebLegend label="Knot" color="var(--ink)" />
+      <WebLegend label="Tie" color="rgba(84,72,58,0.45)" />
+      <WebLegend label="Decide" color="var(--verd)" />
+      <WebLegend label="Waiting" color="var(--signal)" />
+    </div>
+  )
 }
 
+function WebLegend({ label, color }: { label: string; color: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.8, color: 'var(--ink-muted)' }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+      {label}
+    </div>
+  )
+}
+
+function SelectedRelationshipPanel({
+  connection,
+  tab,
+  mutualNames,
+  accepting,
+  removing,
+  onClear,
+  onAccept,
+  onRemove,
+  onMessage,
+  onInviteCoffee,
+  onViewProfile,
+}: {
+  connection: Connection
+  tab: RelationshipTab
+  mutualNames: string[]
+  accepting: boolean
+  removing: boolean
+  onClear: () => void
+  onAccept: () => void
+  onRemove: () => void
+  onMessage: () => void
+  onInviteCoffee: () => void
+  onViewProfile: () => void
+}) {
+  const user = connection.user
+  const name = clean(user?.full_name) || 'Unknown person'
+  const username = clean(user?.username) || 'user'
+  const tone = relationTone(tab)
+
+  const destructiveLabel = tab === 'Connected' ? 'Remove from knot' : tab === 'Sent' ? 'Cancel request' : 'Decline'
+
+  return (
+    <div
+      style={{
+        padding: 16,
+        borderRadius: 20,
+        background: 'var(--paper)',
+        border: '0.5px solid var(--rule)',
+        boxShadow: '0 18px 50px rgba(26,24,21,0.08)',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+        <KAvatar name={name} src={user?.avatar_url ?? null} size={54} />
+        <button
+          type="button"
+          onClick={onClear}
+          style={{
+            border: '0.5px solid var(--rule)',
+            background: 'var(--paper-soft)',
+            color: 'var(--ink-faint)',
+            borderRadius: 999,
+            width: 28,
+            height: 28,
+            cursor: 'pointer',
+            lineHeight: 1,
+          }}
+          aria-label="Clear selected relationship"
+        >
+          ×
+        </button>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 23, color: 'var(--ink)', letterSpacing: -0.35, lineHeight: 1.05 }}>
+          {name}
+        </div>
+        <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--ink-muted)' }}>
+          @{username}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'inline-flex',
+          marginTop: 12,
+          padding: '5px 9px',
+          borderRadius: 999,
+          background: tone.background,
+          color: tone.color,
+          border: `0.5px solid ${tone.border}`,
+          fontSize: 11,
+          fontWeight: 700,
+        }}
+      >
+        {relationLabel(tab)}
+      </div>
+
+      <div style={{ marginTop: 14, fontSize: 13.5, lineHeight: 1.5, color: 'var(--ink)' }}>
+        {relationshipReason(connection, tab)}
+      </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          padding: 12,
+          borderRadius: 14,
+          border: '0.5px solid var(--rule)',
+          background: 'var(--paper-soft)',
+        }}
+      >
+        <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6 }}>
+          Next best action
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>
+          {nextAction(connection, tab)}
+        </div>
+      </div>
+
+      {mutualNames.length > 0 && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 11,
+            borderRadius: 14,
+            border: '0.5px solid var(--rule)',
+            background: 'rgba(244,239,230,0.62)',
+          }}
+        >
+          <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 5 }}>
+            Inner ties
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>
+            Also connected to {mutualNames.join(', ')}.
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 14 }}>
+        <MetaPill label={statusLabel(user?.status)} />
+        {clean(user?.location_city) && <MetaPill label={clean(user?.location_city)} />}
+        {clean(user?.university) && <MetaPill label={clean(user?.university)} />}
+        {clean(user?.current_company) && <MetaPill label={clean(user?.current_company)} />}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
+        {tab === 'Connected' && (
+          <>
+            <KBtn variant="ink" size="sm" onClick={onMessage}>
+              Message
+            </KBtn>
+            <KBtn variant="signal" size="sm" onClick={onInviteCoffee}>
+              Invite coffee
+            </KBtn>
+          </>
+        )}
+
+        {tab === 'Incoming' && (
+          <KBtn variant="verd" size="sm" disabled={accepting} onClick={onAccept}>
+            {accepting ? 'Accepting...' : 'Accept'}
+          </KBtn>
+        )}
+
+        <KBtn variant="ghost" size="sm" onClick={onViewProfile}>
+          View profile
+        </KBtn>
+      </div>
+
+      <button
+        type="button"
+        disabled={removing}
+        onClick={onRemove}
+        style={{
+          marginTop: 12,
+          border: 'none',
+          background: 'transparent',
+          color: 'var(--signal)',
+          fontSize: 12,
+          cursor: removing ? 'not-allowed' : 'pointer',
+          opacity: removing ? 0.55 : 0.82,
+          padding: 0,
+        }}
+      >
+        {removing ? 'Updating...' : destructiveLabel}
+      </button>
+    </div>
+  )
+}
+
+function MetaPill({ label }: { label: string }) {
+  return (
+    <span
+      style={{
+        padding: '4px 8px',
+        borderRadius: 999,
+        border: '0.5px solid var(--rule)',
+        background: 'var(--paper-soft)',
+        color: 'var(--ink-muted)',
+        fontSize: 11,
+        lineHeight: 1,
+        maxWidth: 190,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </span>
+  )
+}
