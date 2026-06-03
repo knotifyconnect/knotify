@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiDelete, apiGet, apiPatch } from '../lib/api'
+import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { KnotForceGraph, type KnotGraphNode, type KnotGraphPeerEdge } from '../components/knot/KnotForceGraph'
 
@@ -72,6 +72,12 @@ type ExpandedKnotResponse = {
   secondDegreeNodes: ExpandedKnotNode[]
   secondDegreeEdges: PeerEdge[]
   peerEdges: PeerEdge[]
+}
+
+type ConnectionMutationResponse = {
+  connection: Connection
+  autoAccepted?: boolean
+  alreadyConnected?: boolean
 }
 
 type RelationshipTab = 'Connected' | 'Incoming' | 'Sent'
@@ -244,6 +250,9 @@ export function MapPage() {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
+  const [selectedSecondDegreeUserId, setSelectedSecondDegreeUserId] = useState<string | null>(null)
+  const [requestingUserId, setRequestingUserId] = useState<string | null>(null)
+  const [requestFeedback, setRequestFeedback] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [accepting, setAccepting] = useState<Record<string, boolean>>({})
@@ -269,6 +278,8 @@ export function MapPage() {
       setExpandedSecondDegreeEdges([])
       setExpandedPeerEdges([])
       setExpandError(null)
+      setSelectedSecondDegreeUserId(null)
+      setRequestFeedback(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load Your Knot')
       setConnections([])
@@ -302,6 +313,18 @@ export function MapPage() {
   const selectedConnection = useMemo(() => {
     return connections.find((connection) => connection.id === selectedConnectionId) ?? null
   }, [connections, selectedConnectionId])
+
+  const selectedSecondDegreeUser = useMemo(() => {
+    if (!selectedSecondDegreeUserId) return null
+    return expandedSecondDegreeNodes.find((user) => user.id === selectedSecondDegreeUserId) ?? null
+  }, [expandedSecondDegreeNodes, selectedSecondDegreeUserId])
+
+  const expandedRootConnection = useMemo(() => {
+    if (!expandedRootUserId) return null
+    return connected.find((connection) => otherUserId(connection, meId) === expandedRootUserId) ?? null
+  }, [connected, expandedRootUserId, meId])
+
+  const expandedRootName = clean(expandedRootConnection?.user?.full_name) || 'this knot'
 
   const selectedTab: RelationshipTab = selectedConnection
     ? selectedConnection.status === 'accepted'
@@ -416,6 +439,14 @@ export function MapPage() {
     setExpandedSecondDegreeEdges([])
     setExpandedPeerEdges([])
     setExpandError(null)
+    setSelectedSecondDegreeUserId(null)
+    setRequestFeedback(null)
+  }
+
+  function resetGraphState() {
+    clearExpandedKnot()
+    setSelectedConnectionId(null)
+    setQuery('')
   }
 
   async function toggleExpandKnot(connection: Connection) {
@@ -451,11 +482,22 @@ export function MapPage() {
   function focusConnection(connection: Connection, tab: RelationshipTab) {
     setQuery('')
     setActiveTab(tab)
+    setSelectedSecondDegreeUserId(null)
+    setRequestFeedback(null)
     setSelectedConnectionId(connection.id)
   }
 
   function clearFocus() {
     setSelectedConnectionId(null)
+    setSelectedSecondDegreeUserId(null)
+    setRequestFeedback(null)
+  }
+
+  function selectSecondDegreeUser(userId: string) {
+    setQuery('')
+    setSelectedConnectionId(null)
+    setSelectedSecondDegreeUserId(userId)
+    setRequestFeedback(null)
   }
 
   function messageUser(userId: string) {
@@ -464,6 +506,32 @@ export function MapPage() {
 
   function inviteCoffee(userId: string) {
     navigate(`/messages?to=${userId}&action=coffee`)
+  }
+
+  async function requestSecondDegreeConnection(user: ExpandedKnotNode) {
+    if (!user.id || requestingUserId) return
+
+    setRequestingUserId(user.id)
+    setRequestFeedback(null)
+    setError(null)
+
+    try {
+      const result = await apiPost<ConnectionMutationResponse>('/api/connections', { addresseeId: user.id })
+      const message = result.autoAccepted
+        ? 'Request accepted automatically.'
+        : result.alreadyConnected
+          ? 'Already in your knot.'
+          : 'Request sent.'
+
+      setRequestFeedback(message)
+      await loadRelationships()
+      setActiveTab(result.autoAccepted || result.alreadyConnected ? 'Connected' : 'Sent')
+      setSelectedSecondDegreeUserId(null)
+    } catch (err) {
+      setRequestFeedback(err instanceof Error ? err.message : 'Failed to send request')
+    } finally {
+      setRequestingUserId(null)
+    }
   }
 
   function RelationshipCard({ connection, tab }: { connection: Connection; tab: RelationshipTab }) {
@@ -650,6 +718,13 @@ export function MapPage() {
           onViewProfile={(userId) => navigate(`/profile/${userId}`)}
           onMessage={messageUser}
           onInviteCoffee={inviteCoffee}
+          selectedSecondDegreeUser={selectedSecondDegreeUser}
+          expandedRootName={expandedRootName}
+          onSelectSecondDegreeUser={selectSecondDegreeUser}
+          onRequestSecondDegree={requestSecondDegreeConnection}
+          requestingUserId={requestingUserId}
+          requestFeedback={requestFeedback}
+          onResetGraphState={resetGraphState}
         />
 
         <section style={{ marginTop: 18 }}>
@@ -955,6 +1030,13 @@ function KnotStage({
   onViewProfile,
   onMessage,
   onInviteCoffee,
+  selectedSecondDegreeUser,
+  expandedRootName,
+  onSelectSecondDegreeUser,
+  onRequestSecondDegree,
+  requestingUserId,
+  requestFeedback,
+  onResetGraphState,
 }: {
   meId: string | null
   meName: string
@@ -983,6 +1065,13 @@ function KnotStage({
   onViewProfile: (userId: string) => void
   onMessage: (userId: string) => void
   onInviteCoffee: (userId: string) => void
+  selectedSecondDegreeUser: ExpandedKnotNode | null
+  expandedRootName: string
+  onSelectSecondDegreeUser: (userId: string) => void
+  onRequestSecondDegree: (user: ExpandedKnotNode) => void
+  requestingUserId: string | null
+  requestFeedback: string | null
+  onResetGraphState: () => void
 }) {
   const normalizedGraphQuery = query.trim().toLowerCase()
   const hasGraphQuery = normalizedGraphQuery.length > 0
@@ -1200,12 +1289,13 @@ function KnotStage({
                 selectedNodeId={selectedNode?.id ?? null}
                 query={query}
                 onClearQuery={() => onQueryChange('')}
+                onResetGraph={onResetGraphState}
                 onSelectNode={(node: KnotGraphNode) => {
                   const match = nodes.find((item) => item.id === node.id)
                   if (!match) return
 
                   if (match.degree === 'second') {
-                    onViewProfile(match.userId)
+                    onSelectSecondDegreeUser(match.userId)
                     return
                   }
 
@@ -1249,7 +1339,7 @@ function KnotStage({
                 <WebLegendRow />
               </div>
 
-              {selectedConnection && (
+              {(selectedConnection || selectedSecondDegreeUser) && (
                 <div
                   style={{
                     position: 'absolute',
@@ -1263,24 +1353,36 @@ function KnotStage({
                     boxShadow: '0 28px 80px rgba(26,24,21,0.16)',
                   }}
                 >
-                  <SelectedRelationshipPanel
-                    connection={selectedConnection}
-                    tab={selectedTab}
-                    mutualNames={selectedPeerNames}
-                    accepting={Boolean(accepting[selectedConnection.id])}
-                    removing={Boolean(removing[selectedConnection.id])}
-                    expanding={expandingUserId === otherUserId(selectedConnection, meId)}
-                    expanded={expandedRootUserId === otherUserId(selectedConnection, meId)}
-                    expandedCount={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandedSecondDegreeNodes.length : 0}
-                    expandError={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandError : null}
-                    onClear={onClear}
-                    onToggleExpand={selectedTab === 'Connected' ? () => onToggleExpand(selectedConnection) : undefined}
-                    onAccept={() => onAccept(selectedConnection)}
-                    onRemove={() => onRemove(selectedConnection)}
-                    onMessage={() => onMessage(otherUserId(selectedConnection, meId))}
-                    onInviteCoffee={() => onInviteCoffee(otherUserId(selectedConnection, meId))}
-                    onViewProfile={() => onViewProfile(otherUserId(selectedConnection, meId))}
-                  />
+                  {selectedConnection ? (
+                    <SelectedRelationshipPanel
+                      connection={selectedConnection}
+                      tab={selectedTab}
+                      mutualNames={selectedPeerNames}
+                      accepting={Boolean(accepting[selectedConnection.id])}
+                      removing={Boolean(removing[selectedConnection.id])}
+                      expanding={expandingUserId === otherUserId(selectedConnection, meId)}
+                      expanded={expandedRootUserId === otherUserId(selectedConnection, meId)}
+                      expandedCount={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandedSecondDegreeNodes.length : 0}
+                      expandError={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandError : null}
+                      onClear={onClear}
+                      onToggleExpand={selectedTab === 'Connected' ? () => onToggleExpand(selectedConnection) : undefined}
+                      onAccept={() => onAccept(selectedConnection)}
+                      onRemove={() => onRemove(selectedConnection)}
+                      onMessage={() => onMessage(otherUserId(selectedConnection, meId))}
+                      onInviteCoffee={() => onInviteCoffee(otherUserId(selectedConnection, meId))}
+                      onViewProfile={() => onViewProfile(otherUserId(selectedConnection, meId))}
+                    />
+                  ) : selectedSecondDegreeUser ? (
+                    <SecondDegreeProfilePanel
+                      user={selectedSecondDegreeUser}
+                      rootName={expandedRootName}
+                      requesting={requestingUserId === selectedSecondDegreeUser.id}
+                      feedback={requestFeedback}
+                      onClear={onClear}
+                      onRequest={() => onRequestSecondDegree(selectedSecondDegreeUser)}
+                      onViewProfile={() => onViewProfile(selectedSecondDegreeUser.id)}
+                    />
+                  ) : null}
                 </div>
               )}
             </>
@@ -1308,6 +1410,133 @@ function WebLegend({ label, color }: { label: string; color: string }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.8, color: 'var(--ink-muted)' }}>
       <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
       {label}
+    </div>
+  )
+}
+
+function SecondDegreeProfilePanel({
+  user,
+  rootName,
+  requesting,
+  feedback,
+  onClear,
+  onRequest,
+  onViewProfile,
+}: {
+  user: ExpandedKnotNode
+  rootName: string
+  requesting: boolean
+  feedback: string | null
+  onClear: () => void
+  onRequest: () => void
+  onViewProfile: () => void
+}) {
+  const name = clean(user.full_name) || clean(user.username) || 'Unknown person'
+  const username = clean(user.username) || 'user'
+  const detail = clean(user.headline) || clean(user.current_company) || clean(user.university) || clean(user.location_city) || 'Warm path'
+
+  return (
+    <div
+      style={{
+        padding: 16,
+        borderRadius: 20,
+        background: 'var(--paper)',
+        border: '0.5px solid var(--rule)',
+        boxShadow: '0 18px 50px rgba(26,24,21,0.08)',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+        <KAvatar name={name} src={user.avatar_url ?? null} size={54} />
+        <button
+          type="button"
+          onClick={onClear}
+          style={{
+            border: '0.5px solid var(--rule)',
+            background: 'var(--paper-soft)',
+            color: 'var(--ink-faint)',
+            borderRadius: 999,
+            width: 28,
+            height: 28,
+            cursor: 'pointer',
+            lineHeight: 1,
+          }}
+          aria-label="Clear selected profile"
+        >
+          ×
+        </button>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 23, color: 'var(--ink)', letterSpacing: -0.35, lineHeight: 1.05 }}>
+          {name}
+        </div>
+        <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--ink-muted)' }}>
+          @{username}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'inline-flex',
+          marginTop: 12,
+          padding: '5px 9px',
+          borderRadius: 999,
+          background: 'rgba(84,72,58,0.08)',
+          color: 'var(--ink)',
+          border: '0.5px dashed rgba(84,72,58,0.28)',
+          fontSize: 11,
+          fontWeight: 700,
+        }}
+      >
+        Second-degree
+      </div>
+
+      <div style={{ marginTop: 14, fontSize: 13.5, lineHeight: 1.5, color: 'var(--ink)' }}>
+        Connected through {firstName(rootName)}. {detail}
+      </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          padding: 12,
+          borderRadius: 14,
+          border: '0.5px dashed rgba(84,72,58,0.24)',
+          background: 'rgba(255,252,246,0.58)',
+        }}
+      >
+        <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6 }}>
+          Warm path
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>
+          This person is not in your knot yet. Send a request if the path is useful.
+        </div>
+      </div>
+
+      {feedback && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 11,
+            borderRadius: 14,
+            border: '0.5px solid rgba(84,72,58,0.20)',
+            background: 'var(--paper-soft)',
+            color: feedback.toLowerCase().includes('failed') ? 'var(--signal)' : 'var(--ink)',
+            fontSize: 12.5,
+            lineHeight: 1.45,
+          }}
+        >
+          {feedback}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+        <KBtn variant="ink" size="sm" disabled={requesting} onClick={onRequest}>
+          {requesting ? 'Sending...' : 'Send request'}
+        </KBtn>
+        <KBtn variant="ghost" size="sm" onClick={onViewProfile}>
+          View profile
+        </KBtn>
+      </div>
     </div>
   )
 }

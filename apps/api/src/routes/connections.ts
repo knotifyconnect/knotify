@@ -233,9 +233,10 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
     }
 
     const acceptedConns = ((myConns.data ?? []) as any[]).filter((c) => c.status === 'accepted')
+    const visibleRelationshipConns = ((myConns.data ?? []) as any[]).filter((c) => c.status !== 'declined')
 
     const firstDegreeIds = new Set<string>()
-    for (const c of acceptedConns) {
+    for (const c of visibleRelationshipConns) {
       firstDegreeIds.add(c.requester_id === meId ? c.addressee_id : c.requester_id)
     }
 
@@ -304,10 +305,11 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
       firstDegreeNodes: firstDegreeUsers.data ?? [],
       peerEdges,
       _debug: {
-        version: 'map-direct-only-v1',
+        version: 'map-visible-relationships-v2',
         meId,
         totalConns: (myConns.data ?? []).length,
         acceptedConns: acceptedConns.length,
+        visibleRelationshipConns: visibleRelationshipConns.length,
         firstDegreeIdCount: firstDegreeIdList.length,
         firstDegreeUserCount: (firstDegreeUsers.data ?? []).length,
         peerEdgeCount: peerEdges.length,

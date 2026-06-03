@@ -42,6 +42,14 @@ type DragState = {
   offsetY: number
 }
 
+type PanState = {
+  startClientX: number
+  startClientY: number
+  startViewportX: number
+  startViewportY: number
+  moved: boolean
+}
+
 type ViewportState = {
   scale: number
   x: number
@@ -57,6 +65,7 @@ type Props = {
   onSelectNode: (node: KnotGraphNode) => void
   onClearSelection: () => void
   onClearQuery?: () => void
+  onResetGraph?: () => void
 }
 
 const VIEW_W = 1000
@@ -457,9 +466,11 @@ export function KnotForceGraph({
   onSelectNode,
   onClearSelection,
   onClearQuery,
+  onResetGraph,
 }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<DragState | null>(null)
+  const panRef = useRef<PanState | null>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
   const draggedRef = useRef(false)
   const viewportRef = useRef<ViewportState>({ scale: 1, x: 0, y: 0 })
@@ -494,15 +505,19 @@ export function KnotForceGraph({
         const siblings = secondNodesByRoot.get(node.expandedViaUserId) ?? []
         const index = Math.max(0, siblings.findIndex((item) => item.id === node.id))
         const total = Math.max(1, siblings.length)
-        const baseAngle = Math.atan2(rootPosition.y - center.y, rootPosition.x - center.x)
-        const spread = total === 1 ? 0 : Math.min(1.12, 0.26 * (total - 1))
-        const angle = baseAngle - spread / 2 + (index / Math.max(1, total - 1)) * spread
-        const ring = Math.floor(index / 6)
-        const radius = 116 + ring * 54
+        const side = rootPosition.x >= center.x ? -1 : 1
+        const column = index % 3
+        const row = Math.floor(index / 3)
+        const stagger = row % 2 === 0 ? 0 : 26
+        const horizontalDistance = 104 + column * 92 + stagger
+        const verticalDistance = rootPosition.y >= center.y ? 86 + row * 68 : -(86 + row * 68)
+        const targetX = rootPosition.x + side * horizontalDistance
+        const targetY = rootPosition.y + verticalDistance
+        const panelSafeMaxX = 710
 
         position = {
-          x: clamp(rootPosition.x + Math.cos(angle) * radius, 32, 968),
-          y: clamp(rootPosition.y + Math.sin(angle) * radius * 0.82, 28, 562),
+          x: clamp(targetX, 42, panelSafeMaxX),
+          y: clamp(targetY, 46, 548),
         }
       }
 
@@ -610,6 +625,65 @@ export function KnotForceGraph({
     }
   }, [])
 
+  function applyPan(clientX: number, clientY: number) {
+    const pan = panRef.current
+    if (!pan) return
+
+    const dx = clientX - pan.startClientX
+    const dy = clientY - pan.startClientY
+
+    if (Math.abs(dx) + Math.abs(dy) > 4) {
+      pan.moved = true
+      draggedRef.current = true
+    }
+
+    setViewport((prev) => ({
+      ...prev,
+      x: pan.startViewportX + dx,
+      y: pan.startViewportY + dy,
+    }))
+  }
+
+  function beginPan(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
+
+    const target = event.target as Element | null
+    if (target?.closest?.('button')) return
+
+    dragCleanupRef.current?.()
+    dragCleanupRef.current = null
+
+    panRef.current = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startViewportX: viewportRef.current.x,
+      startViewportY: viewportRef.current.y,
+      moved: false,
+    }
+
+    draggedRef.current = false
+    event.preventDefault()
+
+    const handleMove = (moveEvent: globalThis.PointerEvent) => {
+      moveEvent.preventDefault()
+      applyPan(moveEvent.clientX, moveEvent.clientY)
+    }
+
+    const handleEnd = () => {
+      endDrag()
+    }
+
+    window.addEventListener('pointermove', handleMove, { passive: false })
+    window.addEventListener('pointerup', handleEnd)
+    window.addEventListener('pointercancel', handleEnd)
+
+    dragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleEnd)
+      window.removeEventListener('pointercancel', handleEnd)
+    }
+  }
+
   function applyDrag(clientX: number, clientY: number) {
     const drag = dragRef.current
     const stage = stageRef.current
@@ -651,6 +725,7 @@ export function KnotForceGraph({
     draggedRef.current = false
 
     event.preventDefault()
+    event.stopPropagation()
 
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -679,6 +754,11 @@ export function KnotForceGraph({
   }
 
   function updateDrag(event: PointerEvent<HTMLDivElement>) {
+    if (panRef.current) {
+      applyPan(event.clientX, event.clientY)
+      return
+    }
+
     applyDrag(event.clientX, event.clientY)
   }
 
@@ -688,6 +768,7 @@ export function KnotForceGraph({
     if (cleanup) cleanup()
 
     dragRef.current = null
+    panRef.current = null
     window.setTimeout(() => {
       draggedRef.current = false
     }, 0)
@@ -699,12 +780,14 @@ export function KnotForceGraph({
     dragCleanupRef.current?.()
     dragCleanupRef.current = null
     dragRef.current = null
+    panRef.current = null
     draggedRef.current = false
     previousQueryRef.current = ''
     setDragPositions({})
     setViewport({ scale: 1, x: 0, y: 0 })
     onClearSelection()
     onClearQuery?.()
+    onResetGraph?.()
   }
 
   return (
@@ -713,6 +796,7 @@ export function KnotForceGraph({
       initial={{ opacity: 0, scale: 0.985, filter: 'blur(3px)' }}
       animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
       transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+      onPointerDown={beginPan}
       onPointerMove={updateDrag}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
@@ -721,6 +805,7 @@ export function KnotForceGraph({
         inset: 0,
         overflow: 'hidden',
         overscrollBehavior: 'auto',
+        cursor: panRef.current ? 'grabbing' : 'grab',
       }}
     >
       {showEmpty ? null : (
@@ -730,7 +815,7 @@ export function KnotForceGraph({
             inset: 0,
             transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
             transformOrigin: '50% 50%',
-            transition: dragRef.current ? 'none' : 'transform 0.28s ease',
+            transition: dragRef.current || panRef.current ? 'none' : 'transform 0.28s ease',
             willChange: 'transform',
           }}
         >
@@ -742,13 +827,13 @@ export function KnotForceGraph({
           >
             <defs>
               <radialGradient id="forceKnotCenterGlow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="rgba(84,72,58,0.10)" />
-                <stop offset="58%" stopColor="rgba(84,72,58,0.04)" />
+                <stop offset="0%" stopColor="rgba(84,72,58,0.055)" />
+                <stop offset="58%" stopColor="rgba(84,72,58,0.022)" />
                 <stop offset="100%" stopColor="rgba(84,72,58,0)" />
               </radialGradient>
             </defs>
 
-            <circle cx={center.x} cy={center.y} r="260" fill="url(#forceKnotCenterGlow)" />
+            <circle cx={center.x} cy={center.y} r="172" fill="url(#forceKnotCenterGlow)" />
 
             {layoutNodes.filter((node) => node.degree !== 'second').map((node, index) => {
               const selected = selectedNodeId === node.id
@@ -809,18 +894,18 @@ export function KnotForceGraph({
                   key={`peer-${edge.id}`}
                   d={`M ${edge.source.x} ${edge.source.y} Q ${curveX} ${curveY} ${edge.target.x} ${edge.target.y}`}
                   fill="none"
-                  stroke={selected ? 'rgba(26,24,21,0.38)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
-                  strokeWidth={selected ? 1.45 : 0.85}
+                  stroke={selected ? 'rgba(26,24,21,0.34)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
+                  strokeWidth={selected ? 1.22 : 0.85}
                   strokeDasharray={selected ? 'none' : '6 10'}
                   strokeLinecap="round"
                 />
               )
             })}
 
-            <circle cx={center.x} cy={center.y} r="108" fill="rgba(244,239,230,0.22)" />
-            <circle cx={center.x} cy={center.y} r="82" fill="rgba(255,252,246,0.22)" />
-            <circle cx={center.x} cy={center.y} r="82" fill="none" stroke="rgba(84,72,58,0.10)" strokeWidth="1.2" />
-            <circle cx={center.x} cy={center.y} r="56" fill="rgba(255,252,246,0.30)" />
+            <circle cx={center.x} cy={center.y} r="76" fill="rgba(244,239,230,0.16)" />
+            <circle cx={center.x} cy={center.y} r="58" fill="rgba(255,252,246,0.18)" />
+            <circle cx={center.x} cy={center.y} r="58" fill="none" stroke="rgba(84,72,58,0.075)" strokeWidth="0.9" />
+            <circle cx={center.x} cy={center.y} r="44" fill="rgba(255,252,246,0.24)" />
           </svg>
 
           <button
