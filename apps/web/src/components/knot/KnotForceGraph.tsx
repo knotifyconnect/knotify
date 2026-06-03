@@ -12,6 +12,8 @@ export type KnotGraphNode = {
   context: string
   tab: KnotGraphTab
   matchesQuery: boolean
+  degree?: 'direct' | 'second'
+  expandedViaUserId?: string
 }
 
 export type KnotGraphPeerEdge = {
@@ -40,6 +42,14 @@ type DragState = {
   offsetY: number
 }
 
+type PanState = {
+  startClientX: number
+  startClientY: number
+  startViewportX: number
+  startViewportY: number
+  moved: boolean
+}
+
 type ViewportState = {
   scale: number
   x: number
@@ -55,6 +65,7 @@ type Props = {
   onSelectNode: (node: KnotGraphNode) => void
   onClearSelection: () => void
   onClearQuery?: () => void
+  onResetGraph?: () => void
 }
 
 const VIEW_W = 1000
@@ -234,6 +245,7 @@ function StageCard({
   searchMuted,
   selectedName,
   total,
+  secondDegree,
   onSelect,
   onPointerDown,
 }: {
@@ -245,6 +257,7 @@ function StageCard({
   searchMuted: boolean
   selectedName?: string
   total: number
+  secondDegree: boolean
   onSelect: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
 }) {
@@ -264,8 +277,8 @@ function StageCard({
           width: selected || searchHit ? 18 : 12,
           height: selected || searchHit ? 18 : 12,
           borderRadius: 999,
-          border: '0.5px solid rgba(84,72,58,0.24)',
-          background: selected || searchHit ? 'var(--ink)' : statusColor(node.tab),
+          border: secondDegree ? '0.5px dashed rgba(84,72,58,0.36)' : '0.5px solid rgba(84,72,58,0.24)',
+          background: selected || searchHit ? 'var(--ink)' : secondDegree ? 'rgba(84,72,58,0.48)' : statusColor(node.tab),
           opacity: muted || searchMuted ? 0.14 : 0.82,
           cursor: 'grab',
           zIndex: selected || searchHit ? 5 : related ? 3 : 2,
@@ -294,8 +307,8 @@ function StageCard({
           minHeight: 38,
           padding: '6px 9px',
           borderRadius: 999,
-          border: selected || searchHit ? '0.5px solid rgba(26,24,21,0.52)' : related ? '0.5px solid rgba(84,72,58,0.38)' : '0.5px solid var(--rule)',
-          background: selected || searchHit ? 'rgba(255,252,246,0.98)' : related ? 'rgba(244,239,230,0.94)' : 'rgba(244,239,230,0.72)',
+          border: selected || searchHit ? '0.5px solid rgba(26,24,21,0.52)' : secondDegree ? '0.5px dashed rgba(84,72,58,0.34)' : related ? '0.5px solid rgba(84,72,58,0.38)' : '0.5px solid var(--rule)',
+          background: selected || searchHit ? 'rgba(255,252,246,0.98)' : secondDegree ? 'rgba(255,252,246,0.62)' : related ? 'rgba(244,239,230,0.94)' : 'rgba(244,239,230,0.72)',
           color: 'var(--ink)',
           cursor: 'grab',
           display: 'flex',
@@ -320,24 +333,28 @@ function StageCard({
     ? 'rgba(26,24,21,0.58)'
     : searchHit
       ? 'rgba(26,24,21,0.62)'
-      : related
-        ? 'rgba(84,72,58,0.46)'
-        : node.tab === 'Incoming'
-          ? 'rgba(31,107,94,0.30)'
-          : node.tab === 'Sent'
-            ? 'rgba(216,68,43,0.30)'
-            : 'var(--rule)'
+      : secondDegree
+        ? 'rgba(84,72,58,0.34)'
+        : related
+          ? 'rgba(84,72,58,0.46)'
+          : node.tab === 'Incoming'
+            ? 'rgba(31,107,94,0.30)'
+            : node.tab === 'Sent'
+              ? 'rgba(216,68,43,0.30)'
+              : 'var(--rule)'
 
-  const width = selected ? 196 : searchHit ? 190 : related ? 180 : 166
-  const subtitle = selected
-    ? node.context
-    : searchHit
-      ? 'Search match'
-      : related
-        ? `Also knows ${firstName(selectedName)}`
-        : node.tab === 'Connected'
-          ? node.context
-          : tabLabel(node.tab)
+  const width = selected ? 196 : searchHit ? 190 : related ? 180 : secondDegree ? 158 : 166
+  const subtitle = secondDegree
+    ? node.context || 'Warm path'
+    : selected
+      ? node.context
+      : searchHit
+        ? 'Search match'
+        : related
+          ? `Also knows ${firstName(selectedName)}`
+          : node.tab === 'Connected'
+            ? node.context
+            : tabLabel(node.tab)
 
   return (
     <button
@@ -354,14 +371,17 @@ function StageCard({
         padding: '8px 10px',
         borderRadius: 16,
         border: `0.5px solid ${border}`,
-        borderLeft: selected ? '4px solid var(--ink)' : searchHit ? '4px solid var(--ink)' : related ? '3px solid rgba(84,72,58,0.34)' : `0.5px solid ${border}`,
+        borderStyle: secondDegree && !selected && !searchHit ? 'dashed' : 'solid',
+        borderLeft: selected ? '4px solid var(--ink)' : searchHit ? '4px solid var(--ink)' : related ? '3px solid rgba(84,72,58,0.34)' : secondDegree ? '0.5px dashed rgba(84,72,58,0.34)' : `0.5px solid ${border}`,
         background: selected
           ? 'linear-gradient(180deg, rgba(255,252,246,0.98), rgba(244,239,230,0.94))'
           : searchHit
             ? 'rgba(255,252,246,0.98)'
-            : related
-              ? 'rgba(244,239,230,0.96)'
-              : 'rgba(244,239,230,0.72)',
+            : secondDegree
+              ? 'rgba(255,252,246,0.64)'
+              : related
+                ? 'rgba(244,239,230,0.96)'
+                : 'rgba(244,239,230,0.72)',
         color: 'var(--ink)',
         cursor: 'grab',
         boxShadow: selected
@@ -388,8 +408,8 @@ function StageCard({
         size={30}
         style={{
           borderRadius: 10,
-          border: selected ? '0.5px solid rgba(26,24,21,0.24)' : related ? '0.5px solid rgba(84,72,58,0.30)' : '0.5px solid var(--rule)',
-          background: selected ? 'var(--paper-soft)' : related ? 'var(--paper)' : 'var(--paper-soft)',
+          border: selected ? '0.5px solid rgba(26,24,21,0.24)' : secondDegree ? '0.5px dashed rgba(84,72,58,0.30)' : related ? '0.5px solid rgba(84,72,58,0.30)' : '0.5px solid var(--rule)',
+          background: selected ? 'var(--paper-soft)' : secondDegree ? 'rgba(255,252,246,0.88)' : related ? 'var(--paper)' : 'var(--paper-soft)',
           boxShadow: node.avatarUrl ? '0 4px 12px rgba(26,24,21,0.08)' : undefined,
         }}
       />
@@ -425,7 +445,7 @@ function StageCard({
               width: 6,
               height: 6,
               borderRadius: '50%',
-              background: selected ? 'var(--ink)' : related ? 'rgba(26,24,21,0.68)' : statusColor(node.tab),
+              background: selected ? 'var(--ink)' : secondDegree ? 'rgba(84,72,58,0.48)' : related ? 'rgba(26,24,21,0.68)' : statusColor(node.tab),
               display: 'inline-block',
               flex: '0 0 auto',
             }}
@@ -446,9 +466,11 @@ export function KnotForceGraph({
   onSelectNode,
   onClearSelection,
   onClearQuery,
+  onResetGraph,
 }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<DragState | null>(null)
+  const panRef = useRef<PanState | null>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
   const draggedRef = useRef(false)
   const viewportRef = useRef<ViewportState>({ scale: 1, x: 0, y: 0 })
@@ -461,8 +483,47 @@ export function KnotForceGraph({
   const center = dragPositions.me ?? { x: BASE_CENTER_X, y: BASE_CENTER_Y }
 
   const layoutNodes = useMemo<LayoutNode[]>(() => {
-    return nodes.map((node, index) => {
-      const position = dragPositions[node.id] ?? layoutPosition(index, nodes.length, node.tab)
+    const directNodes = nodes.filter((node) => node.degree !== 'second')
+    const secondNodes = nodes.filter((node) => node.degree === 'second')
+    const directPositions = new Map<string, { x: number; y: number }>()
+
+    directNodes.forEach((node, index) => {
+      directPositions.set(node.id, dragPositions[node.id] ?? layoutPosition(index, directNodes.length, node.tab))
+    })
+
+    const secondNodesByRoot = new Map<string, KnotGraphNode[]>()
+    for (const node of secondNodes) {
+      const rootId = node.expandedViaUserId ?? 'unknown'
+      secondNodesByRoot.set(rootId, [...(secondNodesByRoot.get(rootId) ?? []), node])
+    }
+
+    return nodes.map((node) => {
+      let position = dragPositions[node.id]
+
+      if (!position && node.degree === 'second' && node.expandedViaUserId) {
+        const rootPosition = directPositions.get(`person:${node.expandedViaUserId}`) ?? { x: BASE_CENTER_X, y: BASE_CENTER_Y }
+        const siblings = secondNodesByRoot.get(node.expandedViaUserId) ?? []
+        const index = Math.max(0, siblings.findIndex((item) => item.id === node.id))
+        const total = Math.max(1, siblings.length)
+        const side = rootPosition.x >= center.x ? -1 : 1
+        const column = index % 3
+        const row = Math.floor(index / 3)
+        const stagger = row % 2 === 0 ? 0 : 26
+        const horizontalDistance = 104 + column * 92 + stagger
+        const verticalDistance = rootPosition.y >= center.y ? 86 + row * 68 : -(86 + row * 68)
+        const targetX = rootPosition.x + side * horizontalDistance
+        const targetY = rootPosition.y + verticalDistance
+        const panelSafeMaxX = 710
+
+        position = {
+          x: clamp(targetX, 42, panelSafeMaxX),
+          y: clamp(targetY, 46, 548),
+        }
+      }
+
+      if (!position) {
+        position = directPositions.get(node.id) ?? layoutPosition(0, 1, node.tab)
+      }
 
       return {
         ...node,
@@ -471,7 +532,7 @@ export function KnotForceGraph({
         initial: initialFor(node.name),
       }
     })
-  }, [dragPositions, nodes])
+  }, [center.x, center.y, dragPositions, nodes])
 
   const nodesById = useMemo(() => new Map(layoutNodes.map((node) => [node.id, node])), [layoutNodes])
   const selectedNode = selectedNodeId ? nodesById.get(selectedNodeId) ?? null : null
@@ -564,6 +625,65 @@ export function KnotForceGraph({
     }
   }, [])
 
+  function applyPan(clientX: number, clientY: number) {
+    const pan = panRef.current
+    if (!pan) return
+
+    const dx = clientX - pan.startClientX
+    const dy = clientY - pan.startClientY
+
+    if (Math.abs(dx) + Math.abs(dy) > 4) {
+      pan.moved = true
+      draggedRef.current = true
+    }
+
+    setViewport((prev) => ({
+      ...prev,
+      x: pan.startViewportX + dx,
+      y: pan.startViewportY + dy,
+    }))
+  }
+
+  function beginPan(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
+
+    const target = event.target as Element | null
+    if (target?.closest?.('button')) return
+
+    dragCleanupRef.current?.()
+    dragCleanupRef.current = null
+
+    panRef.current = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startViewportX: viewportRef.current.x,
+      startViewportY: viewportRef.current.y,
+      moved: false,
+    }
+
+    draggedRef.current = false
+    event.preventDefault()
+
+    const handleMove = (moveEvent: globalThis.PointerEvent) => {
+      moveEvent.preventDefault()
+      applyPan(moveEvent.clientX, moveEvent.clientY)
+    }
+
+    const handleEnd = () => {
+      endDrag()
+    }
+
+    window.addEventListener('pointermove', handleMove, { passive: false })
+    window.addEventListener('pointerup', handleEnd)
+    window.addEventListener('pointercancel', handleEnd)
+
+    dragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleEnd)
+      window.removeEventListener('pointercancel', handleEnd)
+    }
+  }
+
   function applyDrag(clientX: number, clientY: number) {
     const drag = dragRef.current
     const stage = stageRef.current
@@ -605,6 +725,7 @@ export function KnotForceGraph({
     draggedRef.current = false
 
     event.preventDefault()
+    event.stopPropagation()
 
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -633,6 +754,11 @@ export function KnotForceGraph({
   }
 
   function updateDrag(event: PointerEvent<HTMLDivElement>) {
+    if (panRef.current) {
+      applyPan(event.clientX, event.clientY)
+      return
+    }
+
     applyDrag(event.clientX, event.clientY)
   }
 
@@ -642,6 +768,7 @@ export function KnotForceGraph({
     if (cleanup) cleanup()
 
     dragRef.current = null
+    panRef.current = null
     window.setTimeout(() => {
       draggedRef.current = false
     }, 0)
@@ -653,12 +780,14 @@ export function KnotForceGraph({
     dragCleanupRef.current?.()
     dragCleanupRef.current = null
     dragRef.current = null
+    panRef.current = null
     draggedRef.current = false
     previousQueryRef.current = ''
     setDragPositions({})
     setViewport({ scale: 1, x: 0, y: 0 })
     onClearSelection()
     onClearQuery?.()
+    onResetGraph?.()
   }
 
   return (
@@ -667,6 +796,7 @@ export function KnotForceGraph({
       initial={{ opacity: 0, scale: 0.985, filter: 'blur(3px)' }}
       animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
       transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+      onPointerDown={beginPan}
       onPointerMove={updateDrag}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
@@ -675,6 +805,7 @@ export function KnotForceGraph({
         inset: 0,
         overflow: 'hidden',
         overscrollBehavior: 'auto',
+        cursor: panRef.current ? 'grabbing' : 'grab',
       }}
     >
       {showEmpty ? null : (
@@ -684,7 +815,7 @@ export function KnotForceGraph({
             inset: 0,
             transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
             transformOrigin: '50% 50%',
-            transition: dragRef.current ? 'none' : 'transform 0.28s ease',
+            transition: dragRef.current || panRef.current ? 'none' : 'transform 0.28s ease',
             willChange: 'transform',
           }}
         >
@@ -696,15 +827,15 @@ export function KnotForceGraph({
           >
             <defs>
               <radialGradient id="forceKnotCenterGlow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="rgba(84,72,58,0.10)" />
-                <stop offset="58%" stopColor="rgba(84,72,58,0.04)" />
+                <stop offset="0%" stopColor="rgba(84,72,58,0.055)" />
+                <stop offset="58%" stopColor="rgba(84,72,58,0.022)" />
                 <stop offset="100%" stopColor="rgba(84,72,58,0)" />
               </radialGradient>
             </defs>
 
-            <circle cx={center.x} cy={center.y} r="260" fill="url(#forceKnotCenterGlow)" />
+            <circle cx={center.x} cy={center.y} r="172" fill="url(#forceKnotCenterGlow)" />
 
-            {layoutNodes.map((node, index) => {
+            {layoutNodes.filter((node) => node.degree !== 'second').map((node, index) => {
               const selected = selectedNodeId === node.id
               const related = selectedPeerIds.has(node.id)
               const muted = Boolean(selectedNodeId) && !selected && !related
@@ -763,18 +894,18 @@ export function KnotForceGraph({
                   key={`peer-${edge.id}`}
                   d={`M ${edge.source.x} ${edge.source.y} Q ${curveX} ${curveY} ${edge.target.x} ${edge.target.y}`}
                   fill="none"
-                  stroke={selected ? 'rgba(26,24,21,0.38)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
-                  strokeWidth={selected ? 1.45 : 0.85}
+                  stroke={selected ? 'rgba(26,24,21,0.34)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
+                  strokeWidth={selected ? 1.22 : 0.85}
                   strokeDasharray={selected ? 'none' : '6 10'}
                   strokeLinecap="round"
                 />
               )
             })}
 
-            <circle cx={center.x} cy={center.y} r="108" fill="rgba(244,239,230,0.22)" />
-            <circle cx={center.x} cy={center.y} r="82" fill="rgba(255,252,246,0.22)" />
-            <circle cx={center.x} cy={center.y} r="82" fill="none" stroke="rgba(84,72,58,0.10)" strokeWidth="1.2" />
-            <circle cx={center.x} cy={center.y} r="56" fill="rgba(255,252,246,0.30)" />
+            <circle cx={center.x} cy={center.y} r="76" fill="rgba(244,239,230,0.16)" />
+            <circle cx={center.x} cy={center.y} r="58" fill="rgba(255,252,246,0.18)" />
+            <circle cx={center.x} cy={center.y} r="58" fill="none" stroke="rgba(84,72,58,0.075)" strokeWidth="0.9" />
+            <circle cx={center.x} cy={center.y} r="44" fill="rgba(255,252,246,0.24)" />
           </svg>
 
           <button
@@ -843,6 +974,7 @@ export function KnotForceGraph({
                 searchMuted={searchMuted}
                 selectedName={selectedNode?.name}
                 total={layoutNodes.length}
+                secondDegree={node.degree === 'second'}
                 onPointerDown={(event) => beginDrag(node.id, event)}
                 onSelect={() => {
                   if (draggedRef.current) return

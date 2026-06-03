@@ -218,11 +218,9 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
     if (!req.appUserId) {
       return res.status(404).json({ error: 'Profile not found' })
     }
+
     const meId = req.appUserId
 
-    // 1. Get all my connections, then filter accepted in JS.
-    // This mirrors the /api/connections endpoint exactly, which we KNOW returns 3 rows
-    // (useConnectionCount counts accepted from this same shape).
     const myConns = await supabase
       .from('connections')
       .select('id, requester_id, addressee_id, status')
@@ -234,22 +232,20 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
       return res.status(500).json({ error: myConns.error.message })
     }
 
-    const acceptedConns = (myConns.data ?? []).filter((c: any) => c.status === 'accepted')
-    // eslint-disable-next-line no-console
-    console.log(`[connections/map] meId=${meId} total=${(myConns.data ?? []).length} accepted=${acceptedConns.length}`)
+    const acceptedConns = ((myConns.data ?? []) as any[]).filter((c) => c.status === 'accepted')
+    const visibleRelationshipConns = ((myConns.data ?? []) as any[]).filter((c) => c.status !== 'declined')
 
-    // 2. First-degree user IDs.
     const firstDegreeIds = new Set<string>()
-    for (const c of acceptedConns) {
+    for (const c of visibleRelationshipConns) {
       firstDegreeIds.add(c.requester_id === meId ? c.addressee_id : c.requester_id)
     }
+
     const firstDegreeIdList = [...firstDegreeIds]
 
     if (firstDegreeIdList.length === 0) {
-      return res.json({ firstDegreeNodes: [], secondDegreeNodes: [], peerEdges: [] })
+      return res.json({ firstDegreeNodes: [], peerEdges: [] })
     }
 
-    // 3. Fetch first-degree user records.
     const firstDegreeUsers = await supabase
       .from('users')
       .select('id, full_name, username, avatar_url, is_online, referral_score, current_company')
@@ -261,65 +257,59 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
       return res.status(500).json({ error: firstDegreeUsers.error.message })
     }
 
-    // 4. Second-degree: connections of first-degree users.
-    // Fetch ALL connections involving any first-degree user, filter accepted in JS
-    const secondConnsA = await supabase
+    const peerConnsA = await supabase
       .from('connections')
       .select('id, requester_id, addressee_id, status')
       .in('requester_id', firstDegreeIdList)
-    const secondConnsB = await supabase
+
+    if (peerConnsA.error) {
+      // eslint-disable-next-line no-console
+      console.error('connections/map: peer requester query error:', peerConnsA.error)
+      return res.status(500).json({ error: peerConnsA.error.message })
+    }
+
+    const peerConnsB = await supabase
       .from('connections')
       .select('id, requester_id, addressee_id, status')
       .in('addressee_id', firstDegreeIdList)
 
-    const secondRows = [
-      ...((secondConnsA.data ?? []) as any[]).filter((c) => c.status === 'accepted'),
-      ...((secondConnsB.data ?? []) as any[]).filter((c) => c.status === 'accepted'),
-    ]
+    if (peerConnsB.error) {
+      // eslint-disable-next-line no-console
+      console.error('connections/map: peer addressee query error:', peerConnsB.error)
+      return res.status(500).json({ error: peerConnsB.error.message })
+    }
 
     const peerEdgeMap = new Map<string, { id: string; source_id: string; target_id: string; status: 'accepted' }>()
-    const secondDegreeIds = new Set<string>()
+    const peerRows = [...((peerConnsA.data ?? []) as any[]), ...((peerConnsB.data ?? []) as any[])]
 
-    for (const c of secondRows) {
+    for (const c of peerRows) {
+      if (c.status !== 'accepted') continue
+
       const aIsFirst = firstDegreeIds.has(c.requester_id)
       const bIsFirst = firstDegreeIds.has(c.addressee_id)
 
-      if (aIsFirst && bIsFirst) {
-        const [source_id, target_id] = [c.requester_id, c.addressee_id].sort()
-        peerEdgeMap.set(`${source_id}:${target_id}`, {
-          id: c.id,
-          source_id,
-          target_id,
-          status: 'accepted',
-        })
-        continue
-      }
+      if (!aIsFirst || !bIsFirst) continue
 
-      if (aIsFirst && c.addressee_id !== meId && !firstDegreeIds.has(c.addressee_id)) secondDegreeIds.add(c.addressee_id)
-      if (bIsFirst && c.requester_id !== meId && !firstDegreeIds.has(c.requester_id)) secondDegreeIds.add(c.requester_id)
+      const [source_id, target_id] = [c.requester_id, c.addressee_id].sort()
+      peerEdgeMap.set(`${source_id}:${target_id}`, {
+        id: c.id,
+        source_id,
+        target_id,
+        status: 'accepted',
+      })
     }
 
     const peerEdges = [...peerEdgeMap.values()]
-    const secondDegreeIdList = [...secondDegreeIds]
-
-    let secondDegreeNodes: any[] = []
-    if (secondDegreeIdList.length > 0) {
-      const sdUsers = await supabase
-        .from('users')
-        .select('id, full_name, username, avatar_url, current_company')
-        .in('id', secondDegreeIdList)
-      secondDegreeNodes = sdUsers.data ?? []
-    }
 
     return res.json({
       firstDegreeNodes: firstDegreeUsers.data ?? [],
-      secondDegreeNodes,
       peerEdges,
       _debug: {
-        version: 'v3-2026-05-20-debug',
+        version: 'map-visible-relationships-v2',
         meId,
         totalConns: (myConns.data ?? []).length,
         acceptedConns: acceptedConns.length,
+        visibleRelationshipConns: visibleRelationshipConns.length,
         firstDegreeIdCount: firstDegreeIdList.length,
         firstDegreeUserCount: (firstDegreeUsers.data ?? []).length,
         peerEdgeCount: peerEdges.length,
@@ -328,6 +318,177 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('connections/map: unexpected error:', err)
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+  }
+})
+
+connectionsRouter.get('/map/expand/:userId', requireAuth, async (req, res) => {
+  try {
+    if (!req.appUserId) {
+      return res.status(404).json({ error: 'Profile not found' })
+    }
+
+    const params = z.object({ userId: z.string().uuid() }).safeParse(req.params)
+    if (!params.success) {
+      return res.status(422).json({ error: 'Invalid user id', fields: params.error.flatten() })
+    }
+
+    const meId = req.appUserId
+    const rootUserId = params.data.userId
+
+    if (rootUserId === meId) {
+      return res.status(422).json({ error: 'Cannot expand yourself' })
+    }
+
+    const myConns = await supabase
+      .from('connections')
+      .select('id, requester_id, addressee_id, status')
+      .or(`requester_id.eq.${meId},addressee_id.eq.${meId}`)
+
+    if (myConns.error) {
+      // eslint-disable-next-line no-console
+      console.error('connections/map/expand: my connections query error:', myConns.error)
+      return res.status(500).json({ error: myConns.error.message })
+    }
+
+    const acceptedMyConns = ((myConns.data ?? []) as any[]).filter((c) => c.status === 'accepted')
+    const firstDegreeIds = new Set<string>()
+
+    for (const c of acceptedMyConns) {
+      firstDegreeIds.add(c.requester_id === meId ? c.addressee_id : c.requester_id)
+    }
+
+    if (!firstDegreeIds.has(rootUserId)) {
+      return res.status(403).json({ error: 'You can only expand a direct knot' })
+    }
+
+    const rootConnsA = await supabase
+      .from('connections')
+      .select('id, requester_id, addressee_id, status')
+      .eq('requester_id', rootUserId)
+
+    if (rootConnsA.error) {
+      // eslint-disable-next-line no-console
+      console.error('connections/map/expand: root requester query error:', rootConnsA.error)
+      return res.status(500).json({ error: rootConnsA.error.message })
+    }
+
+    const rootConnsB = await supabase
+      .from('connections')
+      .select('id, requester_id, addressee_id, status')
+      .eq('addressee_id', rootUserId)
+
+    if (rootConnsB.error) {
+      // eslint-disable-next-line no-console
+      console.error('connections/map/expand: root addressee query error:', rootConnsB.error)
+      return res.status(500).json({ error: rootConnsB.error.message })
+    }
+
+    const rootRowsById = new Map<string, any>()
+    for (const c of [...((rootConnsA.data ?? []) as any[]), ...((rootConnsB.data ?? []) as any[])]) {
+      if (c.status === 'accepted') rootRowsById.set(c.id, c)
+    }
+
+    const secondDegreeIds = new Set<string>()
+    const secondDegreeEdges: Array<{ id: string; source_id: string; target_id: string; status: 'accepted' }> = []
+
+    for (const c of rootRowsById.values()) {
+      const otherId = c.requester_id === rootUserId ? c.addressee_id : c.requester_id
+
+      if (otherId === meId) continue
+      if (firstDegreeIds.has(otherId)) continue
+
+      secondDegreeIds.add(otherId)
+
+      const [source_id, target_id] = [rootUserId, otherId].sort()
+      secondDegreeEdges.push({
+        id: c.id,
+        source_id,
+        target_id,
+        status: 'accepted',
+      })
+    }
+
+    const secondDegreeIdList = [...secondDegreeIds]
+
+    let secondDegreeNodes: any[] = []
+    let peerEdges: Array<{ id: string; source_id: string; target_id: string; status: 'accepted' }> = []
+
+    if (secondDegreeIdList.length > 0) {
+      const secondDegreeUsers = await supabase
+        .from('users')
+        .select('id, full_name, username, avatar_url, headline, location_city, university, current_company, status, is_online, referral_score')
+        .in('id', secondDegreeIdList)
+
+      if (secondDegreeUsers.error) {
+        // eslint-disable-next-line no-console
+        console.error('connections/map/expand: second-degree users query error:', secondDegreeUsers.error)
+        return res.status(500).json({ error: secondDegreeUsers.error.message })
+      }
+
+      secondDegreeNodes = secondDegreeUsers.data ?? []
+
+      const peerConnsA = await supabase
+        .from('connections')
+        .select('id, requester_id, addressee_id, status')
+        .in('requester_id', secondDegreeIdList)
+
+      if (peerConnsA.error) {
+        // eslint-disable-next-line no-console
+        console.error('connections/map/expand: second-degree peer requester query error:', peerConnsA.error)
+        return res.status(500).json({ error: peerConnsA.error.message })
+      }
+
+      const peerConnsB = await supabase
+        .from('connections')
+        .select('id, requester_id, addressee_id, status')
+        .in('addressee_id', secondDegreeIdList)
+
+      if (peerConnsB.error) {
+        // eslint-disable-next-line no-console
+        console.error('connections/map/expand: second-degree peer addressee query error:', peerConnsB.error)
+        return res.status(500).json({ error: peerConnsB.error.message })
+      }
+
+      const peerEdgeMap = new Map<string, { id: string; source_id: string; target_id: string; status: 'accepted' }>()
+      const peerRows = [...((peerConnsA.data ?? []) as any[]), ...((peerConnsB.data ?? []) as any[])]
+
+      for (const c of peerRows) {
+        if (c.status !== 'accepted') continue
+
+        const aIsSecond = secondDegreeIds.has(c.requester_id)
+        const bIsSecond = secondDegreeIds.has(c.addressee_id)
+
+        if (!aIsSecond || !bIsSecond) continue
+
+        const [source_id, target_id] = [c.requester_id, c.addressee_id].sort()
+        peerEdgeMap.set(`${source_id}:${target_id}`, {
+          id: c.id,
+          source_id,
+          target_id,
+          status: 'accepted',
+        })
+      }
+
+      peerEdges = [...peerEdgeMap.values()]
+    }
+
+    return res.json({
+      rootUserId,
+      secondDegreeNodes,
+      secondDegreeEdges,
+      peerEdges,
+      _debug: {
+        version: 'map-expand-one-root-v1',
+        rootUserId,
+        secondDegreeNodeCount: secondDegreeNodes.length,
+        secondDegreeEdgeCount: secondDegreeEdges.length,
+        peerEdgeCount: peerEdges.length,
+      },
+    })
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('connections/map/expand: unexpected error:', err)
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
   }
 })
