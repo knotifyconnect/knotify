@@ -4,6 +4,7 @@
  * Includes Quest banner + self profile card at bottom
  */
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   Activity,
@@ -87,7 +88,7 @@ export function AppSidebar() {
     return 0
   }
 
-  return (
+  const sidebar = (
     <>
       {/* ── Desktop sidebar — exact match to web-app.jsx ─────────────── */}
       <aside
@@ -401,5 +402,7 @@ export function AppSidebar() {
       </nav>
     </>
   )
-}
 
+  if (typeof document === 'undefined') return sidebar
+  return createPortal(sidebar, document.body)
+}

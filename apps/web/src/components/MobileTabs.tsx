@@ -1,10 +1,10 @@
-import { NavLink } from 'react-router-dom'
+﻿import { NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn'
 import { useReferralUnreadCount } from '../hooks/useReferralUnreadCount'
 import { useMessageUnreadCount } from '../hooks/useMessageUnreadCount'
 
 const items = [
-  { to: '/map', label: 'Map' },
+  { to: '/map', label: 'Your Knot' },
   { to: '/messages', label: 'Messages' },
   { to: '/discover', label: 'Discover' },
   { to: '/jobs', label: 'Jobs' },

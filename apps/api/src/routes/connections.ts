@@ -172,6 +172,47 @@ connectionsRouter.patch('/:id', requireAuth, async (req, res) => {
   return res.json({ connection: result.data })
 })
 
+
+connectionsRouter.delete('/:id', requireAuth, async (req, res) => {
+  if (!req.appUserId) {
+    return res.status(404).json({ error: 'Profile not found' })
+  }
+
+  const params = connectionIdParamSchema.safeParse(req.params)
+  if (!params.success) {
+    return res.status(422).json({ error: 'Invalid connection id', fields: params.error.flatten() })
+  }
+
+  const id = params.data.id
+
+  const existing = await supabase
+    .from('connections')
+    .select('id, requester_id, addressee_id, status')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (existing.error) {
+    return res.status(500).json({ error: existing.error.message })
+  }
+
+  if (!existing.data) {
+    return res.status(404).json({ error: 'Connection not found' })
+  }
+
+  const isParticipant = existing.data.requester_id === req.appUserId || existing.data.addressee_id === req.appUserId
+  if (!isParticipant) {
+    return res.status(403).json({ error: 'Not allowed to remove this connection' })
+  }
+
+  const deleted = await supabase.from('connections').delete().eq('id', id)
+
+  if (deleted.error) {
+    return res.status(500).json({ error: deleted.error.message })
+  }
+
+  return res.json({ ok: true })
+})
+
 connectionsRouter.get('/map', requireAuth, async (req, res) => {
   try {
     if (!req.appUserId) {
@@ -205,7 +246,7 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
     const firstDegreeIdList = [...firstDegreeIds]
 
     if (firstDegreeIdList.length === 0) {
-      return res.json({ firstDegreeNodes: [], secondDegreeNodes: [] })
+      return res.json({ firstDegreeNodes: [], secondDegreeNodes: [], peerEdges: [] })
     }
 
     // 3. Fetch first-degree user records.
@@ -236,13 +277,29 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
       ...((secondConnsB.data ?? []) as any[]).filter((c) => c.status === 'accepted'),
     ]
 
+    const peerEdgeMap = new Map<string, { id: string; source_id: string; target_id: string; status: 'accepted' }>()
     const secondDegreeIds = new Set<string>()
+
     for (const c of secondRows) {
       const aIsFirst = firstDegreeIds.has(c.requester_id)
       const bIsFirst = firstDegreeIds.has(c.addressee_id)
+
+      if (aIsFirst && bIsFirst) {
+        const [source_id, target_id] = [c.requester_id, c.addressee_id].sort()
+        peerEdgeMap.set(`${source_id}:${target_id}`, {
+          id: c.id,
+          source_id,
+          target_id,
+          status: 'accepted',
+        })
+        continue
+      }
+
       if (aIsFirst && c.addressee_id !== meId && !firstDegreeIds.has(c.addressee_id)) secondDegreeIds.add(c.addressee_id)
       if (bIsFirst && c.requester_id !== meId && !firstDegreeIds.has(c.requester_id)) secondDegreeIds.add(c.requester_id)
     }
+
+    const peerEdges = [...peerEdgeMap.values()]
     const secondDegreeIdList = [...secondDegreeIds]
 
     let secondDegreeNodes: any[] = []
@@ -257,6 +314,7 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
     return res.json({
       firstDegreeNodes: firstDegreeUsers.data ?? [],
       secondDegreeNodes,
+      peerEdges,
       _debug: {
         version: 'v3-2026-05-20-debug',
         meId,
@@ -264,6 +322,7 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
         acceptedConns: acceptedConns.length,
         firstDegreeIdCount: firstDegreeIdList.length,
         firstDegreeUserCount: (firstDegreeUsers.data ?? []).length,
+        peerEdgeCount: peerEdges.length,
       },
     })
   } catch (err) {
