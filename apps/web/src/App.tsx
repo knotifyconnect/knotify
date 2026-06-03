@@ -1,4 +1,5 @@
-﻿import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Variants } from 'framer-motion'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
@@ -21,6 +22,8 @@ import { ToastContainer } from './components/ui/Toast'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { ImpressumPage } from './pages/ImpressumPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { OnboardingPage } from './pages/OnboardingPage'
+import { apiGet } from './lib/api'
 
 const LAST_ACTIVE_AT_KEY = 'knotify:lastActiveAt'
 const INACTIVITY_REENTRY_MS = 2 * 24 * 60 * 60 * 1000
@@ -67,7 +70,56 @@ function shouldShowInactivityLanding(now = Date.now()) {
   return now - lastActiveAt > INACTIVITY_REENTRY_MS
 }
 
-function ProtectedRoutes() {
+type OnboardingStatus = {
+  complete: boolean
+  missing: string[]
+  skillsCount: number
+  minSkills: number
+}
+
+function ProfileCompletionGate({ children }: { children: ReactNode }) {
+  const location = useLocation()
+  const [status, setStatus] = useState<'loading' | 'complete' | 'incomplete' | 'error'>('loading')
+
+  useEffect(() => {
+    let mounted = true
+
+    async function checkProfileCompletion() {
+      setStatus('loading')
+
+      try {
+        const result = await apiGet<OnboardingStatus>('/api/users/me/onboarding-status')
+        if (!mounted) return
+        setStatus(result.complete ? 'complete' : 'incomplete')
+      } catch {
+        if (!mounted) return
+        setStatus('error')
+      }
+    }
+
+    void checkProfileCompletion()
+
+    return () => {
+      mounted = false
+    }
+  }, [location.pathname])
+
+  if (status === 'loading') {
+    return <div className="min-h-screen bg-bg-base" />
+  }
+
+  if (status === 'incomplete') {
+    return <Navigate to="/onboarding" replace state={{ from: location.pathname }} />
+  }
+
+  if (status === 'error') {
+    return <Navigate to="/profile" replace />
+  }
+
+  return <>{children}</>
+}
+
+function ProtectedAppRoutes() {
   return (
     <AppLayout>
       <Routes>
@@ -82,20 +134,38 @@ function ProtectedRoutes() {
         <Route path="/cafes" element={<CafesPage />} />
         <Route path="/hr" element={<HrPage />} />
         <Route path="/admin" element={<AdminPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />`n        <Route path="/auth" element={<Navigate to="/map" replace />} />
+        <Route path="/auth" element={<Navigate to="/map" replace />} />
         <Route path="*" element={<Navigate to="/map" replace />} />
       </Routes>
     </AppLayout>
   )
 }
 
+function ProtectedRoutes() {
+  return (
+    <Routes>
+      <Route path="/onboarding" element={<OnboardingPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route
+        path="/*"
+        element={
+          <ProfileCompletionGate>
+            <ProtectedAppRoutes />
+          </ProfileCompletionGate>
+        }
+      />
+    </Routes>
+  )
+}
 function PublicRoutes() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/auth" element={<AuthPage />} />
       <Route path="/login" element={<AuthPage />} />
-      <Route path="/signup" element={<AuthPage />} />`n      <Route path="/forgot-password" element={<AuthPage />} />`n      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/signup" element={<AuthPage />} />
+      <Route path="/forgot-password" element={<AuthPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/impressum" element={<ImpressumPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -164,7 +234,7 @@ export default function App() {
 
   useEffect(() => {
     // onAuthStateChange fires INITIAL_SESSION immediately on mount with the
-    // existing session (or null). This is the single source of truth —
+    // existing session (or null). This is the single source of truth â€”
     // no separate getSession() call that can race and wipe a valid token.
     const {
       data: { subscription },
@@ -261,5 +331,3 @@ export default function App() {
     </AppErrorBoundary>
   )
 }
-
-
