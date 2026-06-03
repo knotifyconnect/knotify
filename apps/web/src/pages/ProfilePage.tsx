@@ -237,6 +237,10 @@ function OwnProfileView() {
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
+  const [highlightedProfileSection, setHighlightedProfileSection] = useState<string | null>(null)
+  const updatesSectionRef = useRef<HTMLDivElement | null>(null)
+  const experienceSectionRef = useRef<HTMLDivElement | null>(null)
+  const educationSectionRef = useRef<HTMLDivElement | null>(null)
 
   // Setup flow state
   const [setupFullName, setSetupFullName] = useState('')
@@ -399,6 +403,30 @@ function OwnProfileView() {
   }
 
   // ── Education & Experience ────────────────────────────────────────────────
+
+  function scrollToProfileSection(section: 'updates' | 'experience' | 'education') {
+    const ref =
+      section === 'updates'
+        ? updatesSectionRef
+        : section === 'experience'
+          ? experienceSectionRef
+          : educationSectionRef
+
+    setHighlightedProfileSection(section)
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        ref.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+      })
+    })
+
+    window.setTimeout(() => {
+      setHighlightedProfileSection((current) => current === section ? null : current)
+    }, 1800)
+  }
 
   function startEduEdit() {
     setEduDraft(education.map((e) => ({ ...e })))
@@ -611,124 +639,201 @@ function OwnProfileView() {
   }, {})
 
   return (
-    <div style={{ maxWidth: 860, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 16 }}>
 
-      {/* ─── Hero card ──────────────────────────────────────────────────────── */}
-      <KCard style={{ padding: 0, marginBottom: 18, overflow: 'hidden' }}>
-        {/* Top gradient band with subtle radial accent */}
+
+
+      <KCard style={{ padding: 0, marginBottom: 2, overflow: 'hidden', background: '#fffaf3' }}>
         <div
           style={{
-            height: 110,
+            minHeight: 238,
             background:
-              'radial-gradient(circle at 20% 30%, rgba(216,68,43,0.18) 0%, transparent 50%), linear-gradient(135deg, var(--ink) 0%, #2d2820 100%)',
-            position: 'relative',
+              'radial-gradient(circle at 8% 0%, rgba(216,68,43,0.13) 0%, transparent 34%), linear-gradient(135deg, #fffaf3 0%, #f4eadb 100%)',
+            padding: 28,
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) 320px',
+            gap: 22,
+            alignItems: 'stretch',
+            borderBottom: '1px solid rgba(35,31,28,0.08)',
           }}
-        />
-        <div style={{ padding: '0 26px 24px' }}>
-          {/* Avatar row */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: -48, marginBottom: 18 }}>
-            <div style={{ position: 'relative' }}>
-              <img
-                src={avatarDraft || me.avatar_url || avatarUrl(me.full_name, 160)}
-                alt={me.full_name}
-                style={{ width: 96, height: 96, borderRadius: '50%', border: '4px solid var(--paper)', objectFit: 'cover', display: 'block', boxShadow: '0 6px 18px rgba(26,24,21,0.12)' }}
-              />
-              <button type="button" onClick={() => setAvatarEditorOpen(true)}
-                style={{ position: 'absolute', bottom: 2, right: 2, width: 28, height: 28, borderRadius: '50%', background: 'var(--signal)', border: '2px solid var(--paper)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 13, boxShadow: '0 2px 6px rgba(216,68,43,0.32)' }}
-                title="Edit avatar"
-              >✎</button>
+        >
+          <div style={{ display: 'grid', alignContent: 'space-between', gap: 24 }}>
+            <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <img
+                  src={avatarDraft || me.avatar_url || avatarUrl(me.full_name, 160)}
+                  alt={me.full_name}
+                  style={{
+                    width: 92,
+                    height: 92,
+                    borderRadius: 28,
+                    border: '2px solid rgba(255,255,255,0.9)',
+                    objectFit: 'cover',
+                    display: 'block',
+                    boxShadow: '0 18px 45px rgba(35,31,28,0.16)',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setAvatarEditorOpen(true)}
+                  style={{
+                    position: 'absolute',
+                    right: -6,
+                    bottom: -6,
+                    border: 0,
+                    borderRadius: 999,
+                    background: 'var(--signal)',
+                    color: 'white',
+                    fontSize: 11,
+                    fontWeight: 850,
+                    padding: '7px 10px',
+                    cursor: 'pointer',
+                    boxShadow: '0 10px 24px rgba(216,68,43,0.25)',
+                  }}
+                >
+                  Edit
+                </button>
+              </div>
+
+              <div style={{ minWidth: 0, display: 'grid', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--signal)', fontWeight: 950 }}>
+                    Your profile signal
+                  </div>
+                  <KPill color={pill.color}>{pill.label}</KPill>
+                </div>
+
+                <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(36px, 5vw, 58px)', lineHeight: 0.92, fontWeight: 400, letterSpacing: '-0.05em', margin: 0, color: 'var(--ink)' }}>
+                  {me.full_name}
+                </h1>
+
+                {editMode ? (
+                  <input
+                    value={me.headline ?? ''}
+                    onChange={(e) => setMe({ ...me, headline: e.target.value.slice(0, 120) })}
+                    placeholder="CS student building AI products"
+                    style={{ ...fieldStyle, background: 'rgba(255,255,255,0.76)', borderColor: 'rgba(35,31,28,0.14)', color: 'var(--ink)', maxWidth: 560 }}
+                  />
+                ) : (
+                  <p style={{ margin: 0, color: 'var(--ink-muted)', fontSize: 16, lineHeight: 1.55, maxWidth: 620 }}>
+                    {me.headline || 'Add a headline so people know what to come to you for.'}
+                  </p>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
+                  {[me.location_city, me.current_company, me.university].filter(Boolean).map((item) => (
+                    <span key={item} style={{ border: '1px solid rgba(35,31,28,0.10)', background: 'rgba(255,255,255,0.62)', borderRadius: 999, padding: '7px 11px', fontSize: 12.5, color: 'var(--ink-muted)' }}>
+                      {item}
+                    </span>
+                  ))}
+                  {!me.location_city && !me.current_company && !me.university && (
+                    <span style={{ border: '1px solid rgba(35,31,28,0.10)', background: 'rgba(255,255,255,0.62)', borderRadius: 999, padding: '7px 11px', fontSize: 12.5, color: 'var(--ink-muted)' }}>
+                      Add city, company, or university
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-              <KBtn variant="ghost" size="sm" onClick={() => { setEditMode(!editMode) }}>
-                {editMode ? 'Cancel' : 'Edit profile'}
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <KBtn variant="signal" size="sm" onClick={() => { setEditMode(!editMode) }}>
+                {editMode ? 'Cancel editing' : 'Edit profile'}
               </KBtn>
               {editMode && (
-                <KBtn variant="signal" size="sm" disabled={saving} onClick={onSave}>
-                  {saving ? 'Saving…' : 'Save'}
+                <KBtn variant="ghost" size="sm" disabled={saving} onClick={onSave}>
+                  {saving ? 'Saving...' : 'Save changes'}
                 </KBtn>
               )}
             </div>
           </div>
 
-          {/* Name + headline + bio */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3, flexWrap: 'wrap' }}>
-              <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 400, letterSpacing: '-0.025em', margin: 0, color: 'var(--ink)' }}>
-                {me.full_name}
-              </h1>
-              <VerifiedBadge size={17} />
-              <KPill color={pill.color}>{pill.label}</KPill>
+          <aside
+            style={{
+              background: 'rgba(255,255,255,0.76)',
+              border: '1px solid rgba(35,31,28,0.09)',
+              borderRadius: 26,
+              padding: 18,
+              display: 'grid',
+              gap: 16,
+              boxShadow: '0 20px 60px rgba(35,31,28,0.08)',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontWeight: 950 }}>
+                Signal strength
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+                {[
+                  { label: 'Connections', value: String(connectionCount) },
+                  { label: 'Skills', value: String(userSkillIds.length || 0) },
+                  { label: 'Updates', value: String(updates.length || 0) },
+                  { label: 'Trust score', value: String(me.referral_score ?? 0) },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ borderRadius: 16, background: '#fffaf3', padding: '12px 11px', border: '1px solid rgba(35,31,28,0.08)' }}>
+                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 22, color: 'var(--ink)', lineHeight: 1 }}>
+                      {value}
+                    </div>
+                    <div style={{ marginTop: 5, fontSize: 10, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+                      {label}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div style={{ fontSize: 13.5, color: 'var(--ink-muted)', marginBottom: 8 }}>
-              {profileMeta}
+
+            <div style={{ borderTop: '1px solid rgba(35,31,28,0.08)', paddingTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 950, color: 'var(--ink)', marginBottom: 8 }}>
+                Next best move
+              </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {!updates[0] && (
+                  <button type="button" onClick={() => scrollToProfileSection('updates')} style={{ textAlign: 'left', border: '1px solid rgba(35,31,28,0.09)', background: '#fffaf3', color: 'var(--ink-muted)', borderRadius: 14, padding: '10px 11px', fontSize: 12.5, cursor: 'pointer' }}>
+                    Share what you are working on
+                  </button>
+                )}
+                {experience.length === 0 && (
+                  <button type="button" onClick={() => { startExpEdit(); scrollToProfileSection('experience') }} style={{ textAlign: 'left', border: '1px solid rgba(35,31,28,0.09)', background: '#fffaf3', color: 'var(--ink-muted)', borderRadius: 14, padding: '10px 11px', fontSize: 12.5, cursor: 'pointer' }}>
+                    Add one experience or project
+                  </button>
+                )}
+                {education.length === 0 && (
+                  <button type="button" onClick={() => { startEduEdit(); scrollToProfileSection('education') }} style={{ textAlign: 'left', border: '1px solid rgba(35,31,28,0.09)', background: '#fffaf3', color: 'var(--ink-muted)', borderRadius: 14, padding: '10px 11px', fontSize: 12.5, cursor: 'pointer' }}>
+                    Add education
+                  </button>
+                )}
+                {updates[0] && experience.length > 0 && education.length > 0 && (
+                  <div style={{ color: 'var(--ink-muted)', fontSize: 12.5, lineHeight: 1.5 }}>
+                    Your profile has enough signal to start connecting.
+                  </div>
+                )}
+              </div>
             </div>
-
-            {/* Headline */}
-            {editMode ? (
-              <input
-                value={me.headline ?? ''}
-                onChange={(e) => setMe({ ...me, headline: e.target.value.slice(0, 120) })}
-                placeholder="Software engineer · building at XYZ"
-                style={{ ...fieldStyle, fontSize: 14, marginBottom: 8 }}
-              />
-            ) : me.headline && (
-              <div style={{ fontSize: 14, color: 'var(--ink-soft)', marginBottom: 6, fontStyle: 'italic', fontFamily: "'Fraunces', Georgia, serif" }}>
-                {me.headline}
-              </div>
-            )}
-
-            {/* Bio */}
-            {editMode ? (
-              <div>
-                <textarea
-                  value={me.bio ?? ''}
-                  onChange={(e) => setMe({ ...me, bio: e.target.value.slice(0, 500) })}
-                  placeholder="Tell your knot what you're working on… (up to 500 chars)"
-                  rows={3}
-                  style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
-                />
-                <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'", marginTop: 3 }}>
-                  {(me.bio ?? '').length}/500
-                </div>
-              </div>
-            ) : (
-              me.bio && (
-                <p style={{ fontSize: 14, color: 'var(--ink-soft)', lineHeight: 1.55, margin: 0 }}>{me.bio}</p>
-              )
-            )}
-          </div>
-
-          {/* Stats row */}
-          <div style={{ display: 'flex', gap: 12, paddingTop: 18, borderTop: '0.5px solid var(--rule-soft)' }}>
-            {[
-              { label: 'Connections', value: String(connectionCount), icon: '🤝' },
-              { label: 'Skills',      value: String(userSkillIds.length || 0), icon: '✦' },
-              { label: 'Karma',       value: String(me.referral_score ?? 0).padStart(3, '0'), icon: '✺' },
-            ].map(({ label, value, icon }) => (
-              <div
-                key={label}
-                style={{
-                  flex: 1,
-                  padding: '12px 10px',
-                  borderRadius: 12,
-                  background: 'var(--paper-soft)',
-                  border: '0.5px solid var(--rule-soft)',
-                  textAlign: 'center',
-                }}
-              >
-                <div style={{ fontSize: 14, color: 'var(--ink-faint)', marginBottom: 4, lineHeight: 1 }}>{icon}</div>
-                <div style={{ fontSize: 22, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500, color: 'var(--ink)', lineHeight: 1, marginBottom: 5 }}>
-                  {value}
-                </div>
-                <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-                  {label}
-                </div>
-              </div>
-            ))}
-          </div>
+          </aside>
         </div>
-      </KCard>
 
+        {!editMode && me.bio && (
+          <div style={{ padding: '18px 28px 24px', background: 'var(--paper)', borderTop: '1px solid var(--rule-soft)' }}>
+            <p style={{ maxWidth: 760, fontSize: 14.5, lineHeight: 1.65, color: 'var(--ink-soft)', margin: 0 }}>
+              {me.bio}
+            </p>
+          </div>
+        )}
+
+        {editMode && (
+          <div style={{ padding: '18px 28px 24px', background: 'var(--paper)', borderTop: '1px solid var(--rule-soft)' }}>
+            <textarea
+              value={me.bio ?? ''}
+              onChange={(e) => setMe({ ...me, bio: e.target.value.slice(0, 500) })}
+              placeholder="Short bio: what are you building, learning, or looking for?"
+              rows={3}
+              style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
+            />
+            <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'", marginTop: 3 }}>
+              {(me.bio ?? '').length}/500
+            </div>
+          </div>
+        )}
+      </KCard>
       {/* ─── Edit mode fields ────────────────────────────────────────────────── */}
       {editMode && (
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
@@ -789,7 +894,8 @@ function OwnProfileView() {
       )}
 
       {/* ─── Working on now ─────────────────────────────────────────────────── */}
-      <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
+      <div ref={updatesSectionRef} style={{ scrollMarginTop: 96 }}>
+      <KCard style={{ padding: '18px 20px', marginBottom: 16, outline: highlightedProfileSection === 'updates' ? '3px solid rgba(216,68,43,0.32)' : 'none', boxShadow: highlightedProfileSection === 'updates' ? '0 0 0 8px rgba(216,68,43,0.08)' : undefined }}>
         <SectionHead label="Working on now" />
         {updates[0] ? (
           <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
@@ -818,9 +924,11 @@ function OwnProfileView() {
           {updatesError && <p style={{ fontSize: 12, color: 'var(--signal)', marginTop: 6 }}>{updatesError}</p>}
         </div>
       </KCard>
+      </div>
 
       {/* ─── Experience ─────────────────────────────────────────────────────── */}
-      <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
+      <div ref={experienceSectionRef} style={{ scrollMarginTop: 96 }}>
+      <KCard style={{ padding: '18px 20px', marginBottom: 16, outline: highlightedProfileSection === 'experience' ? '3px solid rgba(216,68,43,0.32)' : 'none', boxShadow: highlightedProfileSection === 'experience' ? '0 0 0 8px rgba(216,68,43,0.08)' : undefined }}>
         <SectionHead
           label="Experience"
           action={expEditing ? undefined : 'Edit'}
@@ -885,9 +993,11 @@ function OwnProfileView() {
           </div>
         )}
       </KCard>
+      </div>
 
       {/* ─── Education ──────────────────────────────────────────────────────── */}
-      <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
+      <div ref={educationSectionRef} style={{ scrollMarginTop: 96 }}>
+      <KCard style={{ padding: '18px 20px', marginBottom: 16, outline: highlightedProfileSection === 'education' ? '3px solid rgba(216,68,43,0.32)' : 'none', boxShadow: highlightedProfileSection === 'education' ? '0 0 0 8px rgba(216,68,43,0.08)' : undefined }}>
         <SectionHead
           label="Education"
           action={eduEditing ? undefined : 'Edit'}
@@ -954,6 +1064,7 @@ function OwnProfileView() {
           </div>
         )}
       </KCard>
+      </div>
 
       {/* ─── Skills ─────────────────────────────────────────────────────────── */}
       <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
@@ -1468,8 +1579,7 @@ function PublicProfileView({ userId }: { userId: string }) {
           )}
         </div>
       </KCard>
-
-      {/* Experience */}
+{/* Experience */}
       {data.experience.length > 0 && (
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
           <SectionHead label="Experience" />
@@ -1492,8 +1602,7 @@ function PublicProfileView({ userId }: { userId: string }) {
           </div>
         </KCard>
       )}
-
-      {/* Education */}
+{/* Education */}
       {data.education.length > 0 && (
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
           <SectionHead label="Education" />
