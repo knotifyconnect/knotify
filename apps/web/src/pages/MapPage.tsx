@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom'
 import { apiDelete, apiGet, apiPatch } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
+import { KnotForceGraph, type KnotGraphNode, type KnotGraphPeerEdge } from '../components/knot/KnotForceGraph'
 
 type UserStatus = 'studying' | 'open_to_work' | 'employed' | string
 type ConnectionStatus = 'pending' | 'accepted' | 'declined'
@@ -903,30 +904,20 @@ function KnotStage({
       ...incoming.map((connection) => ({ connection, tab: 'Incoming' as const })),
       ...connected.map((connection) => ({ connection, tab: 'Connected' as const })),
       ...sent.map((connection) => ({ connection, tab: 'Sent' as const })),
-    ].slice(0, 20)
+    ]
 
-    if (ordered.length === 0) return []
-
-    const count = ordered.length
-
-    return ordered.map(({ connection, tab }, index) => {
-      const angle = ((index / count) * Math.PI * 2) - Math.PI / 2
-      const wave = Math.sin(index * 1.73) * 18
-      const radius = tab === 'Connected' ? 215 + wave : 285 + wave
-      const x = 500 + Math.cos(angle) * radius
-      const y = 295 + Math.sin(angle) * radius * 0.55
+    return ordered.map(({ connection, tab }) => {
       const user = connection.user
       const name = clean(user?.full_name) || 'Unknown person'
       const userId = otherUserId(connection, meId)
 
       return {
+        id: `person:${userId}`,
+        userId,
+        connectionId: connection.id,
         connection,
         tab,
-        userId,
-        x,
-        y,
         name,
-        initial: name.charAt(0).toUpperCase(),
         avatarUrl: user?.avatar_url ?? null,
         context: userContext(user),
         matchesQuery: !normalizedGraphQuery || searchableText(connection).includes(normalizedGraphQuery),
@@ -934,9 +925,10 @@ function KnotStage({
     })
   }, [connected, incoming, meId, normalizedGraphQuery, sent])
 
-  const selectedNode = selectedConnection
-    ? nodes.find((node) => node.connection.id === selectedConnection.id) ?? null
-    : null
+  const selectedNode =
+    selectedConnection
+      ? nodes.find((node) => node.connection.id === selectedConnection.id) ?? null
+      : null
 
   const nodesByUserId = useMemo(() => new Map(nodes.map((node) => [node.userId, node])), [nodes])
 
@@ -951,22 +943,20 @@ function KnotStage({
       .filter(Boolean) as Array<PeerEdge & { source: (typeof nodes)[number]; target: (typeof nodes)[number] }>
   }, [nodesByUserId, peerEdges])
 
+  const graphPeerEdges: KnotGraphPeerEdge[] = useMemo(() => {
+    return visiblePeerEdges.map((edge) => ({
+      id: edge.id,
+      sourceId: edge.source.id,
+      targetId: edge.target.id,
+    }))
+  }, [visiblePeerEdges])
+
   const selectedPeerNames = useMemo(() => {
     if (!selectedNode) return []
     return visiblePeerEdges
       .filter((edge) => edge.source.userId === selectedNode.userId || edge.target.userId === selectedNode.userId)
       .map((edge) => (edge.source.userId === selectedNode.userId ? edge.target.name : edge.source.name))
       .slice(0, 4)
-  }, [selectedNode, visiblePeerEdges])
-
-  const selectedPeerUserIds = useMemo(() => {
-    if (!selectedNode) return new Set<string>()
-
-    return new Set(
-      visiblePeerEdges
-        .filter((edge) => edge.source.userId === selectedNode.userId || edge.target.userId === selectedNode.userId)
-        .map((edge) => (edge.source.userId === selectedNode.userId ? edge.target.userId : edge.source.userId))
-    )
   }, [selectedNode, visiblePeerEdges])
 
   const hasRelationships = nodes.length > 0
@@ -1072,253 +1062,19 @@ function KnotStage({
             </div>
           ) : (
             <>
-              <svg
-                viewBox="0 0 1000 590"
-                preserveAspectRatio="xMidYMid meet"
-                aria-hidden="true"
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-              >
-                <defs>
-                  <radialGradient id="knotCenterGlow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="rgba(84,72,58,0.10)" />
-                    <stop offset="58%" stopColor="rgba(84,72,58,0.04)" />
-                    <stop offset="100%" stopColor="rgba(84,72,58,0)" />
-                  </radialGradient>
-                </defs>
-
-                <circle cx="500" cy="295" r="260" fill="url(#knotCenterGlow)" />
-
-                {/* Only real peerEdges draw person-to-person ties. No decorative node rings. */}
-
-                {nodes.map((node, index) => {
-                  const selected = selectedConnection?.id === node.connection.id
-                  const related = selectedPeerUserIds.has(node.userId)
-                  const muted = Boolean(selectedConnection) && !selected && !related
-                  const searchHit = hasGraphQuery && node.matchesQuery
-                  const searchMuted = hasGraphQuery && !node.matchesQuery
-
-                  const stroke = selected
-                    ? 'rgba(26,24,21,0.28)'
-                    : searchHit
-                      ? 'rgba(26,24,21,0.34)'
-                      : related
-                        ? 'rgba(84,72,58,0.14)'
-                        : muted || searchMuted
-                          ? 'rgba(84,72,58,0.035)'
-                          : node.tab === 'Incoming'
-                          ? 'rgba(31,107,94,0.34)'
-                          : node.tab === 'Sent'
-                            ? 'rgba(216,68,43,0.28)'
-                            : 'rgba(84,72,58,0.20)'
-
-                  const c1x = 500 + (node.x - 500) * 0.34 + Math.sin(index * 2.1) * 38
-                  const c1y = 295 + (node.y - 295) * 0.28 - Math.cos(index * 1.4) * 28
-                  const c2x = 500 + (node.x - 500) * 0.72 - Math.cos(index * 1.9) * 32
-                  const c2y = 295 + (node.y - 295) * 0.74 + Math.sin(index * 1.2) * 24
-
-                  return (
-                    <path
-                      key={`strand-${node.connection.id}`}
-                      d={`M 500 295 C ${c1x} ${c1y}, ${c2x} ${c2y}, ${node.x} ${node.y}`}
-                      fill="none"
-                      stroke={stroke}
-                      strokeWidth={selected ? 1.2 : searchHit ? 1.25 : related ? 0.85 : muted || searchMuted ? 0.28 : node.tab === 'Connected' ? 0.85 : 1.1}
-                      strokeDasharray={node.tab === 'Connected' ? 'none' : '8 8'}
-                      strokeLinecap="round"
-                    />
-                  )
-                })}
-
-                {visiblePeerEdges.map((edge, index) => {
-                  const selected =
-                    selectedConnection?.id === edge.source.connection.id ||
-                    selectedConnection?.id === edge.target.connection.id
-
-                  if (selectedConnection && !selected) return null
-                  if (hasGraphQuery && !edge.source.matchesQuery && !edge.target.matchesQuery) return null
-
-                  const midX = (edge.source.x + edge.target.x) / 2
-                  const midY = (edge.source.y + edge.target.y) / 2
-                  const awayX = midX + (midX - 500) * 0.34 + Math.sin(index * 1.7) * 12
-                  const awayY = midY + (midY - 295) * 0.52 - Math.cos(index * 1.3) * 10
-                  const softX = midX + (midX - 500) * 0.18 + Math.sin(index * 1.7) * 10
-                  const softY = midY + (midY - 295) * 0.32 - Math.cos(index * 1.3) * 8
-                  const curveX = selected ? awayX : softX
-                  const curveY = selected ? awayY : softY
-                  const pathD = `M ${edge.source.x} ${edge.source.y} Q ${curveX} ${curveY} ${edge.target.x} ${edge.target.y}`
-
-                  return (
-                    <path
-                      key={`peer-${edge.source_id}-${edge.target_id}`}
-                      d={pathD}
-                      fill="none"
-                      stroke={selected ? 'rgba(26,24,21,0.38)' : hasGraphQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
-                      strokeWidth={selected ? 1.45 : 0.85}
-                      strokeDasharray={selected ? 'none' : '6 10'}
-                      strokeLinecap="round"
-                    />
-                  )
-                })}
-
-                <circle cx="500" cy="295" r="108" fill="rgba(244,239,230,0.22)" />
-                <circle cx="500" cy="295" r="82" fill="rgba(255,252,246,0.22)" />
-                <circle cx="500" cy="295" r="82" fill="none" stroke="rgba(84,72,58,0.10)" strokeWidth="1.2" />
-                <circle cx="500" cy="295" r="56" fill="rgba(255,252,246,0.30)" />
-              </svg>
-
-              <button
-                type="button"
-                onClick={onClear}
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: 112,
-                  height: 112,
-                  borderRadius: 999,
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--ink)',
-                  cursor: 'pointer',
-                  boxShadow: 'none',
-                  zIndex: 3,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 0,
+              <KnotForceGraph
+                me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
+                nodes={nodes}
+                peerEdges={graphPeerEdges}
+                selectedNodeId={selectedNode?.id ?? null}
+                query={query}
+                onClearQuery={() => onQueryChange('')}
+                onSelectNode={(node: KnotGraphNode) => {
+                  const match = nodes.find((item) => item.id === node.id)
+                  if (match) onSelect(match.connection, match.tab)
                 }}
-                title={`Clear focus for ${meName}`}
-              >
-                <KAvatar
-                  name={meName}
-                  src={meAvatar}
-                  size={meAvatar ? 86 : 82}
-                  style={{
-                    border: meAvatar ? '3px solid rgba(255,252,246,0.96)' : '1px solid rgba(84,72,58,0.16)',
-                    background: meAvatar
-                      ? 'var(--paper)'
-                      : 'linear-gradient(135deg, rgba(238,242,255,0.96), rgba(255,252,246,0.98))',
-                    color: 'var(--indigo, #4455c7)',
-                    boxShadow: meAvatar
-                      ? '0 18px 48px rgba(26,24,21,0.18), 0 0 0 9px rgba(255,252,246,0.42)'
-                      : '0 16px 42px rgba(26,24,21,0.10), 0 0 0 9px rgba(255,252,246,0.42)',
-                  }}
-                />
-              </button>
-
-              {nodes.map((node) => {
-                const selected = selectedConnection?.id === node.connection.id
-                const related = selectedPeerUserIds.has(node.userId)
-                const muted = Boolean(selectedConnection) && !selected && !related
-                const searchHit = hasGraphQuery && node.matchesQuery
-                const searchMuted = hasGraphQuery && !node.matchesQuery
-                const statusColor = selected
-                  ? 'var(--ink)'
-                  : related
-                    ? 'rgba(26,24,21,0.68)'
-                    : node.tab === 'Incoming'
-                      ? 'var(--verd)'
-                      : node.tab === 'Sent'
-                        ? 'var(--signal)'
-                        : 'var(--ink-muted)'
-                const border = selected
-                  ? 'rgba(26,24,21,0.58)'
-                  : searchHit
-                    ? 'rgba(26,24,21,0.62)'
-                    : related
-                      ? 'rgba(84,72,58,0.46)'
-                    : node.tab === 'Incoming'
-                      ? 'rgba(31,107,94,0.30)'
-                      : node.tab === 'Sent'
-                        ? 'rgba(216,68,43,0.30)'
-                        : 'var(--rule)'
-
-                return (
-                  <button
-                    key={node.connection.id}
-                    type="button"
-                    onClick={() => onSelect(node.connection, node.tab)}
-                    style={{
-                      position: 'absolute',
-                      left: `${node.x / 10}%`,
-                      top: `${node.y / 5.9}%`,
-                      transform: 'translate(-50%, -50%)',
-                      width: selected ? 196 : searchHit ? 190 : related ? 180 : 166,
-                      minHeight: 54,
-                      padding: '8px 10px',
-                      borderRadius: 16,
-                      border: `0.5px solid ${border}`,
-                      borderLeft: selected ? '4px solid var(--ink)' : searchHit ? '4px solid var(--ink)' : related ? '3px solid rgba(84,72,58,0.34)' : `0.5px solid ${border}`,
-                      background: selected ? 'linear-gradient(180deg, rgba(255,252,246,0.98), rgba(244,239,230,0.94))' : searchHit ? 'rgba(255,252,246,0.98)' : related ? 'rgba(244,239,230,0.96)' : 'rgba(244,239,230,0.72)',
-                      color: 'var(--ink)',
-                      cursor: 'pointer',
-                      boxShadow: selected ? '0 22px 58px rgba(26,24,21,0.16)' : searchHit ? '0 18px 44px rgba(26,24,21,0.13)' : related ? '0 14px 34px rgba(26,24,21,0.08)' : '0 4px 14px rgba(26,24,21,0.02)',
-                      display: 'grid',
-                      gridTemplateColumns: '30px minmax(0, 1fr)',
-                      gap: 8,
-                      alignItems: 'center',
-                      textAlign: 'left',
-                      zIndex: selected ? 5 : searchHit ? 4 : related ? 3 : 2,
-                      opacity: muted || searchMuted ? 0.12 : 1,
-                    }}
-                    title={`${node.name} - ${relationLabel(node.tab)}`}
-                  >
-                    <KAvatar
-                      name={node.name}
-                      src={node.avatarUrl}
-                      size={30}
-                      style={{
-                        borderRadius: 10,
-                        border: selected ? '0.5px solid rgba(26,24,21,0.24)' : related ? '0.5px solid rgba(84,72,58,0.30)' : '0.5px solid var(--rule)',
-                        background: selected ? 'var(--paper-soft)' : related ? 'var(--paper)' : 'var(--paper-soft)',
-                        boxShadow: node.avatarUrl ? '0 4px 12px rgba(26,24,21,0.08)' : undefined,
-                      }}
-                    />
-
-                    <span style={{ minWidth: 0 }}>
-                      <span
-                        style={{
-                          display: 'block',
-                          fontSize: 12.5,
-                          fontWeight: 700,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {node.name}
-                      </span>
-                      <span
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 5,
-                          marginTop: 3,
-                          fontSize: 10.8,
-                          color: selected ? 'var(--ink-muted)' : related ? 'rgba(84,72,58,0.78)' : 'var(--ink-muted)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            background: statusColor,
-                            display: 'inline-block',
-                            flex: '0 0 auto',
-                          }}
-                        />
-                        {selected ? node.context : searchHit ? 'Search match' : related ? `Also knows ${firstName(selectedNode?.name)}` : node.tab === 'Connected' ? node.context : relationLabel(node.tab)}
-                      </span>
-                    </span>
-                  </button>
-                )
-              })}
+                onClearSelection={onClear}
+              />
 
               <div
                 style={{
