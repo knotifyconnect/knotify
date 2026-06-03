@@ -1,4 +1,4 @@
-import { Router } from 'express'
+﻿import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
@@ -44,7 +44,7 @@ connectionsRouter.get('/', requireAuth, async (req, res) => {
   const rows = (result.data ?? []) as ConnectionRow[]
   const otherIds = rows.map((c) => (c.requester_id === req.appUserId ? c.addressee_id : c.requester_id))
   const usersResult = otherIds.length
-    ? await supabase.from('users').select('id, full_name, username, avatar_url').in('id', otherIds)
+    ? await supabase.from('users').select('id, full_name, username, avatar_url, headline, location_city, university, current_company, status').in('id', otherIds)
     : { data: [], error: null }
 
   if (usersResult.error) {
@@ -179,7 +179,7 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
     }
     const meId = req.appUserId
 
-    // ── 1. Get all my connections (any status) — then filter accepted in JS
+    // 1. Get all my connections, then filter accepted in JS.
     // This mirrors the /api/connections endpoint exactly, which we KNOW returns 3 rows
     // (useConnectionCount counts accepted from this same shape).
     const myConns = await supabase
@@ -197,7 +197,7 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
     // eslint-disable-next-line no-console
     console.log(`[connections/map] meId=${meId} total=${(myConns.data ?? []).length} accepted=${acceptedConns.length}`)
 
-    // ── 2. First-degree user IDs
+    // 2. First-degree user IDs.
     const firstDegreeIds = new Set<string>()
     for (const c of acceptedConns) {
       firstDegreeIds.add(c.requester_id === meId ? c.addressee_id : c.requester_id)
@@ -208,7 +208,7 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
       return res.json({ firstDegreeNodes: [], secondDegreeNodes: [] })
     }
 
-    // ── 3. Fetch first-degree user records
+    // 3. Fetch first-degree user records.
     const firstDegreeUsers = await supabase
       .from('users')
       .select('id, full_name, username, avatar_url, is_online, referral_score, current_company')
@@ -220,7 +220,7 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
       return res.status(500).json({ error: firstDegreeUsers.error.message })
     }
 
-    // ── 4. Second-degree: connections of first-degree users
+    // 4. Second-degree: connections of first-degree users.
     // Fetch ALL connections involving any first-degree user, filter accepted in JS
     const secondConnsA = await supabase
       .from('connections')

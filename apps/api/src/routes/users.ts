@@ -1,4 +1,4 @@
-import { Router } from 'express'
+﻿import { Router } from 'express'
 import { z } from 'zod'
 import multer from 'multer'
 import Anthropic from '@anthropic-ai/sdk'
@@ -187,7 +187,7 @@ usersRouter.patch('/me', requireAuth, async (req, res) => {
   return res.json({ user: result.data })
 })
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Role requests (member asking to be HR / company_owner) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// Role requests (member asking to be HR / company_owner)
 const roleRequestSchema = z.object({
   requestedRole: z.enum(['hr', 'company_owner']),
   companyName: z.string().min(2).max(120).optional(),
@@ -242,54 +242,218 @@ usersRouter.get('/me/role-requests', requireAuth, async (req, res) => {
   return res.json({ requests: result.data ?? [] })
 })
 
+type DiscoverSkill = {
+  skill_id: number
+  name: string
+  category: string | null
+}
+
+function normaliseDiscoverText(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function discoverStatusLabel(status: unknown) {
+  if (status === 'employed') return 'employed'
+  if (status === 'open_to_work') return 'open to work'
+  return 'studying'
+}
+
+async function skillsForUsers(userIds: string[]) {
+  const byUser = new Map<string, DiscoverSkill[]>()
+  if (userIds.length === 0) return byUser
+
+  const result = await supabase
+    .from('user_skills')
+    .select('user_id, skill_id, skill_catalog(id, name, category)')
+    .in('user_id', userIds)
+
+  if (result.error) throw new Error(result.error.message)
+
+  for (const row of result.data ?? []) {
+    const catalog = Array.isArray((row as any).skill_catalog)
+      ? (row as any).skill_catalog[0]
+      : (row as any).skill_catalog
+
+    if (!catalog?.name) continue
+
+    const list = byUser.get((row as any).user_id) ?? []
+    list.push({
+      skill_id: Number((row as any).skill_id),
+      name: String(catalog.name),
+      category: catalog.category ? String(catalog.category) : null,
+    })
+    byUser.set((row as any).user_id, list)
+  }
+
+  return byUser
+}
+
+function discoverProfileSignal(user: any, skills: DiscoverSkill[]) {
+  let score = 0
+
+  if (profileText(user?.full_name)) score += 15
+  if (profileText(user?.headline)) score += 20
+  if (profileText(user?.location_city)) score += 15
+  if (profileText(user?.status)) score += 10
+  if (profileText(user?.university) || profileText(user?.current_company)) score += 15
+  if (profileText(user?.bio)) score += 10
+
+  score += Math.min(skills.length, 5) * 6
+
+  return Math.min(score, 100)
+}
+
+function discoverReasonFor(me: any, mySkills: DiscoverSkill[], candidate: any, candidateSkills: DiscoverSkill[], mutualCount = 0) {
+  const mySkillNames = new Set(mySkills.map((s) => normaliseDiscoverText(s.name)).filter(Boolean))
+  const sharedSkills = candidateSkills
+    .filter((s) => mySkillNames.has(normaliseDiscoverText(s.name)))
+    .map((s) => s.name)
+
+  const sameCity =
+    profileText(me?.location_city) &&
+    profileText(candidate?.location_city) &&
+    normaliseDiscoverText(me.location_city) === normaliseDiscoverText(candidate.location_city)
+
+  const sameUniversity =
+    profileText(me?.university) &&
+    profileText(candidate?.university) &&
+    normaliseDiscoverText(me.university) === normaliseDiscoverText(candidate.university)
+
+  const sameStatus =
+    profileText(me?.status) &&
+    profileText(candidate?.status) &&
+    normaliseDiscoverText(me.status) === normaliseDiscoverText(candidate.status)
+
+  const profileSignal = discoverProfileSignal(candidate, candidateSkills)
+
+  let score = 0
+  if (sameCity) score += 4
+  if (sameUniversity) score += 4
+  if (sameStatus) score += 1.5
+  score += Math.min(sharedSkills.length, 4) * 3
+  score += Math.min(mutualCount, 5) * 2
+  score += Math.min(candidateSkills.length, 5) * 0.75
+  if (profileSignal >= 70) score += 2
+
+  const tags: string[] = []
+  if (sameCity && candidate.location_city) tags.push(candidate.location_city)
+  if (sameUniversity && candidate.university) tags.push(candidate.university)
+  if (sharedSkills.length) tags.push(...sharedSkills.slice(0, 2))
+  if (mutualCount > 0) tags.push(`${mutualCount} mutual`)
+  if (profileSignal >= 70) tags.push('strong profile')
+
+  let reason = 'Has enough profile context to explore intentionally.'
+
+  if (sameCity && sharedSkills.length) {
+    reason = `Also in ${candidate.location_city} and shares ${sharedSkills[0]}.`
+  } else if (sameUniversity && sharedSkills.length) {
+    reason = `Also connected to ${candidate.university} and shares ${sharedSkills[0]}.`
+  } else if (sharedSkills.length >= 2) {
+    reason = `Shares ${sharedSkills.slice(0, 2).join(' and ')} with you.`
+  } else if (sharedSkills.length === 1) {
+    reason = `Shares ${sharedSkills[0]} with you.`
+  } else if (sameUniversity) {
+    reason = `Also connected to ${candidate.university}.`
+  } else if (sameCity) {
+    reason = `Also based in ${candidate.location_city}.`
+  } else if (mutualCount > 0) {
+    reason = `${mutualCount} mutual connection${mutualCount === 1 ? '' : 's'} in your knot.`
+  } else if (sameStatus) {
+    reason = `Similar current status: ${discoverStatusLabel(candidate.status)}.`
+  } else if (profileSignal >= 70) {
+    reason = `Strong profile signal with ${candidateSkills.length} skill${candidateSkills.length === 1 ? '' : 's'}.`
+  } else if (candidateSkills.length > 0) {
+    reason = `Shows ${candidateSkills[0].name} and related skills.`
+  }
+
+  return {
+    match_reason: reason,
+    match_reasons: [...new Set(tags)].slice(0, 4),
+    match_score: score,
+    profile_signal: profileSignal,
+  }
+}
+
 usersRouter.get('/search', requireAuth, async (req, res) => {
-  const parsedQuery = searchUsersQuerySchema.safeParse(req.query)
-  if (!parsedQuery.success) {
-    return res.status(422).json({ error: 'Invalid query params', fields: parsedQuery.error.flatten() })
-  }
-  const { q, skill } = parsedQuery.data
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
 
-  let usersQuery = supabase
-    .from('users')
-    .select('id, full_name, username, avatar_url, location_city, university, current_company, status, created_at')
-    .order('created_at', { ascending: false })
-    .limit(50)
-
-  if (q) {
-    // ilike = case-insensitive LIKE in Postgres. Escape special chars to avoid OR syntax break.
-    const escaped = q.replace(/[,()]/g, ' ').trim()
-    if (escaped.length > 0) {
-      usersQuery = usersQuery.or(
-        `full_name.ilike.%${escaped}%,username.ilike.%${escaped}%,location_city.ilike.%${escaped}%,university.ilike.%${escaped}%,current_company.ilike.%${escaped}%`
-      )
+  try {
+    const parsedQuery = searchUsersQuerySchema.safeParse(req.query)
+    if (!parsedQuery.success) {
+      return res.status(422).json({ error: 'Invalid query params', fields: parsedQuery.error.flatten() })
     }
-  }
 
-  const usersResult = await usersQuery
-  if (usersResult.error) {
-    return res.status(500).json({ error: usersResult.error.message })
-  }
+    const { q, skill } = parsedQuery.data
 
-  let users = usersResult.data ?? []
-  if (skill) {
-    // Search via new skill_catalog + user_skills join
-    const catalogResult = await supabase
-      .from('skill_catalog')
-      .select('id')
-      .ilike('name', `%${skill}%`)
-    if (catalogResult.error) return res.status(500).json({ error: catalogResult.error.message })
-    const skillIds = (catalogResult.data ?? []).map((s) => s.id)
-    if (skillIds.length) {
-      const userSkillsResult = await supabase.from('user_skills').select('user_id').in('skill_id', skillIds)
-      if (userSkillsResult.error) return res.status(500).json({ error: userSkillsResult.error.message })
-      const ids = new Set((userSkillsResult.data ?? []).map((s) => s.user_id))
-      users = users.filter((u) => ids.has(u.id))
-    } else {
-      users = []
+    const meResult = await supabase
+      .from('users')
+      .select('id, full_name, username, headline, bio, location_city, university, current_company, status')
+      .eq('id', req.appUserId)
+      .maybeSingle()
+
+    if (meResult.error) return res.status(500).json({ error: meResult.error.message })
+
+    let usersQuery = supabase
+      .from('users')
+      .select('id, full_name, username, avatar_url, headline, bio, location_city, university, current_company, status, created_at')
+      .neq('id', req.appUserId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (q) {
+      const escaped = q.replace(/[,()]/g, ' ').trim()
+      if (escaped.length > 0) {
+        usersQuery = usersQuery.or(
+          `full_name.ilike.%${escaped}%,username.ilike.%${escaped}%,headline.ilike.%${escaped}%,location_city.ilike.%${escaped}%,university.ilike.%${escaped}%,current_company.ilike.%${escaped}%`
+        )
+      }
     }
-  }
 
-  return res.json({ users })
+    const usersResult = await usersQuery
+    if (usersResult.error) return res.status(500).json({ error: usersResult.error.message })
+
+    let users = usersResult.data ?? []
+
+    if (skill) {
+      const catalogResult = await supabase
+        .from('skill_catalog')
+        .select('id')
+        .ilike('name', `%${skill}%`)
+
+      if (catalogResult.error) return res.status(500).json({ error: catalogResult.error.message })
+
+      const skillIds = (catalogResult.data ?? []).map((s) => s.id)
+
+      if (skillIds.length) {
+        const userSkillsResult = await supabase.from('user_skills').select('user_id').in('skill_id', skillIds)
+        if (userSkillsResult.error) return res.status(500).json({ error: userSkillsResult.error.message })
+
+        const ids = new Set((userSkillsResult.data ?? []).map((s) => s.user_id))
+        users = users.filter((u) => ids.has(u.id))
+      } else {
+        users = []
+      }
+    }
+
+    const userIds = users.map((u) => u.id)
+    const skillsByUser = await skillsForUsers(userIds)
+    const mySkillsByUser = await skillsForUsers([req.appUserId])
+    const mySkills = mySkillsByUser.get(req.appUserId) ?? []
+
+    const enriched = users.map((u) => {
+      const skills = skillsByUser.get(u.id) ?? []
+      return {
+        ...u,
+        skills,
+        mutual_connections_count: 0,
+        ...discoverReasonFor(meResult.data, mySkills, u, skills, 0),
+      }
+    })
+
+    return res.json({ users: enriched })
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to search users' })
+  }
 })
 
 usersRouter.get('/panel/:id', requireAuth, async (req, res) => {
@@ -309,7 +473,7 @@ usersRouter.get('/panel/:id', requireAuth, async (req, res) => {
     if (userResult.error) return res.status(500).json({ error: userResult.error.message })
     if (!userResult.data) return res.status(404).json({ error: 'User not found' })
 
-    // All extended queries via allSettled Ã¢â‚¬â€ any failure Ã¢â€ â€™ empty result, never hang
+    // All extended queries use allSettled: failures return empty data and never hang.
     const [skillsR, recentPostsR, eduR, expR, updatesR, referralsCountR] = await Promise.allSettled([
       supabase.from('user_skills').select('skill_id, skill_catalog(id, name, category)').eq('user_id', userId).limit(8),
       supabase.from('posts').select('id, title, body, image_url, channel_id, created_at, upvote_count, comment_count').eq('author_id', userId).order('created_at', { ascending: false }).limit(3),
@@ -354,14 +518,14 @@ usersRouter.get('/panel/:id', requireAuth, async (req, res) => {
   }
 })
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Skill catalog (public) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// Skill catalog (public)
 usersRouter.get('/skills/catalog', async (_req, res) => {
   const result = await supabase.from('skill_catalog').select('id, name, category').order('category').order('name')
   if (result.error) return res.status(500).json({ error: result.error.message })
   return res.json({ catalog: result.data ?? [] })
 })
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Extended profile (education, experience, skills, languages) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// Extended profile (education, experience, skills, languages)
 usersRouter.get('/me/profile-extended', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
   try {
@@ -386,7 +550,7 @@ usersRouter.get('/me/profile-extended', requireAuth, async (req, res) => {
   }
 })
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Save education entries (full replace) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// Save education entries (full replace)
 usersRouter.put('/me/education', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
   const items: Array<{ institution: string; degree?: string; field?: string; start_year?: number; end_year?: number; description?: string }> = req.body.items ?? req.body.education ?? []
@@ -413,7 +577,7 @@ usersRouter.put('/me/education', requireAuth, async (req, res) => {
   return res.json({ education: [] })
 })
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Save experience entries (full replace) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// Save experience entries (full replace)
 usersRouter.put('/me/experience', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
   const items: Array<{ company: string; role: string; start_date?: string; end_date?: string; description?: string }> = req.body.items ?? req.body.experience ?? []
@@ -443,7 +607,7 @@ usersRouter.put('/me/experience', requireAuth, async (req, res) => {
   return res.json({ experience: [] })
 })
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Save skills (full replace) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// Save skills (full replace)
 usersRouter.put('/me/skills', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
   const skillIds: number[] = (req.body.skillIds ?? []).map(Number).filter(Boolean)
@@ -458,7 +622,7 @@ usersRouter.put('/me/skills', requireAuth, async (req, res) => {
   return res.json({ skills })
 })
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ CV extraction via Claude Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// CV extraction via Claude
 // Accepts JSON body: { pdfBase64?: string, text?: string, filename?: string }
 // (Avoids multipart/form-data which has issues with @vercel/node serverless.)
 usersRouter.post('/me/cv-extract', requireAuth, async (req, res) => {
@@ -519,7 +683,7 @@ ${text.slice(0, 8000)}`,
     if (!jsonMatch) return res.status(422).json({ error: 'Could not parse CV data' })
     const parsed = JSON.parse(jsonMatch[0])
 
-    // Map skill names Ã¢â€ â€™ skill_catalog IDs (case-insensitive)
+    // Map skill names to skill_catalog IDs (case-insensitive)
     const skillNames: string[] = Array.isArray(parsed.skills) ? parsed.skills.filter((s: unknown) => typeof s === 'string') : []
     let skillIds: number[] = []
     if (skillNames.length) {
@@ -532,7 +696,7 @@ ${text.slice(0, 8000)}`,
       for (const name of skillNames) {
         const key = name.toLowerCase().trim()
         if (byLower.has(key)) matched.add(byLower.get(key)!)
-        // Try partial matches (e.g. "React.js" Ã¢â€ â€™ "React")
+        // Try partial matches, for example React.js to React.
         else {
           for (const [catName, catId] of byLower) {
             if (key.includes(catName) || catName.includes(key)) { matched.add(catId); break }
@@ -574,66 +738,128 @@ ${text.slice(0, 8000)}`,
   }
 })
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ "People you may know" suggestions Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// People you may know suggestions
 usersRouter.get('/suggestions', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+
   try {
     const connections = await supabase
       .from('connections')
-      .select('requester_id, addressee_id')
+      .select('requester_id, addressee_id, status')
       .or(`requester_id.eq.${req.appUserId},addressee_id.eq.${req.appUserId}`)
+
+    if (connections.error) return res.status(500).json({ error: connections.error.message })
+
     const excludeIds = new Set<string>([req.appUserId])
-    const myConnectionIds: string[] = []
+    const myAcceptedIds: string[] = []
+
     for (const c of connections.data ?? []) {
       excludeIds.add(c.requester_id)
       excludeIds.add(c.addressee_id)
-      const peerId = c.requester_id === req.appUserId ? c.addressee_id : c.requester_id
-      myConnectionIds.push(peerId)
+
+      if (c.status === 'accepted') {
+        const peerId = c.requester_id === req.appUserId ? c.addressee_id : c.requester_id
+        myAcceptedIds.push(peerId)
+      }
     }
 
-    const myUser = await supabase.from('users').select('university').eq('id', req.appUserId).maybeSingle()
-    const myUniversity = myUser.data?.university ?? null
+    const myUser = await supabase
+      .from('users')
+      .select('id, full_name, username, headline, bio, location_city, university, current_company, status')
+      .eq('id', req.appUserId)
+      .maybeSingle()
+
+    if (myUser.error) return res.status(500).json({ error: myUser.error.message })
 
     const excluded = [...excludeIds]
     const candidatesQuery = await supabase
       .from('users')
-      .select('id, full_name, username, avatar_url, location_city, university, current_company')
+      .select('id, full_name, username, avatar_url, headline, bio, location_city, university, current_company, status, created_at')
       .not('id', 'in', `(${excluded.join(',')})`)
-      .limit(40)
+      .order('created_at', { ascending: false })
+      .limit(80)
 
     if (candidatesQuery.error) return res.status(500).json({ error: candidatesQuery.error.message })
 
-    const withMutuals = await Promise.all((candidatesQuery.data ?? []).map(async (u) => {
-      let mutual = 0
-      if (myConnectionIds.length > 0) {
-        const theirConns = await supabase
-          .from('connections')
-          .select('requester_id, addressee_id')
-          .or(`requester_id.eq.${u.id},addressee_id.eq.${u.id}`)
-          .eq('status', 'accepted')
-        const theirIds = new Set((theirConns.data ?? []).map((c) =>
-          c.requester_id === u.id ? c.addressee_id : c.requester_id
-        ))
-        mutual = myConnectionIds.filter((id) => theirIds.has(id)).length
-      }
-      const uniBonus = (myUniversity && u.university && u.university === myUniversity) ? 0.5 : 0
-      return { ...u, mutual_connections_count: mutual, _score: mutual + uniBonus }
-    }))
+    const candidates = candidatesQuery.data ?? []
+    const candidateIds = candidates.map((u) => u.id)
+    const candidateIdSet = new Set(candidateIds)
 
-    const sorted = withMutuals.sort((a, b) => b._score - a._score).slice(0, 10)
-    return res.json({ suggestions: sorted.map(({ _score, ...u }) => u) })
+    const [skillsByUser, mySkillsByUser] = await Promise.all([
+      skillsForUsers(candidateIds),
+      skillsForUsers([req.appUserId]),
+    ])
+
+    const mutualsByCandidate = new Map<string, number>()
+    const myAcceptedSet = new Set(myAcceptedIds)
+
+    if (candidateIds.length > 0 && myAcceptedIds.length > 0) {
+      const [a, b] = await Promise.all([
+        supabase
+          .from('connections')
+          .select('requester_id, addressee_id, status')
+          .in('requester_id', candidateIds)
+          .eq('status', 'accepted'),
+        supabase
+          .from('connections')
+          .select('requester_id, addressee_id, status')
+          .in('addressee_id', candidateIds)
+          .eq('status', 'accepted'),
+      ])
+
+      if (a.error) return res.status(500).json({ error: a.error.message })
+      if (b.error) return res.status(500).json({ error: b.error.message })
+
+      for (const row of [...(a.data ?? []), ...(b.data ?? [])]) {
+        const candidateId = candidateIdSet.has(row.requester_id)
+          ? row.requester_id
+          : candidateIdSet.has(row.addressee_id)
+            ? row.addressee_id
+            : null
+
+        if (!candidateId) continue
+
+        const peerId = row.requester_id === candidateId ? row.addressee_id : row.requester_id
+        if (!myAcceptedSet.has(peerId)) continue
+
+        mutualsByCandidate.set(candidateId, (mutualsByCandidate.get(candidateId) ?? 0) + 1)
+      }
+    }
+
+    const mySkills = mySkillsByUser.get(req.appUserId) ?? []
+
+    const enriched = candidates.map((u) => {
+      const skills = skillsByUser.get(u.id) ?? []
+      const mutual = mutualsByCandidate.get(u.id) ?? 0
+
+      return {
+        ...u,
+        skills,
+        mutual_connections_count: mutual,
+        ...discoverReasonFor(myUser.data, mySkills, u, skills, mutual),
+      }
+    })
+
+    const sorted = enriched
+      .sort((a, b) => {
+        const scoreDelta = (b.match_score ?? 0) - (a.match_score ?? 0)
+        if (scoreDelta !== 0) return scoreDelta
+        return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+      })
+      .slice(0, 24)
+
+    return res.json({ suggestions: sorted })
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load suggestions' })
   }
 })
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Public profile by ID Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 usersRouter.get('/public/:id', requireAuth, async (req, res) => {
   try {
     const userId = req.params.id
     if (!userId) return res.status(422).json({ error: 'Invalid user id' })
 
-    // Fetch user core first Ã¢â‚¬â€ fail-fast if not found
+    // Fetch user core first; fail fast if not found.
     const user = await supabase
       .from('users')
       .select('id, full_name, username, avatar_url, bio, headline, location_city, university, current_company, linkedin_url, website_url, github_url, languages, status, created_at')
@@ -647,7 +873,7 @@ usersRouter.get('/public/:id', requireAuth, async (req, res) => {
     }
     if (!user.data) return res.status(404).json({ error: 'User not found' })
 
-    // Fetch extended data with individual error handling Ã¢â‚¬â€ return empty arrays on any failure
+    // Fetch extended data with individual error handling; return empty arrays on failure.
     // (so a missing table from an unrun migration doesn't break the whole endpoint)
     const [eduResult, expResult, skillsResult] = await Promise.allSettled([
       supabase.from('user_education').select('*').eq('user_id', userId).order('sort_order'),
