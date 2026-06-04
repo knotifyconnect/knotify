@@ -1077,11 +1077,25 @@ function KnotStage({
   const hasGraphQuery = normalizedGraphQuery.length > 0
 
   const nodes = useMemo(() => {
-    const ordered: Array<{ connection: Connection; tab: RelationshipTab }> = [
-      ...incoming.map((connection) => ({ connection, tab: 'Incoming' as const })),
-      ...connected.map((connection) => ({ connection, tab: 'Connected' as const })),
-      ...sent.map((connection) => ({ connection, tab: 'Sent' as const })),
+    const candidates: Array<{ connection: Connection; tab: RelationshipTab; priority: number; index: number }> = [
+      ...connected.map((connection, index) => ({ connection, tab: 'Connected' as const, priority: 0, index })),
+      ...incoming.map((connection, index) => ({ connection, tab: 'Incoming' as const, priority: 1, index })),
+      ...sent.map((connection, index) => ({ connection, tab: 'Sent' as const, priority: 2, index })),
     ]
+
+    // One real person must render as one graph node. Accepted relationships win
+    // over incoming/pending/outgoing state when stale or overlapping data exists.
+    const directByUserId = new Map<string, { connection: Connection; tab: RelationshipTab; priority: number; index: number }>()
+    for (const candidate of candidates) {
+      const userId = otherUserId(candidate.connection, meId)
+      if (!userId) continue
+      const existing = directByUserId.get(userId)
+      if (!existing || candidate.priority < existing.priority || (candidate.priority === existing.priority && candidate.index < existing.index)) {
+        directByUserId.set(userId, candidate)
+      }
+    }
+
+    const ordered = [...directByUserId.values()].sort((a, b) => a.priority - b.priority || a.index - b.index)
 
     const directNodes = ordered.map(({ connection, tab }) => {
       const user = connection.user
@@ -1152,15 +1166,23 @@ function KnotStage({
 
   const visiblePeerEdges = useMemo(() => {
     const combinedEdges = [...peerEdges, ...expandedSecondDegreeEdges, ...expandedPeerEdges]
+    const seenPairs = new Set<string>()
+    const result: Array<PeerEdge & { source: (typeof nodes)[number]; target: (typeof nodes)[number] }> = []
 
-    return combinedEdges
-      .map((edge) => {
-        const source = nodesByUserId.get(edge.source_id)
-        const target = nodesByUserId.get(edge.target_id)
-        if (!source || !target) return null
-        return { ...edge, source, target }
-      })
-      .filter(Boolean) as Array<PeerEdge & { source: (typeof nodes)[number]; target: (typeof nodes)[number] }>
+    for (const edge of combinedEdges) {
+      const source = nodesByUserId.get(edge.source_id)
+      const target = nodesByUserId.get(edge.target_id)
+      if (!source || !target) continue
+      if (source.id === target.id || source.userId === target.userId) continue
+
+      const pairKey = [source.userId, target.userId].sort().join(':')
+      if (seenPairs.has(pairKey)) continue
+      seenPairs.add(pairKey)
+
+      result.push({ ...edge, id: pairKey, source, target })
+    }
+
+    return result
   }, [expandedPeerEdges, expandedSecondDegreeEdges, nodesByUserId, peerEdges])
 
   const graphPeerEdges: KnotGraphPeerEdge[] = useMemo(() => {

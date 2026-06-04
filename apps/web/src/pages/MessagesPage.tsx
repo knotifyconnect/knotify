@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { apiGet, apiPost } from '../lib/api'
+import { apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { supabase } from '../lib/supabase'
 
@@ -80,6 +80,88 @@ function dayLabel(value: string) {
   return date.toLocaleDateString()
 }
 
+type CoffeeTimelineEvent = {
+  title: string
+  detail: string
+  note: string | null
+  tone: 'proposed' | 'confirmed' | 'cancelled' | 'declined' | 'default'
+}
+
+function coffeeTimelineEventFromContent(content: string): CoffeeTimelineEvent | null {
+  const clean = content.trim()
+  if (!clean.startsWith('☕')) return null
+
+  const lines = clean.split('\n').map((line) => line.trim()).filter(Boolean)
+  const first = lines[0] ?? ''
+  const withoutIcon = first.replace(/^☕\s*/, '')
+  const splitAt = withoutIcon.indexOf(':')
+  const title = splitAt >= 0 ? withoutIcon.slice(0, splitAt).trim() : withoutIcon.trim()
+  const detail = splitAt >= 0 ? withoutIcon.slice(splitAt + 1).trim().replace(/\.$/, '') : ''
+
+  const lower = title.toLowerCase()
+  const tone =
+    lower.includes('proposed') ? 'proposed'
+      : lower.includes('confirmed') ? 'confirmed'
+        : lower.includes('cancelled') ? 'cancelled'
+          : lower.includes('declined') ? 'declined'
+            : 'default'
+
+  const note = lines
+    .slice(1)
+    .filter((line) => !line.toLowerCase().includes('coffee card above'))
+    .join(' ')
+    .trim() || null
+
+  if (!title && !detail) return null
+  return { title, detail, note, tone }
+}
+
+function CoffeeTimelineEventCard({
+  event,
+  createdAt,
+  actorName,
+}: {
+  event: CoffeeTimelineEvent
+  createdAt: string
+  actorName: string
+}) {
+  const accent =
+    event.tone === 'confirmed' ? 'var(--verd)'
+      : event.tone === 'cancelled' || event.tone === 'declined' ? 'var(--signal-deep)'
+        : 'var(--ochre)'
+
+  return (
+    <div
+      style={{
+        width: 'min(520px, 100%)',
+        margin: '8px auto 10px',
+        padding: '12px 14px',
+        borderRadius: 16,
+        border: '0.5px solid rgba(200, 148, 31, 0.24)',
+        background: 'linear-gradient(135deg, rgba(250,243,226,0.96), rgba(255,255,255,0.92))',
+        boxShadow: '0 10px 26px rgba(58, 45, 25, 0.07)',
+      }}
+    >
+      <div style={{ fontSize: 10.5, letterSpacing: '0.11em', textTransform: 'uppercase', color: accent, fontWeight: 700, marginBottom: 5 }}>
+        ☕ {event.title}
+      </div>
+      {event.detail && (
+        <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 600, lineHeight: 1.35 }}>
+          {event.detail}
+        </div>
+      )}
+      <div style={{ marginTop: 4, fontSize: 11.5, color: 'var(--ink-muted)' }}>
+        {actorName} · {relativeTime(createdAt)}
+      </div>
+      {event.note && (
+        <div style={{ marginTop: 7, fontSize: 12.5, color: 'var(--ink-muted)', fontStyle: 'italic', lineHeight: 1.35 }}>
+          {event.note}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const QUICK_ACTIONS = [
   { label: 'Video call 📹', message: "Would you be up for a quick video call?" },
   { label: 'Intro request 🤝', message: "Could you introduce me to someone at your company?" },
@@ -90,6 +172,35 @@ type CafeOption = {
   id: string
   name: string
   address: string | null
+}
+
+type MeetingStatus = 'proposed' | 'confirmed' | 'declined' | 'cancelled' | 'completed'
+
+type MeetingSummary = {
+  id: string
+  initiator_id: string
+  invitee_id: string
+  cafe_id: string | null
+  location_text: string | null
+  scheduled_at: string
+  status: MeetingStatus
+  note: string | null
+  created_at: string
+  updated_at?: string | null
+  cafe: CafeOption | null
+  peer?: UserPreview | null
+  am_initiator: boolean
+}
+
+function formatMeetingTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function meetingLocationLabel(meeting: MeetingSummary, cafes: CafeOption[]) {
+  const cafe = meeting.cafe ?? cafes.find((c) => c.id === meeting.cafe_id) ?? null
+  return cafe?.name ?? meeting.location_text ?? 'Coffee'
 }
 
 export function MessagesPage() {
@@ -109,6 +220,9 @@ export function MessagesPage() {
   const [creatingFor, setCreatingFor] = useState<string | null>(null)
   const [coffeeOpen, setCoffeeOpen] = useState(false)
   const [cafeOptions, setCafeOptions] = useState<CafeOption[]>([])
+  const [meetings, setMeetings] = useState<MeetingSummary[]>([])
+  const [meetingActionId, setMeetingActionId] = useState<string | null>(null)
+  const [meetingNow, setMeetingNow] = useState(() => Date.now())
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null)
   const [pickerOpenMsgId, setPickerOpenMsgId] = useState<string | null>(null)
@@ -117,11 +231,33 @@ export function MessagesPage() {
   const deepLinkAction = searchParams.get('action')
 
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  const scrollStateRef = useRef<{ conversationId: string | null; lastMessageId: string | null }>({ conversationId: null, lastMessageId: null })
+  const scrollIntentRef = useRef<'none' | 'open' | 'own-message'>('none')
+  const openCreateInFlightRef = useRef<Map<string, Promise<string | null>>>(new Map())
+  const handledDeepLinkRef = useRef<string | null>(null)
 
   const selectedConv = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
     [conversations, selectedId]
   )
+
+  const selectedMeeting = useMemo(() => {
+    const peerId = selectedConv?.peer?.id
+    if (!peerId) return null
+
+    const active = meetings
+      .filter((meeting) => {
+        const isActionableStatus = meeting.status === 'proposed' || meeting.status === 'confirmed'
+        const isPeerMeeting = meeting.initiator_id === peerId || meeting.invitee_id === peerId
+        const isUpcoming = new Date(meeting.scheduled_at).getTime() >= meetingNow
+
+        return isActionableStatus && isPeerMeeting && isUpcoming
+      })
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())
+
+    return active[0] ?? null
+  }, [meetings, selectedConv, meetingNow])
 
   const filteredConvs = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -181,12 +317,12 @@ export function MessagesPage() {
       const res = await apiGet<{ conversations: ConversationSummary[] }>('/api/conversations')
       const next = res.conversations ?? []
       setConversations(next)
-      if (!next.length) { setSelectedId(null); setMessages([]) }
-      else if (!selectedId || !next.some((c) => c.id === selectedId)) {
-        // Only auto-pick first chat on desktop — on mobile we want the list to be the
-        // landing surface so the user picks intentionally.
-        const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
-        if (isDesktop) setSelectedId(next[0].id)
+      if (!next.length) {
+        setSelectedId(null)
+        setMessages([])
+      } else if (selectedId && !next.some((c) => c.id === selectedId)) {
+        setSelectedId(null)
+        setMessages([])
       }
       if (!keepErr) setError(null)
     } catch (err) {
@@ -209,6 +345,15 @@ export function MessagesPage() {
     }
   }
 
+  function openConversation(conversationId: string) {
+    if (conversationId === selectedId) return
+    scrollIntentRef.current = 'open'
+    scrollStateRef.current = { conversationId: null, lastMessageId: null }
+    setMessages([])
+    setOptimistic((prev) => ({ ...prev, [conversationId]: prev[conversationId] ?? [] }))
+    setSelectedId(conversationId)
+  }
+
   async function markRead(id: string) {
     try {
       await apiPost(`/api/conversations/${id}/read`, {})
@@ -218,29 +363,62 @@ export function MessagesPage() {
     } catch { /* best effort */ }
   }
 
+  async function loadMeetings(keepErr = false) {
+    try {
+      const res = await apiGet<{ meetings: MeetingSummary[] }>('/api/meetings')
+      setMeetings(res.meetings ?? [])
+    } catch (err) {
+      if (!keepErr) setError(err instanceof Error ? err.message : 'Failed loading meetings')
+    }
+  }
+
   async function scheduleCoffee(payload: { inviteeId: string; scheduledAt: string; cafeId: string | null; locationText: string | null; note: string | null }): Promise<void> {
     if (!selectedId) return
     setError(null)
     try {
       await apiPost('/api/meetings', payload)
-      // Send a system-style message into the conversation so the peer sees it
-      const when = new Date(payload.scheduledAt)
-      const cafe = cafeOptions.find((c) => c.id === payload.cafeId)
-      const where = cafe?.name ?? payload.locationText ?? 'a café'
-      const friendlyTime = when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-      await sendMessage(`☕ Proposed: coffee at ${where} — ${friendlyTime}.${payload.note ? ` "${payload.note}"` : ''}\nConfirm or reschedule on your map page.`)
+      await loadMeetings(true)
+      await loadConvs(true)
+      if (selectedId) await loadMsgs(selectedId, true)
       setCoffeeOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed scheduling')
     }
   }
 
+  async function updateMeetingStatus(meeting: MeetingSummary, status: MeetingStatus) {
+    if (!selectedId || meetingActionId) return
+
+    setMeetingActionId(meeting.id)
+    setError(null)
+    try {
+      await apiPatch<{ meeting: MeetingSummary }>(`/api/meetings/${meeting.id}`, { status })
+
+      const nextMeeting = { ...meeting, status, updated_at: new Date().toISOString() }
+      setMeetings((prev) => prev.map((item) => (item.id === meeting.id ? nextMeeting : item)))
+      await loadMeetings(true)
+
+      await loadConvs(true)
+      if (selectedId) await loadMsgs(selectedId, true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed updating coffee invite')
+    } finally {
+      setMeetingActionId(null)
+    }
+  }
+
   useEffect(() => {
     void loadConvs()
+    void loadMeetings(true)
     void (async () => {
       try { const r = await apiGet<{ connections: Connection[] }>('/api/connections'); setConnections(r.connections ?? []) } catch { /* noop */ }
       try { const c = await apiGet<{ cafes: CafeOption[] }>('/api/cafes'); setCafeOptions(c.cafes ?? []) } catch { /* noop */ }
     })()
+  }, [])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setMeetingNow(Date.now()), 60_000)
+    return () => window.clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -249,70 +427,217 @@ export function MessagesPage() {
     void markRead(selectedId)
   }, [selectedId])
 
-  // Realtime: subscribe to new messages in the selected conversation
+  // Realtime: selected thread should react to both new messages and delivery/read updates.
   useEffect(() => {
     if (!selectedId) return
-    // Mark delivered when opening conversation
-    void apiPost(`/api/conversations/${selectedId}/delivered`, {}).catch(() => {})
+
+    const activeConversationId = selectedId
+
+    function refreshSelectedThread() {
+      void loadMsgs(activeConversationId, true)
+      void loadConvs(true)
+      void loadMeetings(true)
+    }
+
+    // Mark delivered/read when opening conversation.
+    void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
+    void markRead(activeConversationId)
+
     const channel = supabase
-      .channel(`messages:conv:${selectedId}`)
+      .channel(`messages:conv:${activeConversationId}`)
       .on('postgres_changes', {
-        event: 'INSERT',
+        event: '*',
         schema: 'public',
         table: 'messages',
-        filter: `conversation_id=eq.${selectedId}`,
+        filter: `conversation_id=eq.${activeConversationId}`,
       }, () => {
-        void loadMsgs(selectedId, true)
-        void markRead(selectedId)
+        refreshSelectedThread()
+        void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
+        void markRead(activeConversationId)
       })
       .subscribe()
+
     return () => { void supabase.removeChannel(channel) }
   }, [selectedId])
 
-  // Realtime: subscribe to any new message for unread badge refresh
+  // Realtime: any message insert/update can affect conversation ordering, unread counts, delivery/read ticks.
   useEffect(() => {
     const channel = supabase
       .channel('messages:any')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
         void loadConvs(true)
       })
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
   }, [])
 
+  // Reliability path: keep the open thread fresh even if Supabase message realtime
+  // misses an event. This makes messaging usable instead of pretending realtime is magic.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [displayMessages, selectedId])
+    if (!selectedId) return
 
-  // Honor ?to=USER_ID&action=coffee deep links from elsewhere in the app
+    const activeConversationId = selectedId
+    let disposed = false
+    let lastPresenceSync = 0
+
+    async function syncOpenThread() {
+      if (disposed) return
+
+      await Promise.allSettled([
+        loadMsgs(activeConversationId, true),
+        loadConvs(true),
+        loadMeetings(true),
+      ])
+
+      const now = Date.now()
+      if (now - lastPresenceSync > 7000) {
+        lastPresenceSync = now
+        void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
+        void markRead(activeConversationId)
+      }
+    }
+
+    void syncOpenThread()
+    const interval = window.setInterval(() => { void syncOpenThread() }, 2500)
+
+    return () => {
+      disposed = true
+      window.clearInterval(interval)
+    }
+  }, [selectedId])
+
+  // Realtime: meeting state is the source of truth for coffee action cards.
+  // A meeting update is usually followed by a backend-owned receipt message,
+  // so refresh the thread immediately and once after the receipt insert settles.
+  useEffect(() => {
+    function refreshMeetingState() {
+      void loadMeetings(true)
+      void loadConvs(true)
+      if (selectedId) void loadMsgs(selectedId, true)
+    }
+
+    const channel = supabase
+      .channel('meetings:any')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meetings' }, () => {
+        refreshMeetingState()
+        window.setTimeout(refreshMeetingState, 500)
+      })
+      .subscribe()
+
+    return () => { void supabase.removeChannel(channel) }
+  }, [selectedId])
+
+  const latestDisplayMessage = displayMessages[displayMessages.length - 1] ?? null
+
+  useLayoutEffect(() => {
+    const previous = scrollStateRef.current
+    const latestMessageId = latestDisplayMessage?.id ?? null
+    const latestMessageChanged = previous.lastMessageId !== latestMessageId
+    const scroller = messagesScrollRef.current
+    const intent = scrollIntentRef.current
+
+    if (!selectedId || !scroller) {
+      scrollStateRef.current = { conversationId: selectedId, lastMessageId: latestMessageId }
+      return
+    }
+
+    const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+    const isNearBottom = distanceFromBottom < 180
+    const shouldJumpForOpen = intent === 'open' && Boolean(latestMessageId)
+    const shouldScrollForOwnMessage = intent === 'own-message'
+    const shouldFollowIncoming = latestMessageChanged && isNearBottom
+
+    if (shouldJumpForOpen || shouldScrollForOwnMessage) {
+      scroller.scrollTop = scroller.scrollHeight
+      window.requestAnimationFrame(() => {
+        scroller.scrollTop = scroller.scrollHeight
+      })
+      scrollIntentRef.current = 'none'
+    } else if (shouldFollowIncoming) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
+
+    scrollStateRef.current = {
+      conversationId: selectedId,
+      lastMessageId: latestMessageId,
+    }
+  }, [selectedId, latestDisplayMessage?.id, latestDisplayMessage?.is_mine, displayMessages.length])
+
+  // Honor ?to=USER_ID&action=coffee deep links from elsewhere in the app.
+  // React dev mode can run effects twice, so guard by the exact deep-link key.
   useEffect(() => {
     if (!deepLinkUserId) return
+
+    const deepLinkKey = `${deepLinkUserId}:${deepLinkAction ?? ''}`
+    if (handledDeepLinkRef.current === deepLinkKey) return
+    handledDeepLinkRef.current = deepLinkKey
+
     void (async () => {
-      await openOrCreate(deepLinkUserId)
-      // Strip the query so it doesn't re-fire on re-render
+      const wantsCoffee = deepLinkAction === 'coffee'
+      const conversationId = await openOrCreate(deepLinkUserId)
+
       const next = new URLSearchParams(searchParams)
-      const wantsCoffee = next.get('action') === 'coffee'
-      next.delete('to'); next.delete('action')
+      next.delete('to')
+      next.delete('action')
       setSearchParams(next, { replace: true })
-      if (wantsCoffee) setTimeout(() => setCoffeeOpen(true), 200)
+
+      if (conversationId && wantsCoffee) setTimeout(() => setCoffeeOpen(true), 200)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkUserId, deepLinkAction])
 
-  async function openOrCreate(userId: string) {
-    setCreatingFor(userId)
-    try {
-      const res = await apiPost<{ conversation: { id: string } }>('/api/conversations', { userId })
-      await loadConvs(true)
-      setSelectedId(res.conversation.id)
-      await loadMsgs(res.conversation.id, true)
-      await markRead(res.conversation.id)
+  async function openOrCreate(userId: string): Promise<string | null> {
+    const existingConversation = conversations.find((conv) => conv.peer?.id === userId)
+    if (existingConversation) {
+      scrollIntentRef.current = 'open'
+      scrollStateRef.current = { conversationId: null, lastMessageId: null }
+      setSelectedId(existingConversation.id)
+      await loadMsgs(existingConversation.id, true)
+      await markRead(existingConversation.id)
       setNewChatOpen(false)
       setNewChatSearch('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed starting conversation')
+      setError(null)
+      return existingConversation.id
+    }
+
+    const inFlight = openCreateInFlightRef.current.get(userId)
+    if (inFlight) {
+      const conversationId = await inFlight
+      if (conversationId) {
+        scrollIntentRef.current = 'open'
+        scrollStateRef.current = { conversationId: null, lastMessageId: null }
+        setSelectedId(conversationId)
+      }
+      return conversationId
+    }
+
+    const task = (async () => {
+      setCreatingFor(userId)
+      try {
+        const res = await apiPost<{ conversation: { id: string } }>('/api/conversations', { userId })
+        await loadConvs(true)
+        scrollIntentRef.current = 'open'
+        scrollStateRef.current = { conversationId: null, lastMessageId: null }
+        setSelectedId(res.conversation.id)
+        await loadMsgs(res.conversation.id, true)
+        await markRead(res.conversation.id)
+        setNewChatOpen(false)
+        setNewChatSearch('')
+        setError(null)
+        return res.conversation.id
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed starting conversation')
+        return null
+      } finally {
+        setCreatingFor(null)
+      }
+    })()
+
+    openCreateInFlightRef.current.set(userId, task)
+    try {
+      return await task
     } finally {
-      setCreatingFor(null)
+      openCreateInFlightRef.current.delete(userId)
     }
   }
 
@@ -331,6 +656,7 @@ export function MessagesPage() {
     }
 
     if (!contentOverride) setComposer('')
+    scrollIntentRef.current = 'own-message'
     setSendLoading(true)
     setOptimistic((prev) => ({ ...prev, [selectedId]: [...(prev[selectedId] ?? []), opt] }))
 
@@ -559,7 +885,7 @@ export function MessagesPage() {
               <button
                 key={conv.id}
                 type="button"
-                onClick={() => setSelectedId(conv.id)}
+                onClick={() => openConversation(conv.id)}
                 style={{
                   width: '100%',
                   display: 'flex',
@@ -675,8 +1001,20 @@ export function MessagesPage() {
             )}
           </div>
 
+          {selectedMeeting && selectedConv?.peer && (
+            <CoffeeActionCard
+              meeting={selectedMeeting}
+              cafes={cafeOptions}
+              busy={meetingActionId === selectedMeeting.id}
+              onConfirm={() => void updateMeetingStatus(selectedMeeting, 'confirmed')}
+              onDecline={() => void updateMeetingStatus(selectedMeeting, 'declined')}
+              onCancel={() => void updateMeetingStatus(selectedMeeting, 'cancelled')}
+            />
+          )}
+
           {/* Messages */}
           <div
+            ref={messagesScrollRef}
             style={{
               flex: 1,
               overflowY: 'auto',
@@ -705,9 +1043,10 @@ export function MessagesPage() {
               displayMessages.map((msg, i) => {
                 const prev = displayMessages[i - 1]
                 const showDay = !prev || dayLabel(prev.created_at) !== dayLabel(msg.created_at)
-                const showAuthor = !msg.is_mine && (!prev || prev.sender_id !== msg.sender_id)
+                const coffeeEvent = coffeeTimelineEventFromContent(msg.content)
+                const showAuthor = !coffeeEvent && !msg.is_mine && (!prev || prev.sender_id !== msg.sender_id)
 
-                const msgReactions = (!isOpt(msg) && msg.reactions) ? msg.reactions : []
+                const msgReactions = (!coffeeEvent && !isOpt(msg) && msg.reactions) ? msg.reactions : []
                 return (
                   <div key={msg.id}>
                     {showDay && (
@@ -717,6 +1056,14 @@ export function MessagesPage() {
                         </span>
                       </div>
                     )}
+                    {coffeeEvent ? (
+                      <CoffeeTimelineEventCard
+                        event={coffeeEvent}
+                        createdAt={msg.created_at}
+                        actorName={msg.is_mine ? 'You' : msg.sender?.full_name ?? 'They'}
+                      />
+                    ) : (
+                      <>
                     {showAuthor && (
                       <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 3, marginLeft: 12 }}>
                         {msg.sender?.full_name ?? 'Unknown'}
@@ -840,6 +1187,8 @@ export function MessagesPage() {
                         </button>
                       )}
                     </div>
+                    </>
+                    )}
                   </div>
                 )
               })
@@ -893,6 +1242,7 @@ export function MessagesPage() {
               padding: '12px 16px',
               borderTop: '0.5px solid var(--rule-soft)',
               background: 'var(--paper-soft)',
+              display: selectedId ? 'block' : 'none',
             }}
           >
             {lastMineLabel && (
@@ -982,6 +1332,101 @@ export function MessagesPage() {
 }
 
 // ─── Coffee schedule modal ─────────────────────────────────────────────────
+function CoffeeActionCard({
+  meeting,
+  cafes,
+  busy,
+  onConfirm,
+  onDecline,
+  onCancel,
+}: {
+  meeting: MeetingSummary
+  cafes: CafeOption[]
+  busy: boolean
+  onConfirm: () => void
+  onDecline: () => void
+  onCancel: () => void
+}) {
+  const where = meetingLocationLabel(meeting, cafes)
+  const when = formatMeetingTime(meeting.scheduled_at)
+  const isProposed = meeting.status === 'proposed'
+  const isConfirmed = meeting.status === 'confirmed'
+  const isIncoming = isProposed && !meeting.am_initiator
+  const isOutgoing = isProposed && meeting.am_initiator
+  const [confirmCancel, setConfirmCancel] = useState(false)
+
+  const title = isConfirmed ? 'Coffee confirmed' : 'Coffee proposed'
+  const status = isConfirmed
+    ? 'Both of you confirmed.'
+    : isIncoming
+      ? 'They are waiting for your response.'
+      : 'Waiting for their response.'
+
+  return (
+    <div
+      style={{
+        margin: '0 20px 12px',
+        padding: '13px 14px',
+        borderRadius: 16,
+        border: '0.5px solid rgba(200, 148, 31, 0.28)',
+        background: 'linear-gradient(135deg, rgba(250,243,226,0.96), rgba(255,255,255,0.92))',
+        boxShadow: '0 14px 34px rgba(58, 45, 25, 0.08)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 14,
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 11, letterSpacing: '0.11em', textTransform: 'uppercase', color: 'var(--ochre)', marginBottom: 5 }}>
+          ☕ {title}
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.35 }}>
+          {where} · {when}
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 3 }}>
+          {status}
+        </div>
+        {meeting.note && (
+          <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 6, fontStyle: 'italic' }}>
+            “{meeting.note}”
+          </div>
+        )}
+      </div>
+
+      {isIncoming ? (
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <KBtn variant="ghost" size="sm" onClick={onDecline} disabled={busy}>Decline</KBtn>
+          <KBtn variant="signal" size="sm" onClick={onConfirm} disabled={busy}>{busy ? 'Saving…' : 'Accept'}</KBtn>
+        </div>
+      ) : isOutgoing ? (
+        confirmCancel ? (
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>Cancel invite?</span>
+            <KBtn variant="ghost" size="sm" onClick={() => setConfirmCancel(false)} disabled={busy}>Keep</KBtn>
+            <KBtn variant="signal" size="sm" onClick={onCancel} disabled={busy}>{busy ? 'Cancelling…' : 'Yes, cancel'}</KBtn>
+          </div>
+        ) : (
+          <KBtn variant="ghost" size="sm" onClick={() => setConfirmCancel(true)} disabled={busy}>Cancel invite</KBtn>
+        )
+      ) : isConfirmed ? (
+        confirmCancel ? (
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>Cancel this plan?</span>
+            <KBtn variant="ghost" size="sm" onClick={() => setConfirmCancel(false)} disabled={busy}>Keep</KBtn>
+            <KBtn variant="signal" size="sm" onClick={onCancel} disabled={busy}>{busy ? 'Cancelling…' : 'Yes, cancel'}</KBtn>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: 'var(--verd)', fontWeight: 600, whiteSpace: 'nowrap' }}>Confirmed</div>
+            <KBtn variant="ghost" size="sm" onClick={() => setConfirmCancel(true)} disabled={busy}>Cancel plan</KBtn>
+          </div>
+        )
+      ) : null}
+    </div>
+  )
+}
+
 function CoffeeScheduleModal({
   peerName,
   peerId,
@@ -1005,18 +1450,30 @@ function CoffeeScheduleModal({
   const [locationText, setLocationText] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   async function submit() {
     if (busy) return
+
+    const normalizedCafeId = cafeId || null
+    const normalizedLocationText = locationText.trim()
+    const normalizedNote = note.trim()
+
+    if (!normalizedCafeId && !normalizedLocationText) {
+      setFormError('Choose a café or add a location.')
+      return
+    }
+
+    setFormError(null)
     setBusy(true)
     try {
       const iso = new Date(`${date}T${time}:00`).toISOString()
       await onSchedule({
         inviteeId: peerId,
         scheduledAt: iso,
-        cafeId: cafeId || null,
-        locationText: cafeId ? null : (locationText.trim() || null),
-        note: note.trim() || null,
+        cafeId: normalizedCafeId,
+        locationText: normalizedCafeId ? null : normalizedLocationText,
+        note: normalizedNote || null,
       })
     } finally {
       setBusy(false)
@@ -1046,7 +1503,7 @@ function CoffeeScheduleModal({
 
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Café (partner)</label>
-          <select value={cafeId} onChange={(e) => setCafeId(e.target.value)} style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          <select value={cafeId} onChange={(e) => { setCafeId(e.target.value); setFormError(null) }} style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
             <option value="">Other / not a partner café</option>
             {cafes.map((c) => (
               <option key={c.id} value={c.id}>{c.name}{c.address ? ` — ${c.address}` : ''}</option>
@@ -1057,7 +1514,13 @@ function CoffeeScheduleModal({
         {!cafeId && (
           <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Location</label>
-            <input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="e.g. Tortoise on Türkenstraße" style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+            <input value={locationText} onChange={(e) => { setLocationText(e.target.value); setFormError(null) }} placeholder="e.g. Tortoise on Türkenstraße" style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+          </div>
+        )}
+
+        {formError && (
+          <div style={{ marginBottom: 12, padding: '9px 11px', borderRadius: 10, border: '0.5px solid rgba(181, 83, 63, 0.28)', background: 'rgba(181, 83, 63, 0.08)', color: 'var(--signal-deep)', fontSize: 12.5, lineHeight: 1.35 }}>
+            {formError}
           </div>
         )}
 
