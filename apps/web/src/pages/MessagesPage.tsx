@@ -14,6 +14,7 @@ type UserPreview = {
 type ConversationSummary = {
   id: string
   created_at: string
+  cleared_at?: string | null
   peer: UserPreview | null
   unread_count: number
   latest_message: {
@@ -267,6 +268,8 @@ export function MessagesPage() {
     () => conversations.find((c) => c.id === selectedId) ?? null,
     [conversations, selectedId]
   )
+
+  const selectedHistoryCleared = Boolean(selectedConv?.cleared_at)
 
   const selectedMeeting = useMemo(() => {
     const peerId = selectedConv?.peer?.id
@@ -527,7 +530,7 @@ export function MessagesPage() {
     }
 
     void syncOpenThread()
-    const interval = window.setInterval(() => { void syncOpenThread() }, 2500)
+    const interval = window.setInterval(() => { void syncOpenThread() }, 1800)
 
     return () => {
       disposed = true
@@ -1222,9 +1225,16 @@ export function MessagesPage() {
                 Loading…
               </p>
             ) : displayMessages.length === 0 ? (
-              <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 14, color: 'var(--ink-faint)' }}>
-                No messages yet. Break the ice.
-              </p>
+              <div style={{ maxWidth: 360, margin: 'auto', textAlign: 'center' }}>
+                <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 14, color: 'var(--ink-faint)', margin: 0 }}>
+                  {selectedHistoryCleared ? 'History cleared. New messages will appear here.' : 'No messages yet. Break the ice.'}
+                </p>
+                {selectedHistoryCleared && (
+                  <p style={{ marginTop: 7, fontSize: 12, lineHeight: 1.45, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
+                    This only affects your side of the conversation.
+                  </p>
+                )}
+              </div>
             ) : (
               displayMessages.map((msg, i) => {
                 const prev = displayMessages[i - 1]
