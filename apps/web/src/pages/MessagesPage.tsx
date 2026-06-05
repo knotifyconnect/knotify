@@ -361,8 +361,8 @@ export function MessagesPage() {
     }
   }
 
-  async function loadMsgs(id: string, keepErr = false) {
-    setLoadingMsgs(true)
+  async function loadMsgs(id: string, keepErr = false, quiet = false) {
+    if (!quiet) setLoadingMsgs(true)
     try {
       const res = await apiGet<{ messages: Message[] }>(`/api/conversations/${id}/messages`)
       setMessages(res.messages ?? [])
@@ -370,7 +370,7 @@ export function MessagesPage() {
     } catch (err) {
       if (!keepErr) setError(err instanceof Error ? err.message : 'Failed loading messages')
     } finally {
-      setLoadingMsgs(false)
+      if (!quiet) setLoadingMsgs(false)
     }
   }
 
@@ -504,33 +504,45 @@ export function MessagesPage() {
   }, [])
 
   // Reliability path: keep the open thread fresh even if Supabase message realtime
-  // misses an event. This makes messaging usable instead of pretending realtime is magic.
+  // misses an event. Keep this single-flight so slow requests cannot pile up.
   useEffect(() => {
     if (!selectedId) return
 
     const activeConversationId = selectedId
     let disposed = false
+    let inFlight = false
     let lastPresenceSync = 0
+    let lastBackgroundSync = 0
 
     async function syncOpenThread() {
-      if (disposed) return
+      if (disposed || inFlight) return
 
-      await Promise.allSettled([
-        loadMsgs(activeConversationId, true),
-        loadConvs(true),
-        loadMeetings(true),
-      ])
+      inFlight = true
+      try {
+        await loadMsgs(activeConversationId, true, true)
 
-      const now = Date.now()
-      if (now - lastPresenceSync > 7000) {
-        lastPresenceSync = now
-        void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
-        void markRead(activeConversationId)
+        const now = Date.now()
+
+        // Conversation list and coffee state are useful, but not urgent enough to block
+        // every message poll. Refresh them in the background to avoid request dogpiling.
+        if (now - lastBackgroundSync > 5000) {
+          lastBackgroundSync = now
+          void loadConvs(true)
+          void loadMeetings(true)
+        }
+
+        if (now - lastPresenceSync > 7000) {
+          lastPresenceSync = now
+          void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
+          void markRead(activeConversationId)
+        }
+      } finally {
+        inFlight = false
       }
     }
 
     void syncOpenThread()
-    const interval = window.setInterval(() => { void syncOpenThread() }, 1800)
+    const interval = window.setInterval(() => { void syncOpenThread() }, 1200)
 
     return () => {
       disposed = true
