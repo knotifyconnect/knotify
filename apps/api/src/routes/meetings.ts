@@ -152,6 +152,36 @@ async function insertMeetingReceiptMessage(meetingId: string, actorId: string, p
   if (link.error) throw new Error(link.error.message)
 }
 
+async function decorateMeetingForUser<T extends {
+  initiator_id: string
+  invitee_id: string
+  cafe_id: string | null
+}>(meeting: T, appUserId: string) {
+  const peerId = meeting.initiator_id === appUserId ? meeting.invitee_id : meeting.initiator_id
+
+  const [peer, cafe] = await Promise.all([
+    supabase.from('users').select('id, full_name, username, avatar_url').eq('id', peerId).maybeSingle(),
+    meeting.cafe_id
+      ? supabase.from('cafes').select('id, name, slug, address').eq('id', meeting.cafe_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ])
+
+  if (peer.error) throw new Error(peer.error.message)
+  if (cafe.error) throw new Error(cafe.error.message)
+
+  return {
+    ...meeting,
+    peer: peer.data ?? null,
+    cafe: meeting.cafe_id ? cafe.data ?? null : null,
+    am_initiator: meeting.initiator_id === appUserId,
+  }
+}
+
+function logMeetingReceiptFailure(action: 'create' | 'update', error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  console.warn('[meetings] Receipt write is non-blocking during ' + action + ':', message)
+}
+
 meetingsRouter.post('/', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
   const parsed = createSchema.safeParse(req.body)
@@ -212,10 +242,11 @@ meetingsRouter.post('/', requireAuth, async (req, res) => {
       `☕ Proposed: coffee at ${where} — ${when}.${normalizedNote ? ` "${normalizedNote}"` : ''}\nUse the coffee card above to respond.`
     )
   } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed writing meeting receipt' })
+    logMeetingReceiptFailure('create', error)
   }
 
-  return res.status(201).json({ meeting: insert.data })
+  const meeting = await decorateMeetingForUser(insert.data, req.appUserId)
+  return res.status(201).json({ meeting })
 })
 
 // ── Confirm / decline / cancel ────────────────────────────────────────────
@@ -267,10 +298,11 @@ meetingsRouter.patch('/:id', requireAuth, async (req, res) => {
 
     await insertMeetingReceiptMessage(upd.data.id, req.appUserId, peerId, `☕ Coffee ${verb}: ${where} — ${when}.`)
   } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed writing meeting receipt' })
+    logMeetingReceiptFailure('update', error)
   }
 
-  return res.json({ meeting: upd.data })
+  const nextMeeting = await decorateMeetingForUser(upd.data, req.appUserId)
+  return res.json({ meeting: nextMeeting })
 })
 
 // ── My next upcoming meeting (for the map "Tomorrow · IRL" card) ──────────

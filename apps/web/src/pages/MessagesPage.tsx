@@ -208,6 +208,34 @@ function meetingLocationLabel(meeting: MeetingSummary, cafes: CafeOption[]) {
   return cafe?.name ?? meeting.location_text ?? 'Coffee'
 }
 
+function coffeeErrorMessage(err: unknown) {
+  const raw = err instanceof Error ? err.message : ''
+  const message = raw.trim()
+  const lower = message.toLowerCase()
+
+  if (lower.includes('only schedule meetings with connections')) {
+    return 'You can only plan coffee with people already in your knot.'
+  }
+
+  if (lower.includes('choose a café') || lower.includes('choose a cafe') || lower.includes('location')) {
+    return 'Choose a partner café or add a custom location.'
+  }
+
+  if (lower.includes('cannot meet yourself')) {
+    return 'Pick another person. Planning coffee with yourself is called being tired.'
+  }
+
+  if (lower.includes('invalid payload') || lower.includes('422')) {
+    return 'Check the date, time, and location before sending.'
+  }
+
+  if (lower.includes('failed to fetch') || lower.includes('network')) {
+    return 'Network issue. Your proposal was not sent. Try again.'
+  }
+
+  return message || 'Could not send the coffee proposal. Check the details and try again.'
+}
+
 async function apiDeleteJson<T>(path: string): Promise<T> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
@@ -403,16 +431,18 @@ export function MessagesPage() {
 
   async function scheduleCoffee(payload: { inviteeId: string; scheduledAt: string; cafeId: string | null; locationText: string | null; note: string | null }): Promise<void> {
     if (!selectedId) return
+
     setError(null)
-    try {
-      await apiPost('/api/meetings', payload)
-      await loadMeetings(true)
-      await loadConvs(true)
-      if (selectedId) await loadMsgs(selectedId, true)
-      setCoffeeOpen(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed scheduling')
-    }
+
+    const res = await apiPost<{ meeting: MeetingSummary }>('/api/meetings', payload)
+    const localMeeting = res.meeting
+
+    setMeetings((prev) => [localMeeting, ...prev.filter((item) => item.id !== localMeeting.id)])
+    setCoffeeOpen(false)
+
+    void loadMeetings(true)
+    void loadConvs(true)
+    if (selectedId) void loadMsgs(selectedId, true, true)
   }
 
   async function updateMeetingStatus(meeting: MeetingSummary, status: MeetingStatus) {
@@ -466,7 +496,7 @@ export function MessagesPage() {
     const activeConversationId = selectedId
 
     function refreshSelectedThread() {
-      void loadMsgs(activeConversationId, true)
+      void loadMsgs(activeConversationId, true, true)
       void loadConvs(true)
       void loadMeetings(true)
     }
@@ -1622,12 +1652,12 @@ function CoffeeActionCard({
   const isOutgoing = isProposed && meeting.am_initiator
   const [confirmCancel, setConfirmCancel] = useState(false)
 
-  const title = isConfirmed ? 'Coffee confirmed' : 'Coffee proposed'
+  const title = isConfirmed ? 'Coffee confirmed' : isOutgoing ? 'Coffee proposal sent' : 'Coffee proposed'
   const status = isConfirmed
-    ? 'Both of you confirmed.'
+    ? 'Both of you confirmed. This is now a real plan, not networking theater.'
     : isIncoming
-      ? 'They are waiting for your response.'
-      : 'Waiting for their response.'
+      ? 'Review the time and place, then accept or decline.'
+      : 'Waiting for their response. The card is live in this chat.'
 
   return (
     <div
@@ -1663,7 +1693,7 @@ function CoffeeActionCard({
 
       {isIncoming ? (
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          <KBtn variant="ghost" size="sm" onClick={onDecline} disabled={busy}>Decline</KBtn>
+          <KBtn variant="ghost" size="sm" onClick={onDecline} disabled={busy}>{busy ? 'Saving…' : 'Decline'}</KBtn>
           <KBtn variant="signal" size="sm" onClick={onConfirm} disabled={busy}>{busy ? 'Saving…' : 'Accept'}</KBtn>
         </div>
       ) : isOutgoing ? (
@@ -1713,93 +1743,208 @@ function CoffeeScheduleModal({
     return d.toISOString().slice(0, 10)
   })
   const [time, setTime] = useState<string>('16:00')
+  const [locationMode, setLocationMode] = useState<'partner' | 'custom'>(() => (cafes.length ? 'partner' : 'custom'))
   const [cafeId, setCafeId] = useState<string>('')
   const [locationText, setLocationText] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+  const usingPartnerCafe = locationMode === 'partner'
+  const canUsePartnerCafe = cafes.length > 0
+
   async function submit() {
     if (busy) return
 
-    const normalizedCafeId = cafeId || null
-    const normalizedLocationText = locationText.trim()
+    const normalizedCafeId = usingPartnerCafe ? cafeId || null : null
+    const normalizedLocationText = usingPartnerCafe ? '' : locationText.trim()
     const normalizedNote = note.trim()
+    const scheduledAt = new Date(date + 'T' + time + ':00')
 
-    if (!normalizedCafeId && !normalizedLocationText) {
-      setFormError('Choose a café or add a location.')
+    if (Number.isNaN(scheduledAt.getTime())) {
+      setFormError('Pick a valid date and time.')
+      return
+    }
+
+    if (scheduledAt.getTime() <= Date.now() + 5 * 60 * 1000) {
+      setFormError('Pick a time at least a few minutes from now.')
+      return
+    }
+
+    if (usingPartnerCafe && !normalizedCafeId) {
+      setFormError('Choose a partner café or switch to custom location.')
+      return
+    }
+
+    if (!usingPartnerCafe && !normalizedLocationText) {
+      setFormError('Add a custom location or switch to partner café.')
       return
     }
 
     setFormError(null)
     setBusy(true)
+
     try {
-      const iso = new Date(`${date}T${time}:00`).toISOString()
       await onSchedule({
         inviteeId: peerId,
-        scheduledAt: iso,
+        scheduledAt: scheduledAt.toISOString(),
         cafeId: normalizedCafeId,
         locationText: normalizedCafeId ? null : normalizedLocationText,
         note: normalizedNote || null,
       })
+    } catch (err) {
+      setFormError(coffeeErrorMessage(err))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div onClick={onCancel} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(26,24,21,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(3px)' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: 'var(--paper)', borderRadius: 18, padding: 24 }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 500, marginBottom: 4, letterSpacing: -0.2 }}>
-          Plan a coffee with <span style={{ fontStyle: 'italic' }}>{peerName}</span>
+    <div
+      onClick={() => {
+        if (!busy) onCancel()
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        background: 'rgba(26,24,21,0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+        backdropFilter: 'blur(3px)',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 500,
+          background: 'var(--paper)',
+          borderRadius: 22,
+          padding: 24,
+          boxShadow: '0 28px 90px rgba(26,24,21,0.28)',
+          border: '0.5px solid var(--rule-soft)',
+        }}
+      >
+        <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ochre)', fontWeight: 700, marginBottom: 7 }}>
+          Coffee proposal
         </div>
-        <p style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 18, lineHeight: 1.4 }}>
-          We'll send a proposal. They can confirm from their map page.
+
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 500, marginBottom: 5, letterSpacing: -0.35, color: 'var(--ink)' }}>
+          Plan coffee with <span style={{ fontStyle: 'italic' }}>{peerName}</span>
+        </div>
+
+        <p style={{ fontSize: 12.5, color: 'var(--ink-muted)', margin: '0 0 18px', lineHeight: 1.45 }}>
+          Send a clear time and place. They respond from the coffee card in this chat.
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
           <div>
             <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Date</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+            <input disabled={busy} type="date" value={date} onChange={(e) => { setDate(e.target.value); setFormError(null) }} style={{ width: '100%', padding: '9px 11px', borderRadius: 10, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
           </div>
           <div>
             <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Time</label>
-            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+            <input disabled={busy} type="time" value={time} onChange={(e) => { setTime(e.target.value); setFormError(null) }} style={{ width: '100%', padding: '9px 11px', borderRadius: 10, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
           </div>
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Café (partner)</label>
-          <select value={cafeId} onChange={(e) => { setCafeId(e.target.value); setFormError(null) }} style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-            <option value="">Other / not a partner café</option>
-            {cafes.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}{c.address ? ` — ${c.address}` : ''}</option>
-            ))}
-          </select>
+          <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 7 }}>Place</label>
+
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <button
+              type="button"
+              disabled={busy || !canUsePartnerCafe}
+              onClick={() => {
+                setLocationMode('partner')
+                setFormError(null)
+              }}
+              style={{
+                flex: 1,
+                padding: '9px 11px',
+                borderRadius: 999,
+                border: usingPartnerCafe ? '0.5px solid var(--ochre)' : '0.5px solid var(--rule)',
+                background: usingPartnerCafe ? 'var(--ochre-soft)' : 'var(--paper-soft)',
+                color: usingPartnerCafe ? 'var(--ochre)' : 'var(--ink-muted)',
+                cursor: busy || !canUsePartnerCafe ? 'not-allowed' : 'pointer',
+                fontSize: 12.5,
+                fontWeight: 600,
+                fontFamily: "'IBM Plex Sans', sans-serif",
+                opacity: canUsePartnerCafe ? 1 : 0.45,
+              }}
+            >
+              Partner café
+            </button>
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setLocationMode('custom')
+                setFormError(null)
+              }}
+              style={{
+                flex: 1,
+                padding: '9px 11px',
+                borderRadius: 999,
+                border: !usingPartnerCafe ? '0.5px solid var(--ochre)' : '0.5px solid var(--rule)',
+                background: !usingPartnerCafe ? 'var(--ochre-soft)' : 'var(--paper-soft)',
+                color: !usingPartnerCafe ? 'var(--ochre)' : 'var(--ink-muted)',
+                cursor: busy ? 'not-allowed' : 'pointer',
+                fontSize: 12.5,
+                fontWeight: 600,
+                fontFamily: "'IBM Plex Sans', sans-serif",
+              }}
+            >
+              Custom location
+            </button>
+          </div>
+
+          {usingPartnerCafe ? (
+            <select disabled={busy} value={cafeId} onChange={(e) => { setCafeId(e.target.value); setFormError(null) }} style={{ width: '100%', padding: '9px 11px', borderRadius: 10, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              <option value="">Choose a café</option>
+              {cafes.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}{c.address ? ' — ' + c.address : ''}</option>
+              ))}
+            </select>
+          ) : (
+            <input disabled={busy} value={locationText} onChange={(e) => { setLocationText(e.target.value); setFormError(null) }} placeholder="e.g. Tortoise on Türkenstraße" style={{ width: '100%', padding: '9px 11px', borderRadius: 10, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+          )}
         </div>
 
-        {!cafeId && (
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Location</label>
-            <input value={locationText} onChange={(e) => { setLocationText(e.target.value); setFormError(null) }} placeholder="e.g. Tortoise on Türkenstraße" style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }} />
-          </div>
-        )}
-
-        {formError && (
-          <div style={{ marginBottom: 12, padding: '9px 11px', borderRadius: 10, border: '0.5px solid rgba(181, 83, 63, 0.28)', background: 'rgba(181, 83, 63, 0.08)', color: 'var(--signal-deep)', fontSize: 12.5, lineHeight: 1.35 }}>
-            {formError}
-          </div>
-        )}
-
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: 14 }}>
           <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Optional note</label>
-          <textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 200))} placeholder="What you want to chat about" style={{ width: '100%', minHeight: 64, padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+          <textarea disabled={busy} value={note} onChange={(e) => setNote(e.target.value.slice(0, 200))} placeholder="What you want to chat about" style={{ width: '100%', minHeight: 68, padding: '9px 11px', borderRadius: 10, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: "'IBM Plex Sans', sans-serif" }} />
+          <div style={{ marginTop: 4, fontSize: 11, color: 'var(--ink-faint)', textAlign: 'right' }}>
+            {note.length}/200
+          </div>
         </div>
+
+        {(formError || busy) && (
+          <div
+            aria-live="polite"
+            style={{
+              marginBottom: 14,
+              padding: '10px 12px',
+              borderRadius: 12,
+              border: busy ? '0.5px solid rgba(200, 148, 31, 0.25)' : '0.5px solid rgba(181, 83, 63, 0.28)',
+              background: busy ? 'rgba(200, 148, 31, 0.09)' : 'rgba(181, 83, 63, 0.08)',
+              color: busy ? 'var(--ochre)' : 'var(--signal-deep)',
+              fontSize: 12.5,
+              lineHeight: 1.35,
+            }}
+          >
+            {busy ? 'Sending proposal… creating the coffee card now.' : formError}
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <KBtn variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</KBtn>
           <KBtn variant="signal" size="sm" onClick={submit} disabled={busy}>
-            {busy ? 'Scheduling…' : 'Send proposal'}
+            {busy ? 'Sending proposal…' : 'Send proposal'}
           </KBtn>
         </div>
       </div>
