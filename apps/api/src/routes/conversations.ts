@@ -11,6 +11,8 @@ type ConversationRow = {
 type ParticipantRow = {
   conversation_id: string
   user_id: string
+  archived_at?: string | null
+  cleared_at?: string | null
 }
 
 type MessageRow = {
@@ -19,6 +21,9 @@ type MessageRow = {
   sender_id: string
   content: string
   read_at: string | null
+  delivered_at?: string | null
+  deleted_at?: string | null
+  deleted_by?: string | null
   created_at: string
 }
 
@@ -39,6 +44,11 @@ const sendMessageSchema = z.object({
 
 const conversationIdParamSchema = z.object({
   id: z.string().uuid(),
+})
+
+const messageTargetParamSchema = z.object({
+  id: z.string().uuid(),
+  msgId: z.string().uuid(),
 })
 
 export const conversationsRouter = Router()
@@ -165,6 +175,114 @@ async function restoreConversationForAllParticipants(conversationId: string) {
   if (update.error) throw new Error(update.error.message)
 }
 
+async function hiddenMessageIdSet(userId: string, messageIds: string[]) {
+  const uniqueIds = [...new Set(messageIds)].filter(Boolean)
+  if (!uniqueIds.length) return new Set<string>()
+
+  const hidden = await supabase
+    .from('message_deletions')
+    .select('message_id')
+    .eq('user_id', userId)
+    .in('message_id', uniqueIds)
+
+  if (hidden.error) throw new Error(hidden.error.message)
+
+  return new Set((hidden.data ?? []).map((row) => row.message_id as string))
+}
+
+function visibleMessagesForUser<T extends { id: string }>(rows: T[], hiddenIds: Set<string>) {
+  return rows.filter((row) => !hiddenIds.has(row.id))
+}
+
+function isVisibleAfterClearedAt(row: { created_at: string }, clearedAt: string | null | undefined) {
+  if (!clearedAt) return true
+  const rowTime = new Date(row.created_at).getTime()
+  const clearedTime = new Date(clearedAt).getTime()
+  if (Number.isNaN(rowTime) || Number.isNaN(clearedTime)) return true
+  return rowTime > clearedTime
+}
+
+function visibleAfterClearedAt<T extends { created_at: string }>(rows: T[], clearedAt: string | null | undefined) {
+  return rows.filter((row) => isVisibleAfterClearedAt(row, clearedAt))
+}
+
+function clearedAtByConversationForUser(participants: ParticipantRow[], userId: string) {
+  const map = new Map<string, string | null>()
+  for (const row of participants) {
+    if (row.user_id === userId) map.set(row.conversation_id, row.cleared_at ?? null)
+  }
+  return map
+}
+
+async function loadParticipantState(conversationId: string, userId: string) {
+  const participant = await supabase
+    .from('conversation_participants')
+    .select('conversation_id, user_id, archived_at, cleared_at')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (participant.error) throw new Error(participant.error.message)
+  return participant.data as ParticipantRow | null
+}
+
+function messagePreviewContent(message: MessageRow) {
+  return message.deleted_at ? 'Message deleted' : message.content
+}
+
+async function loadMessageForDeletion(conversationId: string, msgId: string) {
+  const message = await supabase
+    .from('messages')
+    .select('id, conversation_id, sender_id, deleted_at')
+    .eq('id', msgId)
+    .eq('conversation_id', conversationId)
+    .maybeSingle()
+
+  if (message.error) throw new Error(message.error.message)
+  return message.data as { id: string; conversation_id: string; sender_id: string; deleted_at: string | null } | null
+}
+
+async function deleteMessageForMe(conversationId: string, msgId: string, appUserId: string) {
+  const message = await loadMessageForDeletion(conversationId, msgId)
+  if (!message) return { status: 404 as const, body: { error: 'Message not found' } }
+
+  const deletion = await supabase
+    .from('message_deletions')
+    .upsert(
+      { message_id: msgId, user_id: appUserId, deleted_at: new Date().toISOString() },
+      { onConflict: 'message_id,user_id' }
+    )
+
+  if (deletion.error) throw new Error(deletion.error.message)
+
+  return { status: 200 as const, body: { deleted_for_me: true, message_id: msgId } }
+}
+
+async function deleteMessageForEveryone(conversationId: string, msgId: string, appUserId: string) {
+  const message = await loadMessageForDeletion(conversationId, msgId)
+  if (!message) return { status: 404 as const, body: { error: 'Message not found' } }
+  if (message.sender_id !== appUserId) return { status: 403 as const, body: { error: 'You can only delete messages you sent' } }
+
+  if (message.deleted_at) {
+    return { status: 200 as const, body: { message, deleted: true, deleted_for_everyone: true } }
+  }
+
+  const update = await supabase
+    .from('messages')
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: appUserId,
+    })
+    .eq('id', msgId)
+    .eq('conversation_id', conversationId)
+    .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
+    .single()
+
+  if (update.error) throw new Error(update.error.message)
+
+  return { status: 200 as const, body: { message: update.data, deleted: true, deleted_for_everyone: true } }
+}
+
 conversationsRouter.get('/unread', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
 
@@ -174,7 +292,7 @@ conversationsRouter.get('/unread', requireAuth, async (req, res) => {
 
     const unread = await supabase
       .from('messages')
-      .select('id', { count: 'exact', head: true })
+      .select('id, conversation_id, created_at')
       .in('conversation_id', conversationIds)
       .neq('sender_id', req.appUserId)
       .is('deleted_at', null)
@@ -182,7 +300,22 @@ conversationsRouter.get('/unread', requireAuth, async (req, res) => {
 
     if (unread.error) return res.status(500).json({ error: unread.error.message })
 
-    return res.json({ count: unread.count ?? 0 })
+    const unreadRows = (unread.data ?? []) as { id: string; conversation_id: string; created_at: string }[]
+    const hiddenIds = await hiddenMessageIdSet(req.appUserId, unreadRows.map((row) => row.id))
+    const participantStates = await supabase
+      .from('conversation_participants')
+      .select('conversation_id, user_id, cleared_at')
+      .eq('user_id', req.appUserId)
+      .in('conversation_id', conversationIds)
+
+    if (participantStates.error) return res.status(500).json({ error: participantStates.error.message })
+
+    const clearedAtByConversationId = clearedAtByConversationForUser((participantStates.data ?? []) as ParticipantRow[], req.appUserId)
+    const visibleUnreadRows = unreadRows
+      .filter((row) => !hiddenIds.has(row.id))
+      .filter((row) => isVisibleAfterClearedAt(row, clearedAtByConversationId.get(row.conversation_id)))
+
+    return res.json({ count: visibleUnreadRows.length })
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed loading unread messages' })
   }
@@ -197,16 +330,16 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
 
     const [conversations, participants, messages, unreadRows] = await Promise.all([
       supabase.from('conversations').select('id, created_at').in('id', conversationIds).order('created_at', { ascending: false }),
-      supabase.from('conversation_participants').select('conversation_id, user_id').in('conversation_id', conversationIds),
+      supabase.from('conversation_participants').select('conversation_id, user_id, archived_at, cleared_at').in('conversation_id', conversationIds),
       supabase
         .from('messages')
-        .select('id, conversation_id, sender_id, content, read_at, created_at, deleted_at, deleted_by')
+        .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
         .in('conversation_id', conversationIds)
         .order('created_at', { ascending: false })
         .limit(1000),
       supabase
         .from('messages')
-        .select('id, conversation_id')
+        .select('id, conversation_id, created_at')
         .in('conversation_id', conversationIds)
         .neq('sender_id', req.appUserId)
         .is('deleted_at', null)
@@ -219,7 +352,17 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
     if (unreadRows.error) return res.status(500).json({ error: unreadRows.error.message })
 
     const participantRows = (participants.data ?? []) as ParticipantRow[]
-    const messagesRows = (messages.data ?? []) as MessageRow[]
+    const rawMessageRows = (messages.data ?? []) as MessageRow[]
+    const rawUnreadRows = (unreadRows.data ?? []) as { id: string; conversation_id: string; created_at: string }[]
+    const hiddenIds = await hiddenMessageIdSet(req.appUserId, [
+      ...rawMessageRows.map((row) => row.id),
+      ...rawUnreadRows.map((row) => row.id),
+    ])
+    const clearedAtByConversationId = clearedAtByConversationForUser(participantRows, req.appUserId)
+    const messagesRows = visibleMessagesForUser(rawMessageRows, hiddenIds)
+      .filter((row) => isVisibleAfterClearedAt(row, clearedAtByConversationId.get(row.conversation_id)))
+    const visibleUnreadRows = visibleMessagesForUser(rawUnreadRows, hiddenIds)
+      .filter((row) => isVisibleAfterClearedAt(row, clearedAtByConversationId.get(row.conversation_id)))
 
     const peerIds = [...new Set(participantRows.map((row) => row.user_id).filter((id) => id !== req.appUserId))]
     const peerUsers = peerIds.length
@@ -246,7 +389,7 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
     }
 
     const unreadByConversationId = new Map<string, number>()
-    for (const row of unreadRows.data ?? []) {
+    for (const row of visibleUnreadRows) {
       const count = unreadByConversationId.get(row.conversation_id) ?? 0
       unreadByConversationId.set(row.conversation_id, count + 1)
     }
@@ -261,7 +404,7 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
         latest_message: latest
           ? {
               id: latest.id,
-              content: (latest as MessageRow & { deleted_at?: string | null }).deleted_at ? 'Message deleted' : latest.content,
+              content: messagePreviewContent(latest),
               created_at: latest.created_at,
               sender_id: latest.sender_id,
             }
@@ -374,8 +517,8 @@ conversationsRouter.get('/:id/messages', requireAuth, async (req, res) => {
   if (!appUserId) return res.status(401).json({ error: 'Unauthorized' })
 
   try {
-    const allowed = await isParticipant(conversationId, appUserId)
-    if (!allowed) return res.status(403).json({ error: 'Not allowed to view this conversation' })
+    const participantState = await loadParticipantState(conversationId, appUserId)
+    if (!participantState) return res.status(403).json({ error: 'Not allowed to view this conversation' })
 
     const messages = await supabase
       .from('messages')
@@ -386,7 +529,9 @@ conversationsRouter.get('/:id/messages', requireAuth, async (req, res) => {
 
     if (messages.error) return res.status(500).json({ error: messages.error.message })
 
-    const rows = (messages.data ?? []) as MessageRow[]
+    const rawRows = (messages.data ?? []) as MessageRow[]
+    const hiddenIds = await hiddenMessageIdSet(req.appUserId, rawRows.map((row) => row.id))
+    const rows = visibleAfterClearedAt(visibleMessagesForUser(rawRows, hiddenIds), participantState.cleared_at)
     const senderIds = [...new Set(rows.map((row) => row.sender_id))]
     const senders = senderIds.length
       ? await supabase.from('users').select('id, full_name, username, avatar_url').in('id', senderIds)
@@ -454,7 +599,7 @@ conversationsRouter.post('/:id/messages', requireAuth, async (req, res) => {
         sender_id: req.appUserId,
         content: parsed.data.content,
       })
-      .select('id, conversation_id, sender_id, content, read_at, created_at, deleted_at, deleted_by')
+      .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
       .single()
 
     if (insert.error) return res.status(500).json({ error: insert.error.message })
@@ -485,12 +630,8 @@ conversationsRouter.post('/:id/messages', requireAuth, async (req, res) => {
   }
 })
 
-conversationsRouter.delete('/:id/messages/:msgId', requireAuth, async (req, res) => {
-  const params = z.object({
-    id: z.string().uuid(),
-    msgId: z.string().uuid(),
-  }).safeParse(req.params)
-
+conversationsRouter.delete('/:id/messages/:msgId/for-me', requireAuth, async (req, res) => {
+  const params = messageTargetParamSchema.safeParse(req.params)
   if (!params.success) {
     return res.status(422).json({ error: 'Invalid message delete target', fields: params.error.flatten() })
   }
@@ -505,35 +646,55 @@ conversationsRouter.delete('/:id/messages/:msgId', requireAuth, async (req, res)
     const allowed = await isParticipant(conversationId, appUserId)
     if (!allowed) return res.status(403).json({ error: 'Not allowed to update this conversation' })
 
-    const message = await supabase
-      .from('messages')
-      .select('id, conversation_id, sender_id, deleted_at')
-      .eq('id', msgId)
-      .eq('conversation_id', conversationId)
-      .maybeSingle()
+    const result = await deleteMessageForMe(conversationId, msgId, appUserId)
+    return res.status(result.status).json(result.body)
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed deleting message for me' })
+  }
+})
 
-    if (message.error) return res.status(500).json({ error: message.error.message })
-    if (!message.data) return res.status(404).json({ error: 'Message not found' })
-    if (message.data.sender_id !== appUserId) return res.status(403).json({ error: 'You can only delete messages you sent' })
+conversationsRouter.delete('/:id/messages/:msgId/for-everyone', requireAuth, async (req, res) => {
+  const params = messageTargetParamSchema.safeParse(req.params)
+  if (!params.success) {
+    return res.status(422).json({ error: 'Invalid message delete target', fields: params.error.flatten() })
+  }
 
-    if (message.data.deleted_at) {
-      return res.json({ message: message.data, deleted: true })
-    }
+  const conversationId = params.data.id
+  const msgId = params.data.msgId
+  const appUserId = req.appUserId
 
-    const update = await supabase
-      .from('messages')
-      .update({
-        deleted_at: new Date().toISOString(),
-        deleted_by: appUserId,
-      })
-      .eq('id', msgId)
-      .eq('conversation_id', conversationId)
-      .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
-      .single()
+  if (!appUserId) return res.status(401).json({ error: 'Unauthorized' })
 
-    if (update.error) return res.status(500).json({ error: update.error.message })
+  try {
+    const allowed = await isParticipant(conversationId, appUserId)
+    if (!allowed) return res.status(403).json({ error: 'Not allowed to update this conversation' })
 
-    return res.json({ message: update.data, deleted: true })
+    const result = await deleteMessageForEveryone(conversationId, msgId, appUserId)
+    return res.status(result.status).json(result.body)
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed deleting message for everyone' })
+  }
+})
+
+// Backwards-compatible route: old delete endpoint means “delete for everyone”.
+conversationsRouter.delete('/:id/messages/:msgId', requireAuth, async (req, res) => {
+  const params = messageTargetParamSchema.safeParse(req.params)
+  if (!params.success) {
+    return res.status(422).json({ error: 'Invalid message delete target', fields: params.error.flatten() })
+  }
+
+  const conversationId = params.data.id
+  const msgId = params.data.msgId
+  const appUserId = req.appUserId
+
+  if (!appUserId) return res.status(401).json({ error: 'Unauthorized' })
+
+  try {
+    const allowed = await isParticipant(conversationId, appUserId)
+    if (!allowed) return res.status(403).json({ error: 'Not allowed to update this conversation' })
+
+    const result = await deleteMessageForEveryone(conversationId, msgId, appUserId)
+    return res.status(result.status).json(result.body)
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed deleting message' })
   }
@@ -554,9 +715,10 @@ conversationsRouter.delete('/:id', requireAuth, async (req, res) => {
     const allowed = await isParticipant(conversationId, appUserId)
     if (!allowed) return res.status(403).json({ error: 'Not allowed to delete this conversation' })
 
+    const deletedAt = new Date().toISOString()
     const update = await supabase
       .from('conversation_participants')
-      .update({ archived_at: new Date().toISOString() })
+      .update({ archived_at: deletedAt, cleared_at: deletedAt })
       .eq('conversation_id', conversationId)
       .eq('user_id', appUserId)
 

@@ -33,6 +33,8 @@ type Message = {
   content: string
   read_at: string | null
   delivered_at: string | null
+  deleted_at?: string | null
+  deleted_by?: string | null
   created_at: string
   sender: UserPreview | null
   is_mine: boolean
@@ -44,6 +46,8 @@ type OptimisticMessage = Message & {
   failed: boolean
   local: true
 }
+
+type MessageDeleteScope = 'for-me' | 'for-everyone'
 
 type Connection = {
   id: string
@@ -203,6 +207,23 @@ function meetingLocationLabel(meeting: MeetingSummary, cafes: CafeOption[]) {
   return cafe?.name ?? meeting.location_text ?? 'Coffee'
 }
 
+async function apiDeleteJson<T>(path: string): Promise<T> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  const baseUrl = ((import.meta.env.VITE_API_URL ?? import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000') as string).replace(/\/$/, '')
+
+  const res = await fetch(`${baseUrl}${path}`, {
+    method: 'DELETE',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json?.error ?? 'Request failed')
+  return json as T
+}
+
 export function MessagesPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
@@ -226,6 +247,11 @@ export function MessagesPage() {
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null)
   const [pickerOpenMsgId, setPickerOpenMsgId] = useState<string | null>(null)
+  const [messageDeleteConfirm, setMessageDeleteConfirm] = useState<{ id: string; scope: MessageDeleteScope } | null>(null)
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
+  const [threadMenuOpen, setThreadMenuOpen] = useState(false)
+  const [confirmDeleteConversation, setConfirmDeleteConversation] = useState(false)
+  const [deletingConversation, setDeletingConversation] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const deepLinkUserId = searchParams.get('to')
   const deepLinkAction = searchParams.get('action')
@@ -422,6 +448,9 @@ export function MessagesPage() {
   }, [])
 
   useEffect(() => {
+    setMessageDeleteConfirm(null)
+    setThreadMenuOpen(false)
+    setConfirmDeleteConversation(false)
     if (!selectedId) return
     void loadMsgs(selectedId)
     void markRead(selectedId)
@@ -650,7 +679,7 @@ export function MessagesPage() {
     const tempId = `tmp-${Date.now()}`
     const opt: OptimisticMessage = {
       id: tempId, conversation_id: selectedId, sender_id: 'me',
-      content: trimmed, read_at: null, delivered_at: null, created_at: nowIso,
+      content: trimmed, read_at: null, delivered_at: null, deleted_at: null, deleted_by: null, created_at: nowIso,
       sender: null, is_mine: true, pending: true, failed: false, local: true,
       reactions: [],
     }
@@ -674,6 +703,72 @@ export function MessagesPage() {
       if (contentOverride) setComposer(trimmed)
     } finally {
       setSendLoading(false)
+    }
+  }
+
+  async function deleteMessage(msg: Message | OptimisticMessage, scope: MessageDeleteScope) {
+    if (!selectedId || isOpt(msg) || msg.deleted_at) return
+    if (scope === 'for-everyone' && !msg.is_mine) return
+
+    if (messageDeleteConfirm?.id !== msg.id || messageDeleteConfirm.scope !== scope) {
+      setMessageDeleteConfirm({ id: msg.id, scope })
+      return
+    }
+
+    const conversationId = selectedId
+    setDeletingMessageId(msg.id)
+    setError(null)
+
+    try {
+      if (scope === 'for-me') {
+        await apiDeleteJson<{ deleted_for_me: boolean; message_id: string }>(`/api/conversations/${conversationId}/messages/${msg.id}/for-me`)
+        setMessages((prev) => prev.filter((item) => item.id !== msg.id))
+      } else {
+        const res = await apiDeleteJson<{ message: Message; deleted: boolean }>(`/api/conversations/${conversationId}/messages/${msg.id}/for-everyone`)
+        setMessages((prev) =>
+          prev.map((item) =>
+            item.id === msg.id
+              ? { ...item, ...res.message, content: 'Message deleted', reactions: [] }
+              : item
+          )
+        )
+      }
+
+      setMessageDeleteConfirm(null)
+      await loadMsgs(conversationId, true)
+      await loadConvs(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : scope === 'for-me' ? 'Failed deleting for me' : 'Failed deleting for everyone')
+    } finally {
+      setDeletingMessageId(null)
+    }
+  }
+
+  async function deleteConversation() {
+    if (!selectedId || deletingConversation) return
+
+    if (!confirmDeleteConversation) {
+      setConfirmDeleteConversation(true)
+      return
+    }
+
+    const conversationId = selectedId
+    setDeletingConversation(true)
+    setError(null)
+
+    try {
+      await apiDeleteJson<{ archived: boolean }>(`/api/conversations/${conversationId}`)
+      setConversations((prev) => prev.filter((conv) => conv.id !== conversationId))
+      setSelectedId(null)
+      setMessages([])
+      setComposer('')
+      setThreadMenuOpen(false)
+      setConfirmDeleteConversation(false)
+      await loadConvs(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed deleting conversation')
+    } finally {
+      setDeletingConversation(false)
     }
   }
 
@@ -886,6 +981,11 @@ export function MessagesPage() {
                 key={conv.id}
                 type="button"
                 onClick={() => openConversation(conv.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  openConversation(conv.id)
+                  window.setTimeout(() => setConfirmDeleteConversation(true), 0)
+                }}
                 style={{
                   width: '100%',
                   display: 'flex',
@@ -992,6 +1092,92 @@ export function MessagesPage() {
                 >
                   1st connection
                 </div>
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    aria-label="Conversation actions"
+                    onClick={() => {
+                      setThreadMenuOpen((open) => !open)
+                      setConfirmDeleteConversation(false)
+                    }}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: '50%',
+                      border: '0.5px solid var(--rule-soft)',
+                      background: 'var(--paper)',
+                      color: 'var(--ink)',
+                      cursor: 'pointer',
+                      fontSize: 18,
+                      lineHeight: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    ⋯
+                  </button>
+                  {threadMenuOpen && (
+                    <>
+                      <div
+                        onClick={() => {
+                          setThreadMenuOpen(false)
+                          setConfirmDeleteConversation(false)
+                        }}
+                        style={{ position: 'fixed', inset: 0, zIndex: 15 }}
+                      />
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 8px)',
+                          right: 0,
+                          width: 210,
+                          padding: 8,
+                          borderRadius: 14,
+                          border: '0.5px solid var(--rule)',
+                          background: 'var(--paper)',
+                          boxShadow: '0 16px 36px rgba(26,24,21,0.16)',
+                          zIndex: 16,
+                        }}
+                      >
+                        {confirmDeleteConversation ? (
+                          <div style={{ display: 'grid', gap: 7 }}>
+                            <div style={{ fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.35 }}>
+                              Delete this chat for you?
+                            </div>
+                            <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end' }}>
+                              <KBtn variant="ghost" size="sm" onClick={() => setConfirmDeleteConversation(false)} disabled={deletingConversation}>
+                                Keep
+                              </KBtn>
+                              <KBtn variant="signal" size="sm" onClick={() => void deleteConversation()} disabled={deletingConversation}>
+                                {deletingConversation ? 'Deleting…' : 'Yes, delete'}
+                              </KBtn>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteConversation(true)}
+                            style={{
+                              width: '100%',
+                              border: 'none',
+                              background: 'transparent',
+                              textAlign: 'left',
+                              padding: '8px 9px',
+                              borderRadius: 10,
+                              color: 'var(--signal)',
+                              cursor: 'pointer',
+                              fontSize: 13,
+                              fontFamily: "'IBM Plex Sans'",
+                            }}
+                          >
+                            Delete chat
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
               </>
             ) : (
               <div>
@@ -1043,10 +1229,11 @@ export function MessagesPage() {
               displayMessages.map((msg, i) => {
                 const prev = displayMessages[i - 1]
                 const showDay = !prev || dayLabel(prev.created_at) !== dayLabel(msg.created_at)
-                const coffeeEvent = coffeeTimelineEventFromContent(msg.content)
+                const isDeletedMessage = !isOpt(msg) && Boolean(msg.deleted_at)
+                const coffeeEvent = isDeletedMessage ? null : coffeeTimelineEventFromContent(msg.content)
                 const showAuthor = !coffeeEvent && !msg.is_mine && (!prev || prev.sender_id !== msg.sender_id)
 
-                const msgReactions = (!coffeeEvent && !isOpt(msg) && msg.reactions) ? msg.reactions : []
+                const msgReactions = (!coffeeEvent && !isDeletedMessage && !isOpt(msg) && msg.reactions) ? msg.reactions : []
                 return (
                   <div key={msg.id}>
                     {showDay && (
@@ -1071,11 +1258,9 @@ export function MessagesPage() {
                     )}
                     <div
                       style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 2, alignItems: 'center', gap: 6 }}
-                      onMouseEnter={() => setHoveredMsgId(msg.id)}
-                      onMouseLeave={() => setHoveredMsgId(null)}
                     >
                       {/* Tiny react button — visible on hover, sits to the left of mine, right of others */}
-                      {msg.is_mine && hoveredMsgId === msg.id && !isOpt(msg) && (
+                      {msg.is_mine && hoveredMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
                         <button
                           type="button"
                           onClick={() => setPickerOpenMsgId(pickerOpenMsgId === msg.id ? null : msg.id)}
@@ -1091,27 +1276,87 @@ export function MessagesPage() {
                           🙂
                         </button>
                       )}
-                      <div style={{ maxWidth: '72%', position: 'relative' }}>
+                      <div
+                        style={{ maxWidth: '72%', position: 'relative' }}
+                        onMouseEnter={() => setHoveredMsgId(msg.id)}
+                        onMouseLeave={() => setHoveredMsgId(null)}
+                        onContextMenu={(event) => {
+                          if (!isOpt(msg) && !isDeletedMessage) {
+                            event.preventDefault()
+                            setHoveredMsgId(msg.id)
+                            setMessageDeleteConfirm({ id: msg.id, scope: msg.is_mine ? 'for-everyone' : 'for-me' })
+                          }
+                        }}
+                      >
                         {/* Bubble */}
                         <div
                           style={{
                             padding: '9px 13px',
                             borderRadius: msg.is_mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                            background: msg.is_mine ? 'var(--ink)' : 'var(--paper)',
-                            color: msg.is_mine ? 'var(--paper)' : 'var(--ink)',
-                            border: msg.is_mine ? 'none' : '0.5px solid var(--rule-soft)',
+                            background: isDeletedMessage ? 'transparent' : msg.is_mine ? 'var(--ink)' : 'var(--paper)',
+                            color: isDeletedMessage ? 'var(--ink-faint)' : msg.is_mine ? 'var(--paper)' : 'var(--ink)',
+                            border: isDeletedMessage ? '0.5px dashed var(--rule-soft)' : msg.is_mine ? 'none' : '0.5px solid var(--rule-soft)',
                             fontSize: 13.5,
                             lineHeight: 1.5,
-                            boxShadow: '0 1px 4px rgba(26,24,21,0.06)',
+                            fontStyle: isDeletedMessage ? 'italic' : 'normal',
+                            boxShadow: isDeletedMessage ? 'none' : '0 1px 4px rgba(26,24,21,0.06)',
                           }}
                         >
-                          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</div>
+                          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{isDeletedMessage ? 'Message deleted' : msg.content}</div>
                           <div style={{ marginTop: 3, fontSize: 10.5, color: msg.is_mine ? 'rgba(244,239,230,0.5)' : 'var(--ink-faint)', textAlign: msg.is_mine ? 'right' : 'left', display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', alignItems: 'center', gap: 4 }}>
                             <span>{relativeTime(msg.created_at)}{isOpt(msg) && msg.pending ? ' · Sending…' : ''}{isOpt(msg) && msg.failed ? ' · Failed' : ''}</span>
                             {/* Status ticks for own messages */}
-                            {msg.is_mine && !isOpt(msg) && (
+                            {msg.is_mine && !isOpt(msg) && !isDeletedMessage && (
                               <span style={{ color: msg.read_at ? 'var(--verd)' : 'rgba(244,239,230,0.5)', fontSize: 11 }}>
                                 {msg.read_at || msg.delivered_at ? '✓✓' : '✓'}
+                              </span>
+                            )}
+                            {!isOpt(msg) && !isDeletedMessage && hoveredMsgId === msg.id && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => void deleteMessage(msg, 'for-me')}
+                                  disabled={deletingMessageId === msg.id}
+                                  style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: msg.is_mine ? 'rgba(244,239,230,0.72)' : 'var(--signal)',
+                                    cursor: deletingMessageId === msg.id ? 'default' : 'pointer',
+                                    fontSize: 10.5,
+                                    padding: 0,
+                                    fontFamily: "'IBM Plex Sans'",
+                                    textDecoration: 'underline',
+                                  }}
+                                >
+                                  {deletingMessageId === msg.id
+                                    ? 'Deleting…'
+                                    : messageDeleteConfirm?.id === msg.id && messageDeleteConfirm.scope === 'for-me'
+                                      ? 'Confirm for me'
+                                      : 'Delete for me'}
+                                </button>
+                                {msg.is_mine && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void deleteMessage(msg, 'for-everyone')}
+                                    disabled={deletingMessageId === msg.id}
+                                    style={{
+                                      border: 'none',
+                                      background: 'transparent',
+                                      color: msg.is_mine ? 'rgba(244,239,230,0.72)' : 'var(--signal)',
+                                      cursor: deletingMessageId === msg.id ? 'default' : 'pointer',
+                                      fontSize: 10.5,
+                                      padding: 0,
+                                      fontFamily: "'IBM Plex Sans'",
+                                      textDecoration: 'underline',
+                                    }}
+                                  >
+                                    {deletingMessageId === msg.id
+                                      ? 'Deleting…'
+                                      : messageDeleteConfirm?.id === msg.id && messageDeleteConfirm.scope === 'for-everyone'
+                                        ? 'Confirm everyone'
+                                        : 'Delete for everyone'}
+                                  </button>
+                                )}
                               </span>
                             )}
                           </div>
@@ -1120,7 +1365,7 @@ export function MessagesPage() {
                           )}
                         </div>
                         {/* Reaction picker — drops BELOW the bubble when icon clicked */}
-                        {pickerOpenMsgId === msg.id && !isOpt(msg) && (
+                        {pickerOpenMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
                           <>
                             {/* Click-outside backdrop */}
                             <div
@@ -1171,7 +1416,7 @@ export function MessagesPage() {
                       </div>
 
                       {/* Tiny react button — right side for non-mine messages */}
-                      {!msg.is_mine && hoveredMsgId === msg.id && !isOpt(msg) && (
+                      {!msg.is_mine && hoveredMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
                         <button
                           type="button"
                           onClick={() => setPickerOpenMsgId(pickerOpenMsgId === msg.id ? null : msg.id)}
