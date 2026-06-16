@@ -30,6 +30,9 @@ const updateMeSchema = z.object({
   githubUrl: z.string().max(200).optional().nullable(),
   linkedinUrl: z.string().max(200).optional().nullable(),
   languages: z.array(z.string().max(50)).optional(),
+  openToRoles: z.boolean().optional(),
+  asksPerMonth: z.number().int().min(0).max(30).optional().nullable(),
+  canHelpWith: z.string().max(300).optional().nullable(),
 })
 
 const searchUsersQuerySchema = z.object({
@@ -173,6 +176,9 @@ usersRouter.patch('/me', requireAuth, async (req, res) => {
   if (data.githubUrl !== undefined) update.github_url = data.githubUrl
   if (data.linkedinUrl !== undefined) update.linkedin_url = data.linkedinUrl
   if (data.languages !== undefined) update.languages = data.languages
+  if (data.openToRoles !== undefined) update.open_to_roles = data.openToRoles
+  if (data.asksPerMonth !== undefined) update.asks_per_month = data.asksPerMonth
+  if (data.canHelpWith !== undefined) update.can_help_with = data.canHelpWith
 
   if (Object.keys(update).length === 0) {
     return res.status(400).json({ error: 'No fields provided' })

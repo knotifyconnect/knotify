@@ -40,6 +40,9 @@ type Me = {
   languages: string[]
   status: string
   referral_score: number
+  open_to_roles?: boolean
+  asks_per_month?: number | null
+  can_help_with?: string | null
   is_hr?: boolean
   is_admin?: boolean
 }
@@ -358,7 +361,7 @@ function OwnProfileView() {
       const data = await apiPatch<{ user: Me }>('/api/users/me', {
         fullName: me.full_name,
         bio: me.bio ?? '',
-                headline: me.headline ?? '',
+        headline: me.headline ?? '',
         locationCity: me.location_city ?? '',
         university: me.university ?? '',
         currentCompany: me.current_company ?? '',
@@ -366,6 +369,9 @@ function OwnProfileView() {
         githubUrl: me.github_url ?? '',
         linkedinUrl: me.linkedin_url ?? '',
         languages: me.languages ?? [],
+        openToRoles: me.open_to_roles ?? false,
+        asksPerMonth: me.asks_per_month ?? null,
+        canHelpWith: me.can_help_with ?? null,
       })
       setMe(data.user)
       setEditMode(false)
@@ -1225,6 +1231,78 @@ function OwnProfileView() {
               </a>
             )}
           </div>
+        </KCard>
+      )}
+
+      {/* ─── Availability & Asks ────────────────────────────────────────────── */}
+      {isOwnProfile && (
+        <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
+          <SectionHead label="Availability" />
+          {editMode ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 12 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={me.open_to_roles ?? false}
+                  onChange={(e) => setMe({ ...me, open_to_roles: e.target.checked })}
+                  style={{ width: 16, height: 16, accentColor: 'var(--signal)', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: 13.5, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'" }}>
+                  Open to roles — I'm looking for opportunities
+                </span>
+              </label>
+              <div>
+                <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6, fontFamily: "'IBM Plex Sans'" }}>
+                  Asks I can take this month
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={30}
+                  value={me.asks_per_month ?? ''}
+                  onChange={(e) => setMe({ ...me, asks_per_month: e.target.value === '' ? null : Number(e.target.value) })}
+                  placeholder="e.g. 3"
+                  style={{ width: 80, padding: '7px 10px', borderRadius: 8, border: '0.5px solid var(--rule)', background: 'var(--paper)', fontSize: 13.5, color: 'var(--ink)', fontFamily: "'IBM Plex Mono', monospace", outline: 'none' }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6, fontFamily: "'IBM Plex Sans'" }}>
+                  What I can specifically help with
+                </div>
+                <textarea
+                  value={me.can_help_with ?? ''}
+                  onChange={(e) => setMe({ ...me, can_help_with: e.target.value.slice(0, 300) })}
+                  placeholder="e.g. Intros at Series A fintech startups, feedback on ML system design, hiring advice for early-stage teams"
+                  rows={3}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid var(--rule)', background: 'var(--paper)', fontSize: 13, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                />
+                <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 3, textAlign: 'right' }}>
+                  {(me.can_help_with ?? '').length}/300
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {me.open_to_roles && (
+                <KPill color="signal">Open to roles</KPill>
+              )}
+              {(me.asks_per_month ?? 0) > 0 && (
+                <div style={{ fontSize: 13.5, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'" }}>
+                  Taking up to <strong>{me.asks_per_month}</strong> asks this month
+                </div>
+              )}
+              {me.can_help_with && (
+                <div style={{ fontSize: 13.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", lineHeight: 1.5 }}>
+                  {me.can_help_with}
+                </div>
+              )}
+              {!me.open_to_roles && !me.asks_per_month && !me.can_help_with && (
+                <div style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: "'IBM Plex Sans'" }}>
+                  Edit your profile to set your availability and what you can help with.
+                </div>
+              )}
+            </div>
+          )}
         </KCard>
       )}
 
