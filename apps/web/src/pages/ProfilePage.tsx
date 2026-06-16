@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost, apiPostForm, apiPut } from '../lib/api'
 import { CareerPathCard } from '../components/profile/CareerPathCard'
+import { ReferralAskModal } from '../components/ReferralAskModal'
 import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '../lib/knotify'
 import { AvatarPicker } from '../components/ui/avatar-picker'
 import { AvatarGroup } from '../components/ui/avatar-1'
@@ -1519,6 +1520,7 @@ function PublicProfileView({ userId }: { userId: string }) {
   const [relation, setRelation] = useState<'none' | 'pending_out' | 'pending_in' | 'connected'>('none')
   const [pending, setPending] = useState(false)
   const [posts, setPosts] = useState<Array<{ id: string; title: string | null; body: string; created_at: string }>>([])
+  const [referralModalOpen, setReferralModalOpen] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -1605,7 +1607,13 @@ function PublicProfileView({ userId }: { userId: string }) {
               alt={u.full_name}
               style={{ width: 72, height: 72, borderRadius: '50%', border: '3px solid var(--paper)', objectFit: 'cover', display: 'block' }}
             />
-            <div style={{ display: 'flex', gap: 8 }}>
+            {referralModalOpen && data && (
+              <ReferralAskModal
+                peer={{ id: userId, full_name: u.full_name, username: u.username, avatar_url: u.avatar_url, headline: u.headline, current_company: u.current_company }}
+                onClose={() => setReferralModalOpen(false)}
+              />
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {relation === 'connected' && <KPill color="verd">✓ Connected</KPill>}
               {relation === 'pending_out' && <KBtn variant="ghost" size="sm" disabled>Request sent</KBtn>}
               {relation === 'pending_in' && <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Accept in Discover</KBtn>}
@@ -1615,6 +1623,11 @@ function PublicProfileView({ userId }: { userId: string }) {
                 </KBtn>
               )}
               <KBtn variant="ghost" size="sm" onClick={() => navigate(`/messages?to=${u.id}`)}>Message</KBtn>
+              {relation === 'connected' && (
+                <KBtn variant="signal" size="sm" onClick={() => setReferralModalOpen(true)}>
+                  Ask for referral
+                </KBtn>
+              )}
             </div>
           </div>
 

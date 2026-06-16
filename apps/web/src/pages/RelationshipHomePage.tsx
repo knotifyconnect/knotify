@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
+import { ReferralAskModal } from '../components/ReferralAskModal'
 
 type Peer = {
   id: string
@@ -78,6 +79,7 @@ export function RelationshipHomePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [messagingPeer, setMessagingPeer] = useState<string | null>(null)
+  const [referralPeer, setReferralPeer] = useState<Peer | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -125,6 +127,9 @@ export function RelationshipHomePage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 40px' }}>
+      {referralPeer && (
+        <ReferralAskModal peer={referralPeer} onClose={() => setReferralPeer(null)} />
+      )}
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 28, fontWeight: 400, color: 'var(--ink)', margin: 0, letterSpacing: '-0.02em' }}>
@@ -178,15 +183,23 @@ export function RelationshipHomePage() {
                     {entry.daysSince}d
                   </div>
                 </div>
-                <div style={{ marginTop: 10 }}>
+                <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
                   <KBtn
                     variant="ghost"
                     size="sm"
                     onClick={() => openMessage(entry.peer.id)}
                     disabled={messagingPeer === entry.peer.id}
-                    style={{ width: '100%' }}
+                    style={{ flex: 1 }}
                   >
-                    {messagingPeer === entry.peer.id ? 'Opening...' : 'Send a message'}
+                    {messagingPeer === entry.peer.id ? 'Opening...' : 'Message'}
+                  </KBtn>
+                  <KBtn
+                    variant="signal"
+                    size="sm"
+                    onClick={() => setReferralPeer(entry.peer)}
+                    style={{ flex: 1 }}
+                  >
+                    Ask for referral
                   </KBtn>
                 </div>
               </KCard>
