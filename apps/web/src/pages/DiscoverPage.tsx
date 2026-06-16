@@ -177,11 +177,10 @@ export function DiscoverPage() {
     setError(null)
 
     try {
-      const [meResult, extendedResult, connectionsResult, suggestionsResult] = await Promise.all([
+      const [meResult, extendedResult, connectionsResult] = await Promise.all([
         apiGet<{ user: Me }>('/api/users/me'),
         apiGet<{ skills: Skill[] }>('/api/users/me/profile-extended'),
         apiGet<{ connections: Connection[] }>('/api/connections'),
-        apiGet<{ suggestions: DiscoverUser[] }>('/api/users/suggestions'),
       ])
 
       const state = buildRelationState(connectionsResult.connections ?? [], meResult.user.id)
@@ -193,7 +192,7 @@ export function DiscoverPage() {
       setIncomingRequests(state.incoming)
       setOutgoingRequests(state.outgoing)
       setAcceptedConnections(state.accepted)
-      setSuggestions(suggestionsResult.suggestions ?? [])
+      setSuggestions([])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load Discover')
     } finally {
@@ -985,10 +984,19 @@ export function DiscoverPage() {
           )}
         </div>
 
-        {loadingInitial && !showResults ? (
+        {loadingInitial ? (
           <KCard style={{ padding: 40, textAlign: 'center' }}>
             <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 16, color: 'var(--ink-muted)', margin: 0 }}>
-              Finding people worth knowing...
+              Loading...
+            </p>
+          </KCard>
+        ) : !showResults ? (
+          <KCard style={{ padding: 48, textAlign: 'center' }}>
+            <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 20, color: 'var(--ink)', margin: '0 0 8px' }}>
+              Search for someone specific.
+            </p>
+            <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0, maxWidth: 380, marginInline: 'auto', lineHeight: 1.5 }}>
+              Type a name, company, or skill above to find people in the network.
             </p>
           </KCard>
         ) : visibleUsers.length > 0 ? (
@@ -1000,14 +1008,11 @@ export function DiscoverPage() {
         ) : (
           <KCard style={{ padding: 36, textAlign: 'center' }}>
             <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 18, color: 'var(--ink)', margin: '0 0 8px' }}>
-              {showResults ? `No useful match for "${query.trim()}".` : 'No strong recommendations yet.'}
+              {`No results for "${query.trim()}".`}
             </p>
-            <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: '0 auto 16px', maxWidth: 460, lineHeight: 1.5 }}>
-              Discover gets better when profiles have a city, headline, and at least three skills. Weak profiles should not dominate the network. That is the point.
+            <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0, maxWidth: 400, marginInline: 'auto', lineHeight: 1.5 }}>
+              Try a different name, company, or skill.
             </p>
-            <KBtn variant="signal" size="sm" onClick={() => navigate('/profile')}>
-              Improve profile signal
-            </KBtn>
           </KCard>
         )}
       </>
