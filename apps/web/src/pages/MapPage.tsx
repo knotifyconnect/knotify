@@ -1343,15 +1343,6 @@ function KnotStage({
                 onClearSelection={onClear}
               />
 
-              {/* Health legend — top-right, away from the status bar */}
-              <div style={{ position: 'absolute', right: 14, top: 14, zIndex: 5, display: 'flex', gap: 10, padding: '7px 12px', borderRadius: 999, background: 'rgba(244,239,230,0.9)', border: '0.5px solid var(--rule)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 10.5, color: 'var(--ink-faint)', alignItems: 'center' }}>
-                {[['#4caf7d', 'Warm'], ['#d4a017', 'Cooling'], ['#e05c3a', 'Cold']].map(([color, label]) => (
-                  <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
-                    {label}
-                  </span>
-                ))}
-              </div>
 
               <div
                 style={{
