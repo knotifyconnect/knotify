@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { AppLayout } from './layouts/AppLayout'
 import { AuthPage } from './pages/AuthPage'
 import { LandingPage } from './pages/LandingPage'
+import { RelationshipHomePage } from './pages/RelationshipHomePage'
 import { MapPage } from './pages/MapPage'
 import { DiscoverPage } from './pages/DiscoverPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -120,7 +121,8 @@ function ProtectedAppRoutes() {
   return (
     <AppLayout>
       <Routes>
-        <Route path="/" element={<Navigate to="/map" replace />} />
+        <Route path="/" element={<Navigate to="/home" replace />} />
+        <Route path="/home" element={<RelationshipHomePage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/profile" element={<ProfilePage />} />
@@ -128,8 +130,8 @@ function ProtectedAppRoutes() {
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/messages" element={<MessagesPage />} />
         <Route path="/admin" element={<AdminPage />} />
-        <Route path="/auth" element={<Navigate to="/map" replace />} />
-        <Route path="*" element={<Navigate to="/map" replace />} />
+        <Route path="/auth" element={<Navigate to="/home" replace />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </AppLayout>
   )
@@ -172,7 +174,7 @@ function ReentryContinue({ onContinue }: { onContinue: () => void }) {
     onContinue()
   }, [onContinue])
 
-  return <Navigate to="/map" replace />
+  return <Navigate to="/home" replace />
 }
 
 function ReentryLandingRoutes({ onContinue }: { onContinue: () => void }) {

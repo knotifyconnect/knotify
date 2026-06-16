@@ -9,6 +9,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness,
   ChevronRight,
+  Home,
   LogOut,
   MessageSquare,
   Network,
@@ -42,6 +43,7 @@ type NavItem = {
 }
 
 const BASE_ITEMS: NavItem[] = [
+  { title: 'Home',      href: '/home',     icon: <Home              size={15} /> },
   { title: 'Your Knot', href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
   { title: 'Discover',  href: '/discover', icon: <Search            size={15} /> },
   { title: 'Jobs',      sub: 'Warm',       href: '/jobs',           icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
@@ -104,7 +106,7 @@ export function AppSidebar() {
         {/* Logo (mark + wordmark, design uses size 22) — clicks → /home */}
         <button
           type="button"
-          onClick={() => navigate('/map')}
+          onClick={() => navigate('/home')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -311,10 +313,10 @@ export function AppSidebar() {
         }}
       >
         {[
+          { title: 'Home',     href: '/home',     icon: <Home size={18} /> },
           { title: 'Knot',     href: '/map',      icon: <Network size={18} /> },
-          { title: 'Discover', href: '/discover', icon: <Search size={18} /> },
-          { title: 'Jobs',     href: '/jobs',     icon: <BriefcaseBusiness size={18} /> },
           { title: 'Messages', href: '/messages', icon: <MessageSquare size={18} /> },
+          { title: 'Discover', href: '/discover', icon: <Search size={18} /> },
           {
             title: 'Me',
             href: '/profile',
