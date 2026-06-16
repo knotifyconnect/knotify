@@ -264,23 +264,27 @@ export function MapPage() {
     setError(null)
 
     try {
-      const [meResult, connectionResult, mapResult, homeResult] = await Promise.all([
+      const [meResult, connectionResult, mapResult] = await Promise.all([
         apiGet<MeResponse>('/api/users/me'),
         apiGet<ConnectionsResponse>('/api/connections'),
         apiGet<ConnectionMapResponse>('/api/connections/map'),
-        apiGet<{ goingCold: Array<{ peer: { id: string }; daysSince: number }> }>('/api/relationship-home').catch(() => ({ goingCold: [] })),
       ])
-
-      const healthMap = new Map<string, KnotHealthState>()
-      for (const entry of homeResult.goingCold) {
-        healthMap.set(entry.peer.id, entry.daysSince >= 60 ? 'cold' : 'cooling')
-      }
 
       setMeId(meResult.user.id)
       setMeUser(meResult.user)
       setConnections(connectionResult.connections ?? [])
       setPeerEdges(mapResult.peerEdges ?? [])
-      setHealthByUserId(healthMap)
+
+      // Load health data separately — never blocks knot from rendering
+      apiGet<{ goingCold: Array<{ peer: { id: string }; daysSince: number }> }>('/api/relationship-home')
+        .then((homeResult) => {
+          const healthMap = new Map<string, KnotHealthState>()
+          for (const entry of homeResult.goingCold) {
+            healthMap.set(entry.peer.id, entry.daysSince >= 60 ? 'cold' : 'cooling')
+          }
+          setHealthByUserId(healthMap)
+        })
+        .catch(() => { /* health colors are non-critical */ })
       setExpandedRootUserId(null)
       setExpandedSecondDegreeNodes([])
       setExpandedSecondDegreeEdges([])

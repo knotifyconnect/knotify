@@ -84,8 +84,8 @@ export function RelationshipHomePage() {
   useEffect(() => {
     let mounted = true
     const timeout = window.setTimeout(() => {
-      if (mounted) { setError('Took too long to load. Try refreshing.'); setLoading(false) }
-    }, 10000)
+      if (mounted) { setData({ goingCold: [], milestones: [], openAsks: [] }); setLoading(false) }
+    }, 12000)
     apiGet<HomeData>('/api/relationship-home')
       .then((d) => { if (mounted) setData(d) })
       .catch((e) => { if (mounted) setError(e instanceof Error ? e.message : 'Failed to load') })
