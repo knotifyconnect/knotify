@@ -6,14 +6,11 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { AppLayout } from './layouts/AppLayout'
 import { AuthPage } from './pages/AuthPage'
 import { LandingPage } from './pages/LandingPage'
-import { HomePage } from './pages/HomePage'
 import { MapPage } from './pages/MapPage'
 import { DiscoverPage } from './pages/DiscoverPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { JobsPage } from './pages/JobsPage'
-import { HrPage } from './pages/HrPage'
 import { MessagesPage } from './pages/MessagesPage'
-import { CafesPage } from './pages/CafesPage'
 import { AdminPage } from './pages/AdminPage'
 import { supabase } from './lib/supabase'
 import { useSessionStore } from './store/session'
@@ -124,15 +121,12 @@ function ProtectedAppRoutes() {
     <AppLayout>
       <Routes>
         <Route path="/" element={<Navigate to="/map" replace />} />
-        <Route path="/home" element={<HomePage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/:userId" element={<ProfilePage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/messages" element={<MessagesPage />} />
-        <Route path="/cafes" element={<CafesPage />} />
-        <Route path="/hr" element={<HrPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/auth" element={<Navigate to="/map" replace />} />
         <Route path="*" element={<Navigate to="/map" replace />} />

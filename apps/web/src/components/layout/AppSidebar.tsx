@@ -7,16 +7,12 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  Activity,
   BriefcaseBusiness,
   ChevronRight,
-  Coffee,
-  Flame,
   LogOut,
   MessageSquare,
   Network,
   Search,
-  ShieldCheck,
   Settings,
 } from 'lucide-react'
 import { KAvatar, KnotifyMark, KnotifyWordmark } from '@/lib/knotify'
@@ -46,12 +42,10 @@ type NavItem = {
 }
 
 const BASE_ITEMS: NavItem[] = [
-  { title: 'Your Knot', href: '/map',      icon: <Network        size={15} />, badge: 'connections' },
-  { title: 'Pulse',     href: '/home',     icon: <Activity       size={15} /> },
-  { title: 'Discover',  href: '/discover', icon: <Search         size={15} /> },
-  { title: 'Jobs',      sub: 'Warm',       href: '/jobs',     icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
-  { title: 'Cafés',     sub: 'IRL',        href: '/cafes',    icon: <Coffee            size={15} /> },
-  { title: 'Messages',  href: '/messages', icon: <MessageSquare  size={15} />, badge: 'messages' },
+  { title: 'Your Knot', href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
+  { title: 'Discover',  href: '/discover', icon: <Search            size={15} /> },
+  { title: 'Jobs',      sub: 'Warm',       href: '/jobs',           icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
+  { title: 'Messages',  href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },
 ]
 
 export function AppSidebar() {
@@ -70,7 +64,6 @@ export function AppSidebar() {
 
   const items: NavItem[] = (() => {
     let arr: NavItem[] = [...BASE_ITEMS]
-    if (me?.is_hr) arr = [...arr, { title: 'HR', href: '/hr', icon: <ShieldCheck size={15} /> }]
     if (me?.is_admin) arr = [...arr, { title: 'Admin', href: '/admin', icon: <Settings size={15} /> }]
     return arr
   })()
@@ -225,47 +218,6 @@ export function AppSidebar() {
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Quest banner — ink card with flame icon + progress dots */}
-        <div
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            background: 'var(--ink)',
-            color: 'var(--paper-soft)',
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-            <Flame size={12} color="var(--signal)" />
-            <div
-              style={{
-                fontSize: 10,
-                letterSpacing: 1.2,
-                textTransform: 'uppercase',
-                color: 'var(--ink-faint)',
-                fontFamily: "'IBM Plex Sans', sans-serif",
-              }}
-            >
-              Quest · 5d
-            </div>
-          </div>
-          <div
-            style={{
-              fontSize: 12,
-              lineHeight: 1.3,
-              fontWeight: 500,
-              fontFamily: "'IBM Plex Sans', sans-serif",
-            }}
-          >
-            Reconnect with 3 — 1 done
-          </div>
-          <div style={{ display: 'flex', gap: 3, marginTop: 8 }}>
-            <div style={{ width: 24, height: 3, borderRadius: 2, background: 'var(--signal)' }} />
-            <div style={{ width: 24, height: 3, borderRadius: 2, background: '#3A352D' }} />
-            <div style={{ width: 24, height: 3, borderRadius: 2, background: '#3A352D' }} />
-          </div>
-        </div>
-
         {/* Self profile card */}
         {me && (
           <div
@@ -360,7 +312,7 @@ export function AppSidebar() {
       >
         {[
           { title: 'Knot',     href: '/map',      icon: <Network size={18} /> },
-          { title: 'Pulse',    href: '/home',     icon: <Activity size={18} /> },
+          { title: 'Discover', href: '/discover', icon: <Search size={18} /> },
           { title: 'Jobs',     href: '/jobs',     icon: <BriefcaseBusiness size={18} /> },
           { title: 'Messages', href: '/messages', icon: <MessageSquare size={18} /> },
           {

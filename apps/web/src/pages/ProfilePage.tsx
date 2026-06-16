@@ -767,7 +767,6 @@ function OwnProfileView() {
                   { label: 'Connections', value: String(connectionCount) },
                   { label: 'Skills', value: String(userSkillIds.length || 0) },
                   { label: 'Updates', value: String(updates.length || 0) },
-                  { label: 'Trust score', value: String(me.referral_score ?? 0) },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ borderRadius: 16, background: '#fffaf3', padding: '12px 11px', border: '1px solid rgba(35,31,28,0.08)' }}>
                     <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 22, color: 'var(--ink)', lineHeight: 1 }}>
