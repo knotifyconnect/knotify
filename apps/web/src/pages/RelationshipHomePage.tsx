@@ -13,7 +13,7 @@ type Peer = {
   current_company: string | null
 }
 
-type ColdEntry = {
+type ConnectionEntry = {
   peer: Peer
   lastContact: string
   daysSince: number
@@ -34,11 +34,33 @@ type AskEntry = {
   user: Peer | null
 }
 
+type PendingEntry = {
+  id: string
+  peer: Peer
+  created_at: string
+}
+
 type HomeData = {
-  goingCold: ColdEntry[]
+  connections: ConnectionEntry[]
   milestones: MilestoneEntry[]
   openAsks: AskEntry[]
+  pendingForMe: PendingEntry[]
 }
+
+const HEALTH_COLOR = { warm: '#4caf7d', cooling: '#d4a017', cold: '#e05c3a' }
+const HEALTH_LABEL = { warm: 'Warm', cooling: 'Cooling', cold: 'Cold' }
+
+function reachOutReason(entry: ConnectionEntry): string {
+  const { daysSince, health, peer } = entry
+  if (daysSince === 0) return `You connected with ${peer.full_name.split(' ')[0]} today`
+  if (daysSince < 7) return `Last contact ${daysSince}d ago — still fresh`
+  if (daysSince < 14) return `Haven't spoken in ${daysSince} days — a quick check-in keeps things warm`
+  if (daysSince < COLD_DAYS) return `${daysSince} days since last contact — worth a message soon`
+  if (health === 'cooling') return `${daysSince} days of silence — this relationship is cooling`
+  return `${daysSince} days with no contact — at risk of going cold`
+}
+
+const COLD_DAYS = 30
 
 function timeAgo(iso: string) {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
@@ -50,26 +72,24 @@ function timeAgo(iso: string) {
   return `${Math.floor(days / 365)}y ago`
 }
 
-function Column({ title, subtitle, children, empty }: { title: string; subtitle: string; children: React.ReactNode; empty: string }) {
+function greeting() {
+  const h = new Date().getHours()
+  if (h < 12) return 'Good morning'
+  if (h < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-          {title}
-        </div>
-        <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2, fontFamily: "'IBM Plex Sans'" }}>
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, fontWeight: 600, color: 'var(--ink-faint)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        {title}
+      </div>
+      {subtitle && (
+        <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3, fontFamily: "'IBM Plex Sans'" }}>
           {subtitle}
         </div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {children ?? (
-          <KCard style={{ padding: '20px 16px', textAlign: 'center' }}>
-            <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic', margin: 0, fontFamily: "'Fraunces', serif" }}>
-              {empty}
-            </p>
-          </KCard>
-        )}
-      </div>
+      )}
     </div>
   )
 }
@@ -81,12 +101,19 @@ export function RelationshipHomePage() {
   const [error, setError] = useState<string | null>(null)
   const [messagingPeer, setMessagingPeer] = useState<string | null>(null)
   const [referralPeer, setReferralPeer] = useState<Peer | null>(null)
+  const [me, setMe] = useState<{ full_name?: string } | null>(null)
+
+  useEffect(() => {
+    apiGet<{ user: { full_name: string } }>('/api/users/me')
+      .then((r) => setMe(r.user))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     let mounted = true
     const timeout = window.setTimeout(() => {
-      if (mounted) { setData({ goingCold: [], milestones: [], openAsks: [] }); setLoading(false) }
-    }, 12000)
+      if (mounted) { setData({ connections: [], milestones: [], openAsks: [], pendingForMe: [] }); setLoading(false) }
+    }, 15000)
     apiGet<HomeData>('/api/relationship-home')
       .then((d) => { if (mounted) setData(d) })
       .catch((e) => { if (mounted) setError(e instanceof Error ? e.message : 'Failed to load') })
@@ -110,7 +137,7 @@ export function RelationshipHomePage() {
     return (
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 20px' }}>
         <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 16, color: 'var(--ink-muted)' }}>
-          Loading your relationships...
+          Loading your relationships…
         </p>
       </div>
     )
@@ -124,30 +151,99 @@ export function RelationshipHomePage() {
     )
   }
 
-  const hasAnything = data.goingCold.length > 0 || data.milestones.length > 0 || data.openAsks.length > 0
+  const { connections, milestones, openAsks, pendingForMe } = data
+  const totalConnections = connections.length
+  const coldCount = connections.filter((c) => c.health === 'cold').length
+  const coolingCount = connections.filter((c) => c.health === 'cooling').length
+  const warmCount = connections.filter((c) => c.health === 'warm').length
+
+  // Priority sort: cold first, then cooling, then warm, within each group by daysSince desc
+  const prioritized = [...connections].sort((a, b) => {
+    const rank = { cold: 0, cooling: 1, warm: 2 }
+    if (rank[a.health] !== rank[b.health]) return rank[a.health] - rank[b.health]
+    return b.daysSince - a.daysSince
+  })
+
+  const networkFeed = [
+    ...milestones.map((m) => ({ type: 'milestone' as const, ...m })),
+    ...openAsks.map((a) => ({ type: 'ask' as const, ...a })),
+  ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12)
+
+  const firstName = me?.full_name?.split(' ')[0] ?? ''
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 40px' }}>
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 60px' }}>
       {referralPeer && (
         <ReferralAskModal peer={referralPeer} onClose={() => setReferralPeer(null)} />
       )}
+
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 28, fontWeight: 400, color: 'var(--ink)', margin: 0, letterSpacing: '-0.02em' }}>
-          Relationships
+          {greeting()}{firstName ? `, ${firstName}` : ''}.
         </h1>
-        <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: '6px 0 0', fontFamily: "'IBM Plex Sans'" }}>
-          Who needs attention today.
-        </p>
+        {totalConnections > 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'" }}>
+              {totalConnections} connection{totalConnections !== 1 ? 's' : ''} in your knot
+            </span>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {warmCount > 0 && (
+                <span style={{ fontSize: 12, fontFamily: "'IBM Plex Sans'", display: 'flex', alignItems: 'center', gap: 4, color: 'var(--ink-faint)' }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: HEALTH_COLOR.warm, display: 'inline-block' }} />
+                  {warmCount} warm
+                </span>
+              )}
+              {coolingCount > 0 && (
+                <span style={{ fontSize: 12, fontFamily: "'IBM Plex Sans'", display: 'flex', alignItems: 'center', gap: 4, color: 'var(--ink-faint)' }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: HEALTH_COLOR.cooling, display: 'inline-block' }} />
+                  {coolingCount} cooling
+                </span>
+              )}
+              {coldCount > 0 && (
+                <span style={{ fontSize: 12, fontFamily: "'IBM Plex Sans'", display: 'flex', alignItems: 'center', gap: 4, color: HEALTH_COLOR.cold }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: HEALTH_COLOR.cold, display: 'inline-block' }} />
+                  {coldCount} cold
+                </span>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: '6px 0 0', fontFamily: "'IBM Plex Sans'" }}>
+            Who needs attention today.
+          </p>
+        )}
       </div>
 
-      {!hasAnything ? (
+      {/* Pending decisions banner */}
+      {pendingForMe.length > 0 && (
+        <div style={{ marginBottom: 24, padding: '14px 18px', borderRadius: 12, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'" }}>
+              {pendingForMe.length === 1
+                ? `${pendingForMe[0].peer.full_name} wants to connect`
+                : `${pendingForMe.length} people want to connect with you`}
+            </div>
+            {pendingForMe.length === 1 && (
+              <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginTop: 2 }}>
+                {pendingForMe[0].peer.headline ?? pendingForMe[0].peer.current_company ?? `@${pendingForMe[0].peer.username}`}
+              </div>
+            )}
+          </div>
+          <KBtn variant="signal" size="sm" onClick={() => navigate('/map')}>
+            Review
+          </KBtn>
+        </div>
+      )}
+
+      {totalConnections === 0 ? (
+        /* True empty — no connections at all */
         <KCard style={{ padding: '48px 32px', textAlign: 'center' }}>
           <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 20, color: 'var(--ink)', margin: '0 0 10px' }}>
-            Your knot is quiet.
+            Your knot is empty.
           </p>
           <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: '0 auto 20px', maxWidth: 380, lineHeight: 1.5 }}>
-            Connect with more people and start conversations — your relationship dashboard fills in as your knot grows.
+            Connect with people and Knotify will tell you who to reach out to, when, and why.
           </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
             <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
@@ -155,150 +251,169 @@ export function RelationshipHomePage() {
           </div>
         </KCard>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 24, alignItems: 'start' }}>
-          {/* Connections sorted by warmth */}
-          <Column
-            title="Your connections"
-            subtitle="Sorted by who needs attention most"
-            empty="No connections yet — find people in Discover."
-          >
-            {data.goingCold.length > 0 ? data.goingCold.map((entry) => {
-              const healthColor = entry.health === 'cold' ? '#e05c3a' : entry.health === 'cooling' ? '#d4a017' : '#4caf7d'
-              const healthLabel = entry.health === 'cold' ? 'Cold' : entry.health === 'cooling' ? 'Cooling' : 'Warm'
-              return (
-                <KCard key={entry.peer.id} style={{ padding: '14px 16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/profile/${entry.peer.id}`)}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
-                    >
-                      <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={36} />
-                    </button>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {entry.peer.full_name}
-                      </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginTop: 1 }}>
-                        {entry.peer.headline ?? entry.peer.current_company ?? `@${entry.peer.username}`}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: healthColor, display: 'inline-block' }} />
-                      <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                        {entry.daysSince === 0 ? 'today' : `${entry.daysSince}d`}
-                      </span>
-                    </div>
-                  </div>
-                  <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-                    <KBtn
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openMessage(entry.peer.id)}
-                      disabled={messagingPeer === entry.peer.id}
-                      style={{ flex: 1 }}
-                    >
-                      {messagingPeer === entry.peer.id ? 'Opening...' : 'Message'}
-                    </KBtn>
-                    <KBtn
-                      variant="signal"
-                      size="sm"
-                      onClick={() => setReferralPeer(entry.peer)}
-                      style={{ flex: 1 }}
-                    >
-                      Ask for referral
-                    </KBtn>
-                  </div>
-                </KCard>
-              )
-            }) : null}
-          </Column>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 28, alignItems: 'start' }}>
 
-          {/* Milestones */}
-          <Column
-            title="Milestones"
-            subtitle="Recent updates from your knot"
-            empty="No recent updates from your network."
-          >
-            {data.milestones.length > 0 ? data.milestones.map((m) => (
-              <KCard key={m.id} style={{ padding: '14px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  {m.user && (
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/profile/${m.user!.id}`)}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}
-                    >
-                      <KAvatar name={m.user.full_name} src={m.user.avatar_url} size={30} />
-                    </button>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {m.user && (
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", marginBottom: 3 }}>
-                        {m.user.full_name}
+          {/* Left — Reach out column */}
+          <div>
+            <SectionHeader
+              title="Reach out today"
+              subtitle={
+                coldCount + coolingCount > 0
+                  ? `${coldCount + coolingCount} relationship${coldCount + coolingCount !== 1 ? 's' : ''} need${coldCount + coolingCount === 1 ? 's' : ''} attention`
+                  : 'All relationships are warm'
+              }
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {prioritized.slice(0, 8).map((entry) => {
+                const hc = HEALTH_COLOR[entry.health]
+                return (
+                  <KCard key={entry.peer.id} style={{ padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/profile/${entry.peer.id}`)}
+                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
+                      >
+                        <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={38} />
+                      </button>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {entry.peer.full_name}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {entry.peer.headline ?? entry.peer.current_company ?? `@${entry.peer.username}`}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: hc, display: 'inline-block' }} />
+                          {HEALTH_LABEL[entry.health]}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                          {entry.daysSince === 0 ? 'today' : `${entry.daysSince}d ago`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Insight / reason */}
+                    <div style={{
+                      margin: '10px 0 10px',
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      background: entry.health === 'cold' ? 'rgba(224,92,58,0.06)' : entry.health === 'cooling' ? 'rgba(212,160,23,0.06)' : 'rgba(76,175,125,0.06)',
+                      fontSize: 12,
+                      color: 'var(--ink-muted)',
+                      fontFamily: "'IBM Plex Sans'",
+                      lineHeight: 1.5,
+                      borderLeft: `2.5px solid ${hc}`,
+                    }}>
+                      {reachOutReason(entry)}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <KBtn
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openMessage(entry.peer.id)}
+                        disabled={messagingPeer === entry.peer.id}
+                        style={{ flex: 1 }}
+                      >
+                        {messagingPeer === entry.peer.id ? 'Opening…' : 'Message'}
+                      </KBtn>
+                      <KBtn
+                        variant="signal"
+                        size="sm"
+                        onClick={() => setReferralPeer(entry.peer)}
+                        style={{ flex: 1 }}
+                      >
+                        Ask for referral
+                      </KBtn>
+                    </div>
+                  </KCard>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Right — Network feed */}
+          <div>
+            <SectionHeader
+              title="From your network"
+              subtitle="Milestones and open asks"
+            />
+            {networkFeed.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {networkFeed.map((item) => (
+                  <KCard key={`${item.type}-${item.id}`} style={{ padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      {item.user && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/profile/${item.user!.id}`)}
+                          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}
+                        >
+                          <KAvatar name={item.user.full_name} src={item.user.avatar_url} size={32} />
+                        </button>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          {item.user && (
+                            <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'" }}>
+                              {item.user.full_name}
+                            </span>
+                          )}
+                          <span style={{
+                            fontSize: 10, fontFamily: "'IBM Plex Mono', monospace",
+                            padding: '2px 6px', borderRadius: 4,
+                            background: item.type === 'milestone' ? 'rgba(76,175,125,0.1)' : 'rgba(99,102,241,0.1)',
+                            color: item.type === 'milestone' ? '#4caf7d' : '#6366f1',
+                          }}>
+                            {item.type === 'milestone' ? 'milestone' : 'open ask'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 13, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", lineHeight: 1.45 }}>
+                          {item.content}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace", marginTop: 6 }}>
+                          {timeAgo(item.created_at)}
+                        </div>
+                      </div>
+                    </div>
+                    {item.user && (
+                      <div style={{ marginTop: 10 }}>
+                        <KBtn
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openMessage(item.user!.id)}
+                          style={{ width: '100%' }}
+                        >
+                          {item.type === 'milestone' ? 'Congratulate' : 'Offer to help'}
+                        </KBtn>
                       </div>
                     )}
-                    <div style={{ fontSize: 13, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", lineHeight: 1.45 }}>
-                      {m.content}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace", marginTop: 6 }}>
-                      {timeAgo(m.created_at)}
-                    </div>
-                  </div>
-                </div>
-                {m.user && (
-                  <div style={{ marginTop: 10 }}>
-                    <KBtn variant="ghost" size="sm" onClick={() => openMessage(m.user!.id)} style={{ width: '100%' }}>
-                      Congratulate
-                    </KBtn>
-                  </div>
-                )}
+                  </KCard>
+                ))}
+              </div>
+            ) : (
+              <KCard style={{ padding: '20px 16px', textAlign: 'center' }}>
+                <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic', margin: 0, fontFamily: "'Fraunces', serif" }}>
+                  Nothing from your network yet. As people share updates and asks, they'll appear here.
+                </p>
               </KCard>
-            )) : null}
-          </Column>
+            )}
 
-          {/* Open Asks */}
-          <Column
-            title="Open asks"
-            subtitle="Things your connections need help with"
-            empty="No open asks from your network right now."
-          >
-            {data.openAsks.length > 0 ? data.openAsks.map((a) => (
-              <KCard key={a.id} style={{ padding: '14px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  {a.user && (
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/profile/${a.user!.id}`)}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}
-                    >
-                      <KAvatar name={a.user.full_name} src={a.user.avatar_url} size={30} />
-                    </button>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {a.user && (
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", marginBottom: 3 }}>
-                        {a.user.full_name}
-                      </div>
-                    )}
-                    <div style={{ fontSize: 13, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", lineHeight: 1.45 }}>
-                      {a.content}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace", marginTop: 6 }}>
-                      {timeAgo(a.created_at)}
-                    </div>
-                  </div>
+            {/* Nudge to grow */}
+            {totalConnections < 5 && (
+              <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 12, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
+                <div style={{ fontSize: 13, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", lineHeight: 1.5, marginBottom: 10 }}>
+                  Knotify gets more powerful as your knot grows. Add a few more people to see relationship health patterns.
                 </div>
-                {a.user && (
-                  <div style={{ marginTop: 10 }}>
-                    <KBtn variant="ghost" size="sm" onClick={() => openMessage(a.user!.id)} style={{ width: '100%' }}>
-                      Offer to help
-                    </KBtn>
-                  </div>
-                )}
-              </KCard>
-            )) : null}
-          </Column>
+                <KBtn variant="ghost" size="sm" onClick={() => navigate('/discover')}>
+                  Find people to connect with
+                </KBtn>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

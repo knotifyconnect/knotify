@@ -1,12 +1,15 @@
 /**
  * /api/relationship-home — data for the Relationship Home dashboard.
  *
- * Returns three buckets:
- *   goingCold   — accepted connections with no recent conversation (>30 days)
- *   milestones  — recent network updates from connections
- *   openAsks    — asks from connections that are still open
+ * Returns:
+ *   connections   — all accepted connections with health + days since contact
+ *   milestones    — recent network updates from connections
+ *   openAsks      — asks from connections that are still open
+ *   pendingForMe  — connection requests waiting on the current user to decide
  *
- * Each query has a hard timeout so a slow table never hangs the response.
+ * Resilient: if the users lookup times out, connections are still returned
+ * using the name embedded in the connection join. Each query has a hard
+ * timeout so a slow table never hangs the response.
  */
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth.js'
@@ -15,7 +18,8 @@ import { supabase } from '../lib.js'
 export const relationshipHomeRouter = Router()
 
 const COLD_THRESHOLD_DAYS = 30
-const QUERY_TIMEOUT_MS = 4000
+const COOLING_THRESHOLD_DAYS = 60
+const QUERY_TIMEOUT_MS = 5000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function qt(query: any): Promise<{ data: any[] | null; error: unknown }> {
@@ -36,7 +40,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
     const { data: connData } = await qt(
       supabase
         .from('connections')
-        .select('id, requester_id, addressee_id, updated_at')
+        .select('id, requester_id, addressee_id, updated_at, user:users!connections_addressee_id_fkey(id, full_name, username, avatar_url, headline, current_company), requester:users!connections_requester_id_fkey(id, full_name, username, avatar_url, headline, current_company)')
         .eq('status', 'accepted')
         .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
     )
@@ -46,17 +50,36 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       requester_id: string
       addressee_id: string
       updated_at: string
+      user: { id: string; full_name: string; username: string; avatar_url: string | null; headline: string | null; current_company: string | null } | null
+      requester: { id: string; full_name: string; username: string; avatar_url: string | null; headline: string | null; current_company: string | null } | null
     }>
 
     const peerIds = connections.map((c) =>
       c.requester_id === userId ? c.addressee_id : c.requester_id
     )
 
+    // ── 2. Pending requests waiting on me ────────────────────────────────────
+    let pendingForMe: Array<{ id: string; peer: { id: string; full_name: string; username: string; avatar_url: string | null; headline: string | null; current_company: string | null }; created_at: string }> = []
+    try {
+      const { data: pendingData } = await qt(
+        supabase
+          .from('connections')
+          .select('id, created_at, requester:users!connections_requester_id_fkey(id, full_name, username, avatar_url, headline, current_company)')
+          .eq('status', 'pending')
+          .eq('addressee_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(5)
+      )
+      pendingForMe = ((pendingData ?? []) as Array<{ id: string; created_at: string; requester: { id: string; full_name: string; username: string; avatar_url: string | null; headline: string | null; current_company: string | null } | null }>)
+        .filter((p) => p.requester !== null)
+        .map((p) => ({ id: p.id, peer: p.requester!, created_at: p.created_at }))
+    } catch { /* non-critical */ }
+
     if (!peerIds.length) {
-      return res.json({ goingCold: [], milestones: [], openAsks: [] })
+      return res.json({ connections: [], milestones: [], openAsks: [], pendingForMe })
     }
 
-    // ── 2. Last message date per peer (best-effort) ──────────────────────────
+    // ── 3. Last message date per peer (best-effort) ──────────────────────────
     const peerLastMessage = new Map<string, string>()
 
     try {
@@ -119,14 +142,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       // message history unavailable — fall back to connection date
     }
 
-    // ── 3. Peer user details ─────────────────────────────────────────────────
-    const { data: peersData } = await qt(
-      supabase
-        .from('users')
-        .select('id, full_name, username, avatar_url, headline, current_company')
-        .in('id', peerIds)
-    )
-
+    // ── 4. Build connections list with health ────────────────────────────────
     type PeerRow = {
       id: string
       full_name: string
@@ -136,29 +152,29 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       current_company: string | null
     }
 
-    const peersById = new Map<string, PeerRow>(
-      ((peersData ?? []) as PeerRow[]).map((u) => [u.id, u])
-    )
-
-    // ── 4. All connections sorted by last contact (coldest first) ───────────
-    const goingCold = connections
+    const allConnections = connections
       .map((c) => {
         const peerId = c.requester_id === userId ? c.addressee_id : c.requester_id
+        // Peer data comes from the join — no separate users query needed
+        const peerJoin = c.requester_id === userId ? c.user : c.requester
+        if (!peerJoin) return null
+        const peer: PeerRow = peerJoin
         const lastMsg = peerLastMessage.get(peerId)
         const lastContact = lastMsg || c.updated_at
-        const peer = peersById.get(peerId)
-        if (!peer) return null
         const daysSince = Math.floor((Date.now() - new Date(lastContact).getTime()) / 86400000)
-        const health = daysSince >= 60 ? 'cold' : daysSince >= COLD_THRESHOLD_DAYS ? 'cooling' : 'warm'
+        const health: 'warm' | 'cooling' | 'cold' =
+          daysSince >= COOLING_THRESHOLD_DAYS ? 'cold' :
+          daysSince >= COLD_THRESHOLD_DAYS ? 'cooling' : 'warm'
         return { peer, lastContact, daysSince, health }
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
       .sort((a, b) => a.lastContact.localeCompare(b.lastContact))
-      .slice(0, 12)
+      .slice(0, 20)
 
     // ── 5. Milestones ────────────────────────────────────────────────────────
     let milestones: Array<{ id: string; content: string; created_at: string; user: PeerRow | null }> = []
     try {
+      const peersById = new Map<string, PeerRow>(allConnections.map((c) => [c.peer.id, c.peer]))
       const { data: updatesData } = await qt(
         supabase
           .from('updates')
@@ -175,6 +191,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
     // ── 6. Open asks ─────────────────────────────────────────────────────────
     let openAsks: Array<{ id: string; content: string; created_at: string; user: PeerRow | null }> = []
     try {
+      const peersById = new Map<string, PeerRow>(allConnections.map((c) => [c.peer.id, c.peer]))
       const { data: asksData } = await qt(
         supabase
           .from('user_asks')
@@ -189,7 +206,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       )
     } catch { /* non-critical */ }
 
-    return res.json({ goingCold, milestones, openAsks })
+    return res.json({ connections: allConnections, milestones, openAsks, pendingForMe })
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Failed loading relationship home' })
   }
