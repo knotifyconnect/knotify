@@ -140,9 +140,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       ((peersData ?? []) as PeerRow[]).map((u) => [u.id, u])
     )
 
-    // ── 4. Going cold ────────────────────────────────────────────────────────
-    const cutoff = new Date(Date.now() - COLD_THRESHOLD_DAYS * 24 * 60 * 60 * 1000).toISOString()
-
+    // ── 4. All connections sorted by last contact (coldest first) ───────────
     const goingCold = connections
       .map((c) => {
         const peerId = c.requester_id === userId ? c.addressee_id : c.requester_id
@@ -150,15 +148,13 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
         const lastContact = lastMsg || c.updated_at
         const peer = peersById.get(peerId)
         if (!peer) return null
-        return {
-          peer,
-          lastContact,
-          daysSince: Math.floor((Date.now() - new Date(lastContact).getTime()) / 86400000),
-        }
+        const daysSince = Math.floor((Date.now() - new Date(lastContact).getTime()) / 86400000)
+        const health = daysSince >= 60 ? 'cold' : daysSince >= COLD_THRESHOLD_DAYS ? 'cooling' : 'warm'
+        return { peer, lastContact, daysSince, health }
       })
-      .filter((x): x is NonNullable<typeof x> => x !== null && x.lastContact < cutoff)
+      .filter((x): x is NonNullable<typeof x> => x !== null)
       .sort((a, b) => a.lastContact.localeCompare(b.lastContact))
-      .slice(0, 10)
+      .slice(0, 12)
 
     // ── 5. Milestones ────────────────────────────────────────────────────────
     let milestones: Array<{ id: string; content: string; created_at: string; user: PeerRow | null }> = []

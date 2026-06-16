@@ -17,6 +17,7 @@ type ColdEntry = {
   peer: Peer
   lastContact: string
   daysSince: number
+  health: 'warm' | 'cooling' | 'cold'
 }
 
 type MilestoneEntry = {
@@ -155,55 +156,62 @@ export function RelationshipHomePage() {
         </KCard>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 24, alignItems: 'start' }}>
-          {/* Going Cold */}
+          {/* Connections sorted by warmth */}
           <Column
-            title="Going cold"
-            subtitle="Haven't connected recently"
-            empty="All your connections are warm."
+            title="Your connections"
+            subtitle="Sorted by who needs attention most"
+            empty="No connections yet — find people in Discover."
           >
-            {data.goingCold.length > 0 ? data.goingCold.map((entry) => (
-              <KCard key={entry.peer.id} style={{ padding: '14px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/profile/${entry.peer.id}`)}
-                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
-                  >
-                    <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={36} />
-                  </button>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {entry.peer.full_name}
+            {data.goingCold.length > 0 ? data.goingCold.map((entry) => {
+              const healthColor = entry.health === 'cold' ? '#e05c3a' : entry.health === 'cooling' ? '#d4a017' : '#4caf7d'
+              const healthLabel = entry.health === 'cold' ? 'Cold' : entry.health === 'cooling' ? 'Cooling' : 'Warm'
+              return (
+                <KCard key={entry.peer.id} style={{ padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/profile/${entry.peer.id}`)}
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
+                    >
+                      <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={36} />
+                    </button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {entry.peer.full_name}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginTop: 1 }}>
+                        {entry.peer.headline ?? entry.peer.current_company ?? `@${entry.peer.username}`}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginTop: 1 }}>
-                      {entry.peer.headline ?? entry.peer.current_company ?? `@${entry.peer.username}`}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: healthColor, display: 'inline-block' }} />
+                      <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                        {entry.daysSince === 0 ? 'today' : `${entry.daysSince}d`}
+                      </span>
                     </div>
                   </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace", flexShrink: 0 }}>
-                    {entry.daysSince}d
+                  <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+                    <KBtn
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openMessage(entry.peer.id)}
+                      disabled={messagingPeer === entry.peer.id}
+                      style={{ flex: 1 }}
+                    >
+                      {messagingPeer === entry.peer.id ? 'Opening...' : 'Message'}
+                    </KBtn>
+                    <KBtn
+                      variant="signal"
+                      size="sm"
+                      onClick={() => setReferralPeer(entry.peer)}
+                      style={{ flex: 1 }}
+                    >
+                      Ask for referral
+                    </KBtn>
                   </div>
-                </div>
-                <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-                  <KBtn
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openMessage(entry.peer.id)}
-                    disabled={messagingPeer === entry.peer.id}
-                    style={{ flex: 1 }}
-                  >
-                    {messagingPeer === entry.peer.id ? 'Opening...' : 'Message'}
-                  </KBtn>
-                  <KBtn
-                    variant="signal"
-                    size="sm"
-                    onClick={() => setReferralPeer(entry.peer)}
-                    style={{ flex: 1 }}
-                  >
-                    Ask for referral
-                  </KBtn>
-                </div>
-              </KCard>
-            )) : null}
+                </KCard>
+              )
+            }) : null}
           </Column>
 
           {/* Milestones */}
