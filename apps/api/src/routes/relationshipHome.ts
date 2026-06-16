@@ -35,21 +35,20 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
   if (!userId) return res.status(404).json({ error: 'Profile not found' })
 
   try {
-    // ── 1. Accepted connections ──────────────────────────────────────────────
-    const { data: connData } = await qt(
-      supabase
-        .from('connections')
-        .select('id, requester_id, addressee_id, updated_at')
-        .eq('status', 'accepted')
-        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
-    )
+    // ── 1. All connections (filter accepted in JS, matching the working /api/connections pattern) ──
+    const connResult = await supabase
+      .from('connections')
+      .select('id, requester_id, addressee_id, updated_at, status')
+      .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+      .order('created_at', { ascending: false })
 
-    const connections = (connData ?? []) as Array<{
+    const connections = ((connResult.data ?? []) as Array<{
       id: string
       requester_id: string
       addressee_id: string
       updated_at: string
-    }>
+      status: string
+    }>).filter((c) => c.status === 'accepted')
 
     const peerIds = connections.map((c) =>
       c.requester_id === userId ? c.addressee_id : c.requester_id
@@ -128,12 +127,11 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
     } catch { /* fall back to connection date */ }
 
     // ── 4. Peer user details ─────────────────────────────────────────────────
-    const { data: peersData } = await qt(
-      supabase
-        .from('users')
-        .select('id, full_name, username, avatar_url, headline, current_company')
-        .in('id', peerIds)
-    )
+    const peersResult = await supabase
+      .from('users')
+      .select('id, full_name, username, avatar_url, headline, current_company')
+      .in('id', peerIds)
+    const { data: peersData } = peersResult
     const peersById = new Map<string, PeerRow>(((peersData ?? []) as PeerRow[]).map(u => [u.id, u]))
 
     // ── 5. Build connections list — include even if user lookup missed them ──
