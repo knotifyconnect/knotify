@@ -1235,7 +1235,7 @@ function OwnProfileView() {
       )}
 
       {/* ─── Availability & Asks ────────────────────────────────────────────── */}
-      {isOwnProfile && (
+      {(
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
           <SectionHead label="Availability" />
           {editMode ? (
