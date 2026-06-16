@@ -733,6 +733,7 @@ export function MapPage() {
           requestingUserId={requestingUserId}
           requestFeedback={requestFeedback}
           onResetGraphState={resetGraphState}
+          healthByUserId={healthByUserId}
         />
 
         <section style={{ marginTop: 18 }}>
@@ -1037,6 +1038,7 @@ function KnotStage({
   onRemove,
   onViewProfile,
   onMessage,
+  healthByUserId,
   onInviteCoffee,
   selectedSecondDegreeUser,
   expandedRootName,
@@ -1080,6 +1082,7 @@ function KnotStage({
   requestingUserId: string | null
   requestFeedback: string | null
   onResetGraphState: () => void
+  healthByUserId: Map<string, KnotHealthState>
 }) {
   const normalizedGraphQuery = query.trim().toLowerCase()
   const hasGraphQuery = normalizedGraphQuery.length > 0
