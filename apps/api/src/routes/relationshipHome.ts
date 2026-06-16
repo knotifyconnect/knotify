@@ -1,15 +1,5 @@
 /**
  * /api/relationship-home — data for the Relationship Home dashboard.
- *
- * Returns:
- *   connections   — all accepted connections with health + days since contact
- *   milestones    — recent network updates from connections
- *   openAsks      — asks from connections that are still open
- *   pendingForMe  — connection requests waiting on the current user to decide
- *
- * Resilient: if the users lookup times out, connections are still returned
- * using the name embedded in the connection join. Each query has a hard
- * timeout so a slow table never hangs the response.
  */
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth.js'
@@ -19,7 +9,7 @@ export const relationshipHomeRouter = Router()
 
 const COLD_THRESHOLD_DAYS = 30
 const COOLING_THRESHOLD_DAYS = 60
-const QUERY_TIMEOUT_MS = 5000
+const QUERY_TIMEOUT_MS = 6000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function qt(query: any): Promise<{ data: any[] | null; error: unknown }> {
@@ -31,6 +21,15 @@ function qt(query: any): Promise<{ data: any[] | null; error: unknown }> {
   ])
 }
 
+type PeerRow = {
+  id: string
+  full_name: string
+  username: string
+  avatar_url: string | null
+  headline: string | null
+  current_company: string | null
+}
+
 relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
   const userId = req.appUserId
   if (!userId) return res.status(404).json({ error: 'Profile not found' })
@@ -40,7 +39,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
     const { data: connData } = await qt(
       supabase
         .from('connections')
-        .select('id, requester_id, addressee_id, updated_at, user:users!connections_addressee_id_fkey(id, full_name, username, avatar_url, headline, current_company), requester:users!connections_requester_id_fkey(id, full_name, username, avatar_url, headline, current_company)')
+        .select('id, requester_id, addressee_id, updated_at')
         .eq('status', 'accepted')
         .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
     )
@@ -50,8 +49,6 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       requester_id: string
       addressee_id: string
       updated_at: string
-      user: { id: string; full_name: string; username: string; avatar_url: string | null; headline: string | null; current_company: string | null } | null
-      requester: { id: string; full_name: string; username: string; avatar_url: string | null; headline: string | null; current_company: string | null } | null
     }>
 
     const peerIds = connections.map((c) =>
@@ -59,20 +56,27 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
     )
 
     // ── 2. Pending requests waiting on me ────────────────────────────────────
-    let pendingForMe: Array<{ id: string; peer: { id: string; full_name: string; username: string; avatar_url: string | null; headline: string | null; current_company: string | null }; created_at: string }> = []
+    let pendingForMe: Array<{ id: string; peer: PeerRow; created_at: string }> = []
     try {
       const { data: pendingData } = await qt(
         supabase
           .from('connections')
-          .select('id, created_at, requester:users!connections_requester_id_fkey(id, full_name, username, avatar_url, headline, current_company)')
+          .select('id, created_at, requester_id')
           .eq('status', 'pending')
           .eq('addressee_id', userId)
           .order('created_at', { ascending: false })
           .limit(5)
       )
-      pendingForMe = ((pendingData ?? []) as Array<{ id: string; created_at: string; requester: { id: string; full_name: string; username: string; avatar_url: string | null; headline: string | null; current_company: string | null } | null }>)
-        .filter((p) => p.requester !== null)
-        .map((p) => ({ id: p.id, peer: p.requester!, created_at: p.created_at }))
+      const pendingRequesterIds = ((pendingData ?? []) as Array<{ id: string; created_at: string; requester_id: string }>).map(p => p.requester_id)
+      if (pendingRequesterIds.length) {
+        const { data: pendingUsers } = await qt(
+          supabase.from('users').select('id, full_name, username, avatar_url, headline, current_company').in('id', pendingRequesterIds)
+        )
+        const pendingUsersById = new Map<string, PeerRow>(((pendingUsers ?? []) as PeerRow[]).map(u => [u.id, u]))
+        pendingForMe = ((pendingData ?? []) as Array<{ id: string; created_at: string; requester_id: string }>)
+          .filter(p => pendingUsersById.has(p.requester_id))
+          .map(p => ({ id: p.id, peer: pendingUsersById.get(p.requester_id)!, created_at: p.created_at }))
+      }
     } catch { /* non-critical */ }
 
     if (!peerIds.length) {
@@ -81,18 +85,11 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
 
     // ── 3. Last message date per peer (best-effort) ──────────────────────────
     const peerLastMessage = new Map<string, string>()
-
     try {
       const { data: myParticipants } = await qt(
-        supabase
-          .from('conversation_participants')
-          .select('conversation_id')
-          .eq('user_id', userId)
+        supabase.from('conversation_participants').select('conversation_id').eq('user_id', userId)
       )
-
-      const myConvIds = ((myParticipants ?? []) as Array<{ conversation_id: string }>).map(
-        (p) => p.conversation_id
-      )
+      const myConvIds = ((myParticipants ?? []) as Array<{ conversation_id: string }>).map(p => p.conversation_id)
 
       if (myConvIds.length) {
         const { data: peerParticipants } = await qt(
@@ -102,14 +99,8 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
             .in('user_id', peerIds)
             .in('conversation_id', myConvIds)
         )
-
-        const peerConvIds = [
-          ...new Set(
-            ((peerParticipants ?? []) as Array<{ conversation_id: string; user_id: string }>).map(
-              (p) => p.conversation_id
-            )
-          ),
-        ]
+        const pp = (peerParticipants ?? []) as Array<{ conversation_id: string; user_id: string }>
+        const peerConvIds = [...new Set(pp.map(p => p.conversation_id))]
 
         if (peerConvIds.length) {
           const { data: messages } = await qt(
@@ -121,60 +112,58 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
               .order('created_at', { ascending: false })
               .limit(500)
           )
-
           const lastMsgByConv = new Map<string, string>()
           for (const msg of (messages ?? []) as Array<{ conversation_id: string; created_at: string }>) {
-            if (!lastMsgByConv.has(msg.conversation_id)) {
-              lastMsgByConv.set(msg.conversation_id, msg.created_at)
-            }
+            if (!lastMsgByConv.has(msg.conversation_id)) lastMsgByConv.set(msg.conversation_id, msg.created_at)
           }
-
-          for (const pp of (peerParticipants ?? []) as Array<{ conversation_id: string; user_id: string }>) {
-            const lastMsg = lastMsgByConv.get(pp.conversation_id)
+          for (const p of pp) {
+            const lastMsg = lastMsgByConv.get(p.conversation_id)
             if (lastMsg) {
-              const existing = peerLastMessage.get(pp.user_id)
-              if (!existing || lastMsg > existing) peerLastMessage.set(pp.user_id, lastMsg)
+              const existing = peerLastMessage.get(p.user_id)
+              if (!existing || lastMsg > existing) peerLastMessage.set(p.user_id, lastMsg)
             }
           }
         }
       }
-    } catch {
-      // message history unavailable — fall back to connection date
-    }
+    } catch { /* fall back to connection date */ }
 
-    // ── 4. Build connections list with health ────────────────────────────────
-    type PeerRow = {
-      id: string
-      full_name: string
-      username: string
-      avatar_url: string | null
-      headline: string | null
-      current_company: string | null
-    }
+    // ── 4. Peer user details ─────────────────────────────────────────────────
+    const { data: peersData } = await qt(
+      supabase
+        .from('users')
+        .select('id, full_name, username, avatar_url, headline, current_company')
+        .in('id', peerIds)
+    )
+    const peersById = new Map<string, PeerRow>(((peersData ?? []) as PeerRow[]).map(u => [u.id, u]))
 
+    // ── 5. Build connections list — include even if user lookup missed them ──
     const allConnections = connections
       .map((c) => {
         const peerId = c.requester_id === userId ? c.addressee_id : c.requester_id
-        // Peer data comes from the join — no separate users query needed
-        const peerJoin = c.requester_id === userId ? c.user : c.requester
-        if (!peerJoin) return null
-        const peer: PeerRow = peerJoin
+        const peer = peersById.get(peerId)
+        // If user record missing, create a minimal placeholder so connection still shows
+        const safePeer: PeerRow = peer ?? {
+          id: peerId,
+          full_name: 'Unknown',
+          username: peerId,
+          avatar_url: null,
+          headline: null,
+          current_company: null,
+        }
         const lastMsg = peerLastMessage.get(peerId)
         const lastContact = lastMsg || c.updated_at
         const daysSince = Math.floor((Date.now() - new Date(lastContact).getTime()) / 86400000)
         const health: 'warm' | 'cooling' | 'cold' =
           daysSince >= COOLING_THRESHOLD_DAYS ? 'cold' :
           daysSince >= COLD_THRESHOLD_DAYS ? 'cooling' : 'warm'
-        return { peer, lastContact, daysSince, health }
+        return { peer: safePeer, lastContact, daysSince, health }
       })
-      .filter((x): x is NonNullable<typeof x> => x !== null)
       .sort((a, b) => a.lastContact.localeCompare(b.lastContact))
       .slice(0, 20)
 
-    // ── 5. Milestones ────────────────────────────────────────────────────────
+    // ── 6. Milestones ────────────────────────────────────────────────────────
     let milestones: Array<{ id: string; content: string; created_at: string; user: PeerRow | null }> = []
     try {
-      const peersById = new Map<string, PeerRow>(allConnections.map((c) => [c.peer.id, c.peer]))
       const { data: updatesData } = await qt(
         supabase
           .from('updates')
@@ -184,14 +173,13 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
           .limit(15)
       )
       milestones = ((updatesData ?? []) as Array<{ id: string; user_id: string; content: string; created_at: string }>).map(
-        (u) => ({ id: u.id, content: u.content, created_at: u.created_at, user: peersById.get(u.user_id) ?? null })
+        u => ({ id: u.id, content: u.content, created_at: u.created_at, user: peersById.get(u.user_id) ?? null })
       )
     } catch { /* non-critical */ }
 
-    // ── 6. Open asks ─────────────────────────────────────────────────────────
+    // ── 7. Open asks ─────────────────────────────────────────────────────────
     let openAsks: Array<{ id: string; content: string; created_at: string; user: PeerRow | null }> = []
     try {
-      const peersById = new Map<string, PeerRow>(allConnections.map((c) => [c.peer.id, c.peer]))
       const { data: asksData } = await qt(
         supabase
           .from('user_asks')
@@ -202,7 +190,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
           .limit(10)
       )
       openAsks = ((asksData ?? []) as Array<{ id: string; user_id: string; content: string; created_at: string }>).map(
-        (a) => ({ id: a.id, content: a.content, created_at: a.created_at, user: peersById.get(a.user_id) ?? null })
+        a => ({ id: a.id, content: a.content, created_at: a.created_at, user: peersById.get(a.user_id) ?? null })
       )
     } catch { /* non-critical */ }
 
