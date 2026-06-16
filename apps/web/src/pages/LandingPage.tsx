@@ -190,7 +190,7 @@ function LandingNav({ onSignIn, onGetInvite }: { onSignIn: () => void; onGetInvi
           Sign in
         </KBtn>
         <KBtn variant="signal" size="sm" onClick={onGetInvite}>
-          Get an invite
+          Get started
         </KBtn>
       </div>
     </nav>
@@ -259,7 +259,7 @@ export function LandingPage() {
                 display: 'inline-block',
               }}
             />
-            Invite only · Munich beta
+            Professional relationships · Munich
           </div>
 
           <h1
@@ -272,7 +272,7 @@ export function LandingPage() {
               margin: 0,
             }}
           >
-            Networks
+            Relationships
             <br />
             <span
               style={{
@@ -280,7 +280,7 @@ export function LandingPage() {
                 color: 'var(--signal)',
               }}
             >
-              worth keeping.
+              don't decay.
             </span>
           </h1>
 
@@ -293,9 +293,8 @@ export function LandingPage() {
               maxWidth: 460,
             }}
           >
-            knotify is a quieter professional network. See the people you actually
-            know as a living map. Verify what you can do. Get warm intros — over
-            coffee, not over a feed.
+            knotify tells you who is going cold, who just hit a milestone, and
+            who you can actually help — so the people who matter don't slip away.
           </p>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 32 }}>
@@ -306,7 +305,7 @@ export function LandingPage() {
               style={{ gap: 10 }}
             >
               <KnotifyMark size={16} color="#fff" />
-              Request invite
+              Get started
             </KBtn>
             <KBtn variant="ghost" size="lg" onClick={() => goToSignIn()}>
               Sign in →
@@ -566,20 +565,20 @@ export function LandingPage() {
           {[
             {
               step: 1,
-              title: 'Request an invite',
-              desc: 'knotify is invite-only. Your first connection is someone who knows you.',
+              title: 'Join and connect',
+              desc: 'Add the people you actually know. Your network becomes a living, navigable map.',
               color: 'var(--signal)',
             },
             {
               step: 2,
-              title: 'Build your knot',
-              desc: 'Connect with people you actually know. Your network becomes a navigable map.',
+              title: 'See who needs attention',
+              desc: 'Knotify shows you who is going cold, who just hit a milestone, and who is waiting on something from you.',
               color: 'var(--signal)',
             },
             {
               step: 3,
-              title: 'Verify your skills',
-              desc: 'Three paths: peer attestation, timed challenge, or portfolio review. No hollow endorsements.',
+              title: 'Make the ask',
+              desc: 'When you need a referral or an intro, Knotify shows you exactly who to ask and how to ask them.',
               color: 'var(--verd)',
             },
             {
