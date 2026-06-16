@@ -81,11 +81,14 @@ export function RelationshipHomePage() {
 
   useEffect(() => {
     let mounted = true
+    const timeout = window.setTimeout(() => {
+      if (mounted) { setError('Took too long to load. Try refreshing.'); setLoading(false) }
+    }, 10000)
     apiGet<HomeData>('/api/relationship-home')
       .then((d) => { if (mounted) setData(d) })
       .catch((e) => { if (mounted) setError(e instanceof Error ? e.message : 'Failed to load') })
-      .finally(() => { if (mounted) setLoading(false) })
-    return () => { mounted = false }
+      .finally(() => { if (mounted) { setLoading(false); clearTimeout(timeout) } })
+    return () => { mounted = false; clearTimeout(timeout) }
   }, [])
 
   async function openMessage(peerId: string) {

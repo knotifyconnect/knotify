@@ -3,6 +3,8 @@ import { motion } from 'framer-motion'
 
 export type KnotGraphTab = 'Connected' | 'Incoming' | 'Sent'
 
+export type KnotHealthState = 'warm' | 'cooling' | 'cold'
+
 export type KnotGraphNode = {
   id: string
   userId: string
@@ -14,6 +16,7 @@ export type KnotGraphNode = {
   matchesQuery: boolean
   degree?: 'direct' | 'second'
   expandedViaUserId?: string
+  healthState?: KnotHealthState
 }
 
 export type KnotGraphPeerEdge = {
@@ -100,6 +103,13 @@ function statusColor(tab: KnotGraphTab) {
   if (tab === 'Incoming') return 'var(--verd)'
   if (tab === 'Sent') return 'var(--signal)'
   return 'var(--ink-muted)'
+}
+
+function healthColor(health?: KnotHealthState) {
+  if (health === 'cold') return '#e05c3a'
+  if (health === 'cooling') return '#d4a017'
+  if (health === 'warm') return '#4caf7d'
+  return null
 }
 
 function tabLabel(tab: KnotGraphTab) {
@@ -278,7 +288,7 @@ function StageCard({
           height: selected || searchHit ? 18 : 12,
           borderRadius: 999,
           border: secondDegree ? '0.5px dashed rgba(84,72,58,0.36)' : '0.5px solid rgba(84,72,58,0.24)',
-          background: selected || searchHit ? 'var(--ink)' : secondDegree ? 'rgba(84,72,58,0.48)' : statusColor(node.tab),
+          background: selected || searchHit ? 'var(--ink)' : secondDegree ? 'rgba(84,72,58,0.48)' : (healthColor(node.healthState) ?? statusColor(node.tab)),
           opacity: muted || searchMuted ? 0.14 : 0.82,
           cursor: 'grab',
           zIndex: selected || searchHit ? 5 : related ? 3 : 2,
@@ -445,7 +455,7 @@ function StageCard({
               width: 6,
               height: 6,
               borderRadius: '50%',
-              background: selected ? 'var(--ink)' : secondDegree ? 'rgba(84,72,58,0.48)' : related ? 'rgba(26,24,21,0.68)' : statusColor(node.tab),
+              background: selected ? 'var(--ink)' : secondDegree ? 'rgba(84,72,58,0.48)' : related ? 'rgba(26,24,21,0.68)' : (healthColor(node.healthState) ?? statusColor(node.tab)),
               display: 'inline-block',
               flex: '0 0 auto',
             }}

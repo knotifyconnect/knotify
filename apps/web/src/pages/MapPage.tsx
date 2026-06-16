@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
-import { KnotForceGraph, type KnotGraphNode, type KnotGraphPeerEdge } from '../components/knot/KnotForceGraph'
+import { KnotForceGraph, type KnotGraphNode, type KnotGraphPeerEdge, type KnotHealthState } from '../components/knot/KnotForceGraph'
 
 type UserStatus = 'studying' | 'open_to_work' | 'employed' | string
 type ConnectionStatus = 'pending' | 'accepted' | 'declined'
@@ -255,6 +255,7 @@ export function MapPage() {
   const [requestFeedback, setRequestFeedback] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [healthByUserId, setHealthByUserId] = useState<Map<string, KnotHealthState>>(new Map())
   const [accepting, setAccepting] = useState<Record<string, boolean>>({})
   const [removing, setRemoving] = useState<Record<string, boolean>>({})
 
@@ -263,16 +264,23 @@ export function MapPage() {
     setError(null)
 
     try {
-      const [meResult, connectionResult, mapResult] = await Promise.all([
+      const [meResult, connectionResult, mapResult, homeResult] = await Promise.all([
         apiGet<MeResponse>('/api/users/me'),
         apiGet<ConnectionsResponse>('/api/connections'),
         apiGet<ConnectionMapResponse>('/api/connections/map'),
+        apiGet<{ goingCold: Array<{ peer: { id: string }; daysSince: number }> }>('/api/relationship-home').catch(() => ({ goingCold: [] })),
       ])
+
+      const healthMap = new Map<string, KnotHealthState>()
+      for (const entry of homeResult.goingCold) {
+        healthMap.set(entry.peer.id, entry.daysSince >= 60 ? 'cold' : 'cooling')
+      }
 
       setMeId(meResult.user.id)
       setMeUser(meResult.user)
       setConnections(connectionResult.connections ?? [])
       setPeerEdges(mapResult.peerEdges ?? [])
+      setHealthByUserId(healthMap)
       setExpandedRootUserId(null)
       setExpandedSecondDegreeNodes([])
       setExpandedSecondDegreeEdges([])
@@ -1101,6 +1109,7 @@ function KnotStage({
       const user = connection.user
       const name = clean(user?.full_name) || 'Unknown person'
       const userId = otherUserId(connection, meId)
+      const health = tab === 'Connected' ? (healthByUserId.get(userId) ?? 'warm') : undefined
 
       return {
         id: `person:${userId}`,
@@ -1113,6 +1122,7 @@ function KnotStage({
         avatarUrl: user?.avatar_url ?? null,
         context: userContext(user),
         matchesQuery: !normalizedGraphQuery || searchableText(connection).includes(normalizedGraphQuery),
+        healthState: health,
       }
     })
 
@@ -1155,7 +1165,7 @@ function KnotStage({
       })
 
     return [...directNodes, ...secondDegreeNodes]
-  }, [connected, expandedRootUserId, expandedSecondDegreeNodes, incoming, meId, normalizedGraphQuery, sent])
+  }, [connected, expandedRootUserId, expandedSecondDegreeNodes, healthByUserId, incoming, meId, normalizedGraphQuery, sent])
 
   const selectedNode =
     selectedConnection
@@ -1325,6 +1335,16 @@ function KnotStage({
                 }}
                 onClearSelection={onClear}
               />
+
+              {/* Health legend */}
+              <div style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 5, display: 'flex', gap: 10, padding: '7px 12px', borderRadius: 999, background: 'rgba(244,239,230,0.9)', border: '0.5px solid var(--rule)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 10.5, color: 'var(--ink-faint)', alignItems: 'center' }}>
+                {[['#4caf7d', 'Warm'], ['#d4a017', 'Cooling'], ['#e05c3a', 'Cold']].map(([color, label]) => (
+                  <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+                    {label}
+                  </span>
+                ))}
+              </div>
 
               <div
                 style={{

@@ -124,7 +124,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
 
     // ── 6. Get open asks from connections ────────────────────────────────────
     const asksResult = await supabase
-      .from('asks')
+      .from('user_asks')
       .select('id, user_id, content, created_at')
       .in('user_id', peerIds)
       .eq('status', 'open')
