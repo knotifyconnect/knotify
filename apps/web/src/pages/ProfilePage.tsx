@@ -287,6 +287,12 @@ function OwnProfileView() {
   const [postingUpdate, setPostingUpdate] = useState(false)
   const [updatesError, setUpdatesError] = useState<string | null>(null)
 
+  // Open asks
+  const [myAsks, setMyAsks] = useState<Array<{ id: string; content: string; created_at: string }>>([])
+  const [askDraft, setAskDraft] = useState('')
+  const [postingAsk, setPostingAsk] = useState(false)
+  const [asksError, setAsksError] = useState<string | null>(null)
+
   // Connection count for stats
   const [connectionCount, setConnectionCount] = useState(0)
 
@@ -322,6 +328,7 @@ function OwnProfileView() {
     if (!me) return
     void loadExtended()
     void loadMyUpdates()
+    void loadMyAsks()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.id])
 
@@ -350,6 +357,30 @@ function OwnProfileView() {
       setUpdates(data.updates ?? [])
     } catch (err) {
       setUpdatesError(err instanceof Error ? err.message : 'Failed loading updates')
+    }
+  }
+
+  async function loadMyAsks() {
+    if (!me?.id) return
+    try {
+      const data = await apiGet<{ asks: Array<{ id: string; content: string; status: string; created_at: string }> }>(`/api/asks/by-user/${me.id}`)
+      setMyAsks((data.asks ?? []).filter((a) => a.status === 'open'))
+    } catch { /* non-critical */ }
+  }
+
+  async function postAsk() {
+    const content = askDraft.trim()
+    if (!content) return
+    setPostingAsk(true)
+    setAsksError(null)
+    try {
+      await apiPost('/api/asks', { content })
+      setAskDraft('')
+      await loadMyAsks()
+    } catch (err) {
+      setAsksError(err instanceof Error ? err.message : 'Failed posting ask')
+    } finally {
+      setPostingAsk(false)
     }
   }
 
@@ -931,6 +962,40 @@ function OwnProfileView() {
         </div>
       </KCard>
       </div>
+
+      {/* ─── Open asks ──────────────────────────────────────────────────────── */}
+      <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
+        <SectionHead label="Open asks" />
+        {myAsks.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+            {myAsks.map((a) => (
+              <div key={a.id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
+                <p style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--ink)', margin: '0 0 4px' }}>{a.content}</p>
+                <div style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>{relativeTime(a.created_at)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {myAsks.length === 0 && (
+          <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: '0 0 14px', fontStyle: 'italic' }}>
+            No open asks yet. Let your network know what you need.
+          </p>
+        )}
+        <textarea
+          value={askDraft}
+          onChange={(e) => setAskDraft(e.target.value.slice(0, 300))}
+          placeholder="Looking for intros to fintech investors, a senior designer, an advisor…"
+          rows={2}
+          style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+          <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>{askDraft.length}/300</span>
+          <KBtn variant="signal" size="sm" disabled={!askDraft.trim() || postingAsk} onClick={postAsk}>
+            {postingAsk ? 'Posting…' : 'Post ask'}
+          </KBtn>
+        </div>
+        {asksError && <p style={{ fontSize: 12, color: 'var(--signal)', marginTop: 6 }}>{asksError}</p>}
+      </KCard>
 
       {/* ─── Experience ─────────────────────────────────────────────────────── */}
       <div ref={experienceSectionRef} style={{ scrollMarginTop: 96 }}>
