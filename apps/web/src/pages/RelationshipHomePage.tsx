@@ -4,6 +4,25 @@ import { apiGet, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 
+type ConnectionUser = {
+  id: string
+  full_name: string | null
+  username: string | null
+  avatar_url: string | null
+  headline?: string | null
+  current_company?: string | null
+}
+
+type RawConnection = {
+  id: string
+  requester_id: string
+  addressee_id: string
+  status: string
+  updated_at: string
+  created_at: string
+  user: ConnectionUser | null
+}
+
 type Peer = {
   id: string
   full_name: string
@@ -13,54 +32,41 @@ type Peer = {
   current_company: string | null
 }
 
-type ConnectionEntry = {
+type HealthEntry = {
   peer: Peer
+  connectionId: string
   lastContact: string
   daysSince: number
   health: 'warm' | 'cooling' | 'cold'
 }
 
-type MilestoneEntry = {
+type NetworkItem = {
   id: string
+  type: 'milestone' | 'ask'
   content: string
   created_at: string
   user: Peer | null
 }
 
-type AskEntry = {
-  id: string
-  content: string
-  created_at: string
-  user: Peer | null
-}
-
-type PendingEntry = {
-  id: string
-  peer: Peer
-  created_at: string
-}
-
-type HomeData = {
-  connections: ConnectionEntry[]
-  milestones: MilestoneEntry[]
-  openAsks: AskEntry[]
-  pendingForMe: PendingEntry[]
+function computeHealth(updatedAt: string): { daysSince: number; health: 'warm' | 'cooling' | 'cold' } {
+  const daysSince = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86400000)
+  const health = daysSince >= 60 ? 'cold' : daysSince >= 30 ? 'cooling' : 'warm'
+  return { daysSince, health }
 }
 
 const HEALTH_COLOR = { warm: '#4caf7d', cooling: '#d4a017', cold: '#e05c3a' }
 const HEALTH_LABEL = { warm: 'Warm', cooling: 'Cooling', cold: 'Cold' }
 
-function reachOutReason(entry: ConnectionEntry): string {
-  const { daysSince, health, peer } = entry
-  if (daysSince === 0) return `You connected with ${peer.full_name.split(' ')[0]} today`
-  if (daysSince < 7) return `Last contact ${daysSince}d ago — still fresh`
-  if (daysSince < 14) return `Haven't spoken in ${daysSince} days — a quick check-in keeps things warm`
-  if (daysSince < COLD_DAYS) return `${daysSince} days since last contact — worth a message soon`
-  if (health === 'cooling') return `${daysSince} days of silence — this relationship is cooling`
-  return `${daysSince} days with no contact — at risk of going cold`
+function reachOutReason(entry: HealthEntry): string {
+  const name = entry.peer.full_name.split(' ')[0]
+  const d = entry.daysSince
+  if (d === 0) return `You connected with ${name} today`
+  if (d < 7) return `Last contact ${d}d ago — still fresh`
+  if (d < 14) return `${d} days since last contact — a quick check-in keeps things warm`
+  if (d < 30) return `${d} days of no contact — worth reaching out soon`
+  if (d < 60) return `${d} days of silence — this relationship is cooling down`
+  return `${d} days with no contact — this connection is going cold`
 }
-
-const COLD_DAYS = 30
 
 function timeAgo(iso: string) {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
@@ -79,46 +85,80 @@ function greeting() {
   return 'Good evening'
 }
 
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, fontWeight: 600, color: 'var(--ink-faint)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-        {title}
-      </div>
-      {subtitle && (
-        <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3, fontFamily: "'IBM Plex Sans'" }}>
-          {subtitle}
-        </div>
-      )}
-    </div>
-  )
-}
-
 export function RelationshipHomePage() {
   const navigate = useNavigate()
-  const [data, setData] = useState<HomeData | null>(null)
+  const [entries, setEntries] = useState<HealthEntry[] | null>(null)
+  const [pending, setPending] = useState<RawConnection[]>([])
+  const [networkFeed, setNetworkFeed] = useState<NetworkItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [messagingPeer, setMessagingPeer] = useState<string | null>(null)
   const [referralPeer, setReferralPeer] = useState<Peer | null>(null)
-  const [me, setMe] = useState<{ full_name?: string } | null>(null)
+  const [firstName, setFirstName] = useState('')
 
   useEffect(() => {
     apiGet<{ user: { full_name: string } }>('/api/users/me')
-      .then((r) => setMe(r.user))
+      .then((r) => setFirstName(r.user?.full_name?.split(' ')[0] ?? ''))
       .catch(() => {})
   }, [])
 
   useEffect(() => {
     let mounted = true
-    const timeout = window.setTimeout(() => {
-      if (mounted) { setData({ connections: [], milestones: [], openAsks: [], pendingForMe: [] }); setLoading(false) }
-    }, 15000)
-    apiGet<HomeData>('/api/relationship-home')
-      .then((d) => { if (mounted) setData(d) })
-      .catch((e) => { if (mounted) setError(e instanceof Error ? e.message : 'Failed to load') })
-      .finally(() => { if (mounted) { setLoading(false); clearTimeout(timeout) } })
-    return () => { mounted = false; clearTimeout(timeout) }
+
+    apiGet<{ connections: RawConnection[] }>('/api/connections')
+      .then(({ connections }) => {
+        if (!mounted) return
+
+        const accepted = connections.filter((c) => c.status === 'accepted')
+        const pendingForMe = connections.filter((c) => c.status === 'pending' && c.user !== null)
+
+        const built: HealthEntry[] = accepted
+          .map((c) => {
+            const u = c.user
+            if (!u) return null
+            const peer: Peer = {
+              id: u.id,
+              full_name: u.full_name ?? 'Unknown',
+              username: u.username ?? u.id,
+              avatar_url: u.avatar_url ?? null,
+              headline: u.headline ?? null,
+              current_company: u.current_company ?? null,
+            }
+            const { daysSince, health } = computeHealth(c.updated_at)
+            return { peer, connectionId: c.id, lastContact: c.updated_at, daysSince, health }
+          })
+          .filter((x): x is HealthEntry => x !== null)
+          .sort((a, b) => {
+            const rank = { cold: 0, cooling: 1, warm: 2 }
+            if (rank[a.health] !== rank[b.health]) return rank[a.health] - rank[b.health]
+            return b.daysSince - a.daysSince
+          })
+
+        setEntries(built)
+        setPending(pendingForMe)
+
+        // Load secondary network feed (non-blocking, won't affect main list)
+        const peerIds = built.map((e) => e.peer.id)
+        if (peerIds.length) {
+          type FeedUser = { id: string; full_name: string; username: string; avatar_url: string | null; headline: string | null; current_company: string | null }
+          type FeedItem = { id: string; content: string; created_at: string; user: FeedUser | null }
+          apiGet<{ milestones?: FeedItem[]; openAsks?: FeedItem[] }>('/api/relationship-home')
+            .then((d) => {
+              if (!mounted) return
+              const items: NetworkItem[] = [
+                ...((d.milestones ?? []).map((m) => ({ ...m, type: 'milestone' as const }))),
+                ...((d.openAsks ?? []).map((a) => ({ ...a, type: 'ask' as const }))),
+              ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12)
+              setNetworkFeed(items)
+            })
+            .catch(() => {})
+        }
+      })
+      .catch(() => {
+        if (mounted) setEntries([])
+      })
+      .finally(() => { if (mounted) setLoading(false) })
+
+    return () => { mounted = false }
   }, [])
 
   async function openMessage(peerId: string) {
@@ -143,33 +183,10 @@ export function RelationshipHomePage() {
     )
   }
 
-  if (error || !data) {
-    return (
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 20px' }}>
-        <p style={{ fontSize: 13, color: 'var(--ink-faint)' }}>{error ?? 'Something went wrong.'}</p>
-      </div>
-    )
-  }
-
-  const { connections, milestones, openAsks, pendingForMe } = data
-  const totalConnections = connections.length
-  const coldCount = connections.filter((c) => c.health === 'cold').length
-  const coolingCount = connections.filter((c) => c.health === 'cooling').length
-  const warmCount = connections.filter((c) => c.health === 'warm').length
-
-  // Priority sort: cold first, then cooling, then warm, within each group by daysSince desc
-  const prioritized = [...connections].sort((a, b) => {
-    const rank = { cold: 0, cooling: 1, warm: 2 }
-    if (rank[a.health] !== rank[b.health]) return rank[a.health] - rank[b.health]
-    return b.daysSince - a.daysSince
-  })
-
-  const networkFeed = [
-    ...milestones.map((m) => ({ type: 'milestone' as const, ...m })),
-    ...openAsks.map((a) => ({ type: 'ask' as const, ...a })),
-  ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12)
-
-  const firstName = me?.full_name?.split(' ')[0] ?? ''
+  const totalConnections = entries?.length ?? 0
+  const warmCount = entries?.filter((e) => e.health === 'warm').length ?? 0
+  const coolingCount = entries?.filter((e) => e.health === 'cooling').length ?? 0
+  const coldCount = entries?.filter((e) => e.health === 'cold').length ?? 0
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 60px' }}>
@@ -216,28 +233,20 @@ export function RelationshipHomePage() {
       </div>
 
       {/* Pending decisions banner */}
-      {pendingForMe.length > 0 && (
+      {pending.length > 0 && (
         <div style={{ marginBottom: 24, padding: '14px 18px', borderRadius: 12, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'" }}>
-              {pendingForMe.length === 1
-                ? `${pendingForMe[0].peer.full_name} wants to connect`
-                : `${pendingForMe.length} people want to connect with you`}
+              {pending.length === 1
+                ? `${pending[0].user?.full_name} wants to connect`
+                : `${pending.length} people want to connect with you`}
             </div>
-            {pendingForMe.length === 1 && (
-              <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginTop: 2 }}>
-                {pendingForMe[0].peer.headline ?? pendingForMe[0].peer.current_company ?? `@${pendingForMe[0].peer.username}`}
-              </div>
-            )}
           </div>
-          <KBtn variant="signal" size="sm" onClick={() => navigate('/map')}>
-            Review
-          </KBtn>
+          <KBtn variant="signal" size="sm" onClick={() => navigate('/map')}>Review</KBtn>
         </div>
       )}
 
       {totalConnections === 0 ? (
-        /* True empty — no connections at all */
         <KCard style={{ padding: '48px 32px', textAlign: 'center' }}>
           <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 20, color: 'var(--ink)', margin: '0 0 10px' }}>
             Your knot is empty.
@@ -253,21 +262,23 @@ export function RelationshipHomePage() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 28, alignItems: 'start' }}>
 
-          {/* Left — Reach out column */}
+          {/* Reach out column */}
           <div>
-            <SectionHeader
-              title="Reach out today"
-              subtitle={
-                coldCount + coolingCount > 0
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, fontWeight: 600, color: 'var(--ink-faint)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Reach out today
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3, fontFamily: "'IBM Plex Sans'" }}>
+                {coldCount + coolingCount > 0
                   ? `${coldCount + coolingCount} relationship${coldCount + coolingCount !== 1 ? 's' : ''} need${coldCount + coolingCount === 1 ? 's' : ''} attention`
-                  : 'All relationships are warm'
-              }
-            />
+                  : 'All relationships are warm'}
+              </div>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {prioritized.slice(0, 8).map((entry) => {
+              {(entries ?? []).map((entry) => {
                 const hc = HEALTH_COLOR[entry.health]
                 return (
-                  <KCard key={entry.peer.id} style={{ padding: '14px 16px' }}>
+                  <KCard key={entry.connectionId} style={{ padding: '14px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <button
                         type="button"
@@ -290,14 +301,13 @@ export function RelationshipHomePage() {
                           {HEALTH_LABEL[entry.health]}
                         </span>
                         <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                          {entry.daysSince === 0 ? 'today' : `${entry.daysSince}d ago`}
+                          {entry.daysSince === 0 ? 'today' : `${entry.daysSince}d`}
                         </span>
                       </div>
                     </div>
 
-                    {/* Insight / reason */}
                     <div style={{
-                      margin: '10px 0 10px',
+                      margin: '10px 0',
                       padding: '8px 10px',
                       borderRadius: 8,
                       background: entry.health === 'cold' ? 'rgba(224,92,58,0.06)' : entry.health === 'cooling' ? 'rgba(212,160,23,0.06)' : 'rgba(76,175,125,0.06)',
@@ -335,12 +345,16 @@ export function RelationshipHomePage() {
             </div>
           </div>
 
-          {/* Right — Network feed */}
+          {/* Network feed column */}
           <div>
-            <SectionHeader
-              title="From your network"
-              subtitle="Milestones and open asks"
-            />
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, fontWeight: 600, color: 'var(--ink-faint)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                From your network
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3, fontFamily: "'IBM Plex Sans'" }}>
+                Milestones and open asks
+              </div>
+            </div>
             {networkFeed.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {networkFeed.map((item) => (
@@ -381,12 +395,7 @@ export function RelationshipHomePage() {
                     </div>
                     {item.user && (
                       <div style={{ marginTop: 10 }}>
-                        <KBtn
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openMessage(item.user!.id)}
-                          style={{ width: '100%' }}
-                        >
+                        <KBtn variant="ghost" size="sm" onClick={() => openMessage(item.user!.id)} style={{ width: '100%' }}>
                           {item.type === 'milestone' ? 'Congratulate' : 'Offer to help'}
                         </KBtn>
                       </div>
@@ -397,20 +406,17 @@ export function RelationshipHomePage() {
             ) : (
               <KCard style={{ padding: '20px 16px', textAlign: 'center' }}>
                 <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic', margin: 0, fontFamily: "'Fraunces', serif" }}>
-                  Nothing from your network yet. As people share updates and asks, they'll appear here.
+                  As people in your knot share updates and asks, they'll appear here.
                 </p>
               </KCard>
             )}
 
-            {/* Nudge to grow */}
             {totalConnections < 5 && (
               <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 12, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
                 <div style={{ fontSize: 13, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", lineHeight: 1.5, marginBottom: 10 }}>
-                  Knotify gets more powerful as your knot grows. Add a few more people to see relationship health patterns.
+                  Add more people to see relationship health patterns across your knot.
                 </div>
-                <KBtn variant="ghost" size="sm" onClick={() => navigate('/discover')}>
-                  Find people to connect with
-                </KBtn>
+                <KBtn variant="ghost" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
               </div>
             )}
           </div>
