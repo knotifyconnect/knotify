@@ -321,7 +321,8 @@ export function RelationshipHomePage() {
     ...openAsks.map((a) => ({ ...a, type: 'ask' as const })),
   ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12)
 
-  const allWarm = ranked.length > 0 && coldCount === 0 && coolingCount === 0
+  const newCount = ranked.filter((r) => r.state === 'new').length
+  const allWarm = ranked.length > 0 && coldCount === 0 && coolingCount === 0 && newCount === 0
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 60px' }}>
@@ -346,6 +347,10 @@ export function RelationshipHomePage() {
           {allWarm ? (
             <span style={{ fontSize: 13.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'" }}>
               Your knot is warm. Nothing urgent today.
+            </span>
+          ) : newCount > 0 && coldCount === 0 && coolingCount === 0 ? (
+            <span style={{ fontSize: 13.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'" }}>
+              {newCount} new connection{newCount !== 1 ? 's' : ''} — say hi while it's fresh.
             </span>
           ) : ranked.length === 0 ? (
             <span style={{ fontSize: 13.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'" }}>
