@@ -26,7 +26,11 @@ import { supabase } from './lib.js'
 
 export const app = express()
 
-app.use(cors())
+app.use(cors({
+  origin: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-secret'],
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+}))
 app.use(express.json({ limit: '15mb' }))
 app.use(
   rateLimit({
