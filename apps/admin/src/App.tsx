@@ -260,6 +260,29 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
   )
 }
 
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportCSV(signups: BetaSignup[]) {
+  const headers = ['Email', 'Status', 'Signed Up', 'Marketing Consent', 'Source']
+  const rows = signups.map(s => [
+    s.email,
+    s.status,
+    new Date(s.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+    s.marketing_consent ? 'Yes' : 'No',
+    s.source ?? '',
+  ])
+
+  const escape = (v: string) => `"${String(v).replace(/"/g, '""')}"`
+  const csv = [headers, ...rows].map(r => r.map(escape).join(',')).join('\r\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `knotify-beta-signups-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── Admin app ─────────────────────────────────────────────────────────────────
 function AdminApp({ onLogout }: { onLogout: () => void }) {
   const [stats, setStats] = useState<Stats | null>(null)
@@ -393,7 +416,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: 4 }}>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               {filters.map(f => (
                 <button
                   key={f}
@@ -415,6 +438,34 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
                   {f}
                 </button>
               ))}
+
+              <div style={{ width: 1, height: 18, background: T.rule, margin: '0 4px' }} />
+
+              <button
+                onClick={() => exportCSV(signups)}
+                disabled={signups.length === 0}
+                title="Download as Excel/CSV"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '5px 13px',
+                  borderRadius: 999,
+                  border: `0.5px solid ${T.rule}`,
+                  background: 'transparent',
+                  color: signups.length === 0 ? T.inkFaint : T.inkMuted,
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: signups.length === 0 ? 'not-allowed' : 'pointer',
+                  fontFamily: 'IBM Plex Sans, sans-serif',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M8 2v8M5 7l3 3 3-3M3 12h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Export
+              </button>
             </div>
           </div>
 
