@@ -19,6 +19,7 @@ import { channelsRouter } from './routes/channels.js'
 import { ogRouter } from './routes/og.js'
 import { asksRouter } from './routes/asks.js'
 import { relationshipHomeRouter } from './routes/relationshipHome.js'
+import { betaRouter } from './routes/beta.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { supabase } from './lib.js'
 
@@ -72,5 +73,6 @@ app.use('/api/channels', channelsRouter)
 app.use('/api/og', ogRouter)
 app.use('/api/asks', asksRouter)
 app.use('/api/relationship-home', relationshipHomeRouter)
+app.use('/api/beta', betaRouter)
 
 app.use(errorHandler)
