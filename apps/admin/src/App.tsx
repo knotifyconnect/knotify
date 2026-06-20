@@ -34,6 +34,7 @@ const S = {
 // ── Login ─────────────────────────────────────────────────────────────────────
 function LoginPage({ onLogin }: { onLogin: () => void }) {
   const [password, setPassword] = useState('')
+  const [show, setShow] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -60,22 +61,44 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
           knotify · admin
         </div>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <input
-            type="password"
-            autoFocus
-            placeholder="Admin password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 8,
-              border: `0.5px solid ${S.rule}`,
-              fontSize: 14,
-              fontFamily: 'IBM Plex Sans',
-              outline: 'none',
-              background: S.paper,
-            }}
-          />
+          <div style={{ position: 'relative' }}>
+            <input
+              type={show ? 'text' : 'password'}
+              autoFocus
+              placeholder="Admin password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 40px 10px 14px',
+                borderRadius: 8,
+                border: `0.5px solid ${S.rule}`,
+                fontSize: 14,
+                fontFamily: 'IBM Plex Sans',
+                outline: 'none',
+                background: S.paper,
+                boxSizing: 'border-box',
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShow(s => !s)}
+              style={{
+                position: 'absolute',
+                right: 10,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 12,
+                color: S.inkFaint,
+                fontFamily: 'IBM Plex Sans',
+              }}
+            >
+              {show ? 'Hide' : 'Show'}
+            </button>
+          </div>
           {error && <div style={{ fontSize: 12, color: S.signal }}>{error}</div>}
           <button
             type="submit"
