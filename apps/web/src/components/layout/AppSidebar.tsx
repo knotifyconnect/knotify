@@ -1,5 +1,5 @@
 /**
- * knotify · App Sidebar — matches web-app.jsx design exactly
+ * knotify · App Sidebar, matches web-app.jsx design exactly
  * Active = ink (black) background, signal-soft icon, paper-soft text
  * Includes Quest banner + self profile card at bottom
  */
@@ -8,16 +8,13 @@ import { createPortal } from 'react-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness,
-  CalendarDays,
   ChevronRight,
-  HandHeart,
   Home,
   LogOut,
   MessageSquare,
   Network,
   Search,
   Settings,
-  Trophy,
 } from 'lucide-react'
 import { KAvatar, KnotifyLogoImg } from '@/lib/knotify'
 import { supabase } from '@/lib/supabase'
@@ -49,9 +46,6 @@ const BASE_ITEMS: NavItem[] = [
   { title: 'Home',      href: '/home',     icon: <Home              size={15} /> },
   { title: 'Your Knot', href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
   { title: 'Discover',  href: '/discover', icon: <Search            size={15} /> },
-  { title: 'Quests',    href: '/quests',   icon: <Trophy            size={15} /> },
-  { title: 'Events',    href: '/events',   icon: <CalendarDays      size={15} /> },
-  { title: 'Gigs',      href: '/gigs',     icon: <HandHeart         size={15} /> },
   { title: 'Jobs',      sub: 'Warm',       href: '/jobs',           icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
   { title: 'Messages',  href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },
 ]
@@ -91,7 +85,7 @@ export function AppSidebar() {
 
   const sidebar = (
     <>
-      {/* ── Desktop sidebar — exact match to web-app.jsx ─────────────── */}
+      {/* ── Desktop sidebar, exact match to web-app.jsx ─────────────── */}
       <aside
         className="hidden md:flex"
         style={{
@@ -109,7 +103,7 @@ export function AppSidebar() {
           zIndex: 40,
         }}
       >
-        {/* Logo (mark + wordmark, design uses size 22) — clicks → /home */}
+        {/* Logo (mark + wordmark, design uses size 22), clicks → /home */}
         <button
           type="button"
           onClick={() => navigate('/home')}

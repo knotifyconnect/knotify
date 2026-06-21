@@ -1,5 +1,5 @@
 /**
- * knotify design system — React components
+ * knotify design system, React components
  * Trefoil mark, wordmark, shared primitives
  */
 import type { ReactNode, CSSProperties } from 'react'
@@ -118,7 +118,7 @@ export function KnotifyLogoImg({
   return (
     <img
       src={src}
-      alt="knotify — networks worth keeping"
+      alt="knotify, networks worth keeping"
       className={className}
       style={{ height, width: 'auto', display: 'block', ...style }}
     />
@@ -153,7 +153,7 @@ export function VerifiedBadge({ size = 16, className = '' }: { size?: number; cl
   )
 }
 
-// ─── KPill — small label tag ─────────────────────────────────────────────────
+// ─── KPill, small label tag ─────────────────────────────────────────────────
 type PillColor = 'signal' | 'verd' | 'ochre' | 'plum' | 'ink' | 'default'
 
 const PILL_STYLES: Record<PillColor, { bg: string; color: string; border: string }> = {
@@ -200,7 +200,7 @@ export function KPill({
   )
 }
 
-// ─── KBtn — primary button ───────────────────────────────────────────────────
+// ─── KBtn, primary button ───────────────────────────────────────────────────
 type BtnVariant = 'signal' | 'ghost' | 'ink' | 'verd' | 'plain' | 'ochre' | 'plum'
 type BtnSize = 'sm' | 'md' | 'lg'
 

@@ -239,7 +239,7 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
         ))}
       </select>
 
-      {/* International newcomer — styled selectable row */}
+      {/* International newcomer, styled selectable row */}
       <label
         style={{
           display: 'flex',
@@ -264,7 +264,7 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
         </span>
       </label>
 
-      {/* Consent — GDPR required */}
+      {/* Consent, GDPR required */}
       <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
         <input
           type="checkbox"
@@ -464,7 +464,7 @@ export function LandingPage() {
             }}
           >
             knotify tells you who is going cold, who just hit a milestone, and
-            who you can actually help — so the people who matter don't slip away.
+            who you can actually help, so the people who matter don't slip away.
           </p>
 
           {/* Beta form */}
@@ -649,7 +649,7 @@ export function LandingPage() {
             {
               step: 1,
               title: 'Add the people you know',
-              desc: 'Not everyone — just the ones that matter. Your network becomes a living, navigable map.',
+              desc: 'Not everyone, just the ones that matter. Your network becomes a living, navigable map.',
               color: 'var(--signal)',
             },
             {
@@ -660,7 +660,7 @@ export function LandingPage() {
             },
             {
               step: 3,
-              title: 'Reach out — or meet in person',
+              title: 'Reach out, or meet in person',
               desc: 'Make the ask, send the intro, or book a coffee at a partner café in Munich.',
               color: 'var(--verd)',
             },
@@ -763,7 +763,7 @@ export function LandingPage() {
             <p style={{ margin: '0 0 16px' }}>
               The professional internet is loud. It rewards people who shout, recycle,
               and self-congratulate. It does not reward the quiet excellence that
-              actually moves careers — the call you took at 11pm, the intro you made
+              actually moves careers, the call you took at 11pm, the intro you made
               for someone who couldn't pay you back, the time you read a draft twice.
             </p>
             <p style={{ margin: '0 0 16px' }}>
@@ -772,7 +772,7 @@ export function LandingPage() {
               sat across from. Not your follower count. Not your post velocity.
             </p>
             <p style={{ margin: 0 }}>
-              If that sounds slow — yes. That's the point.
+              If that sounds slow, yes. That's the point.
             </p>
           </div>
         </div>

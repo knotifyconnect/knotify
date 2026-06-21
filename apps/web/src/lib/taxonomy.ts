@@ -1,12 +1,12 @@
 /**
- * knotify connective layer — the shared taxonomy.
+ * knotify connective layer, the shared taxonomy.
  *
  * People, events, gigs and groups are all tagged with this SAME vocabulary so that
  * recommendations / matching are just graph operations over a common set of tags.
  * Keep this as the single source of truth; do not redefine these lists elsewhere.
  */
 
-// Interests — cross-cutting, multi-select. Used on the waitlist and in onboarding.
+// Interests, cross-cutting, multi-select. Used on the waitlist and in onboarding.
 export const INTERESTS = [
   'Jobs & careers',
   'Entrepreneurship',
@@ -24,7 +24,7 @@ export const INTERESTS = [
   'Wellness',
 ] as const
 
-// Goals — why someone is on knotify. These drive recommendations most strongly.
+// Goals, why someone is on knotify. These drive recommendations most strongly.
 export const GOALS = [
   'Make friends',
   'Find a job or internship',
@@ -44,7 +44,7 @@ export const PERSONAS = [
   { value: 'investor', label: 'Investor' },
 ] as const
 
-// Waitlist roles — superset of personas, adds Company (the B2B side shows interest too).
+// Waitlist roles, superset of personas, adds Company (the B2B side shows interest too).
 export const WAITLIST_ROLES = [
   { value: 'student', label: 'Student' },
   { value: 'professional', label: 'Professional' },
@@ -53,7 +53,7 @@ export const WAITLIST_ROLES = [
   { value: 'company', label: 'Company / Recruiter' },
 ] as const
 
-// How long someone has been in Munich — context for newcomer matching & side quests.
+// How long someone has been in Munich, context for newcomer matching & side quests.
 export const MUNICH_TENURE = [
   'Not in Munich yet',
   'Just arrived',

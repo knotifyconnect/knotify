@@ -1,5 +1,5 @@
 /**
- * Local SVG avatar generator — replaces all placehold.co calls
+ * Local SVG avatar generator, replaces all placehold.co calls
  */
 const PALETTES = [
   { bg: '#E8E0D5', text: '#5C4A36' },

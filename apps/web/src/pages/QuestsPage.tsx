@@ -54,7 +54,7 @@ export function QuestsPage() {
   async function claim(key: string) {
     const quest = data?.quests.find(q => q.key === key)
     if (quest?.type === 'self') {
-      const ok = window.confirm('On your honour — did you really do this? Credibility on knotify is built on trust.')
+      const ok = window.confirm('On your honour, did you really do this? Credibility on knotify is built on trust.')
       if (!ok) return
     }
     setClaiming(key)
@@ -121,7 +121,7 @@ export function QuestsPage() {
             <div style={{ width: `${pctToNext}%`, height: '100%', borderRadius: 999, background: 'var(--signal)', transition: 'width 0.3s' }} />
           </div>
           <div style={{ marginTop: 8, fontSize: 12.5, color: 'rgba(245,240,232,0.7)' }}>
-            {next ? `${next.at - score} points to ${next.name}` : 'Top tier reached — you are a Pillar of the community.'}
+            {next ? `${next.at - score} points to ${next.name}` : 'Top tier reached, you are a Pillar of the community.'}
           </div>
         </div>
       </div>

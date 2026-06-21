@@ -103,9 +103,9 @@ function buildFallbackData(
       const firstName = peer.full_name.split(' ')[0]
       const reason =
         state === 'new' ? `You connected with ${firstName} recently. Send a note while it's fresh.` :
-        state === 'cold' ? `You haven't spoken with ${firstName} in ${daysSince} days — this connection is at risk.` :
-        state === 'cooling' ? `${daysSince} days since last contact with ${firstName} — worth a message soon.` :
-        `${firstName} is warm — last contact ${daysSince} day${daysSince === 1 ? '' : 's'} ago.`
+        state === 'cold' ? `You haven't spoken with ${firstName} in ${daysSince} days, this connection is at risk.` :
+        state === 'cooling' ? `${daysSince} days since last contact with ${firstName}, worth a message soon.` :
+        `${firstName} is warm, last contact ${daysSince} day${daysSince === 1 ? '' : 's'} ago.`
       const suggestedAction: SuggestedAction =
         state === 'new' ? 'welcome' :
         state === 'cold' ? 'reconnect' : 'message'
@@ -253,7 +253,7 @@ export function RelationshipHomePage() {
           setLoading(false)
           return
         }
-        // Engine returned empty (maybe 0 connections) — still set it
+        // Engine returned empty (maybe 0 connections), still set it
         setData(d)
         setLoading(false)
       })
@@ -351,7 +351,7 @@ export function RelationshipHomePage() {
             </span>
           ) : newCount > 0 && coldCount === 0 && coolingCount === 0 ? (
             <span style={{ fontSize: 13.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'" }}>
-              {newCount} new connection{newCount !== 1 ? 's' : ''} — say hi while it's fresh.
+              {newCount} new connection{newCount !== 1 ? 's' : ''}, say hi while it's fresh.
             </span>
           ) : ranked.length === 0 ? (
             <span style={{ fontSize: 13.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'" }}>
@@ -408,7 +408,7 @@ export function RelationshipHomePage() {
             Your knot is empty.
           </p>
           <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: '0 auto 20px', maxWidth: 380, lineHeight: 1.5 }}>
-            Connect with people and Knotify will tell you who to reach out to, when, and why — based on your actual relationship cadence.
+            Connect with people and Knotify will tell you who to reach out to, when, and why, based on your actual relationship cadence.
           </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
             <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
@@ -419,7 +419,7 @@ export function RelationshipHomePage() {
         /* ── Two-column layout ──────────────────────────────────────────────── */
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,3fr) minmax(0,2fr)', gap: 28, alignItems: 'start' }}>
 
-          {/* LEFT — Today queue (60%) */}
+          {/* LEFT, Today queue (60%) */}
           <div>
             <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, fontWeight: 600, color: 'var(--ink-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>
               Today
@@ -487,7 +487,7 @@ export function RelationshipHomePage() {
 
                       {/* CTAs */}
                       <div style={{ display: 'flex', gap: 7 }}>
-                        {/* Primary CTA — Ink dark */}
+                        {/* Primary CTA, Ink dark */}
                         <button
                           type="button"
                           onClick={() => {
@@ -515,7 +515,7 @@ export function RelationshipHomePage() {
                           {messagingPeer === entry.peer.id ? 'Opening…' : CTA_LABEL[entry.suggestedAction]}
                         </button>
 
-                        {/* Secondary: Ask… — only for connections older than 7 days */}
+                        {/* Secondary: Ask…, only for connections older than 7 days */}
                         {!isNew && (
                           <button
                             type="button"
@@ -542,7 +542,7 @@ export function RelationshipHomePage() {
             )}
           </div>
 
-          {/* RIGHT — Network feed (40%) */}
+          {/* RIGHT, Network feed (40%) */}
           <div>
             <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 11, fontWeight: 600, color: 'var(--ink-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>
               From your network

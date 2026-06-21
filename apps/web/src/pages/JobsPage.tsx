@@ -603,9 +603,9 @@ export function JobsPage() {
                               onChange={(e) => updateForm(ref.id, { [field]: Number(e.target.value) as 0|1|2|3 })}
                             >
                               <option value={0}>{field.replace('rating_', '').replace('_', ' ')}</option>
-                              <option value={1}>1 — Good fit</option>
-                              <option value={2}>2 — Strong fit</option>
-                              <option value={3}>3 — Exceptional</option>
+                              <option value={1}>1, Good fit</option>
+                              <option value={2}>2, Strong fit</option>
+                              <option value={3}>3, Exceptional</option>
                             </select>
                           ))}
                         </div>

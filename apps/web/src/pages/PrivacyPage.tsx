@@ -66,12 +66,12 @@ export function PrivacyPage() {
             margin: '0 0 40px',
           }}
         >
-          Privacy Policy — knotify, v1.0 · May 2026
+          Privacy Policy, knotify, v1.0 · May 2026
         </p>
 
         <Section title="1. Wer ist verantwortlich?">
           <p>
-            Verantwortliche im Sinne der DSGVO ist: [Betreiber — Adresse eintragen]. E-Mail:{' '}
+            Verantwortliche im Sinne der DSGVO ist: [Betreiber, Adresse eintragen]. E-Mail:{' '}
             <a href="mailto:privacy@knotify.app" style={{ color: 'var(--signal)' }}>
               privacy@knotify.app
             </a>
@@ -90,9 +90,9 @@ export function PrivacyPage() {
 
         <Section title="3. Rechtsgrundlagen (Art. 6 DSGVO)">
           <ul style={{ paddingLeft: 20 }}>
-            <li>Art. 6 Abs. 1 lit. b — Vertragserfüllung (Kontozugang)</li>
-            <li>Art. 6 Abs. 1 lit. c — Rechtliche Verpflichtung</li>
-            <li>Art. 6 Abs. 1 lit. f — Berechtigte Interessen (Sicherheit, Missbrauchsschutz)</li>
+            <li>Art. 6 Abs. 1 lit. b, Vertragserfüllung (Kontozugang)</li>
+            <li>Art. 6 Abs. 1 lit. c, Rechtliche Verpflichtung</li>
+            <li>Art. 6 Abs. 1 lit. f, Berechtigte Interessen (Sicherheit, Missbrauchsschutz)</li>
           </ul>
         </Section>
 

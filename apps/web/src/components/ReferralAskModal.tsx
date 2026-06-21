@@ -1,5 +1,5 @@
 /**
- * ReferralAskModal — lightweight "ask a connection for a referral" flow.
+ * ReferralAskModal, lightweight "ask a connection for a referral" flow.
  * Does NOT require a job to be listed in Knotify.
  * Sends a pre-formatted message to the connection via the conversations API.
  */
@@ -136,7 +136,7 @@ export function ReferralAskModal({ peer, onClose }: Props) {
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value.slice(0, 400))}
-            placeholder="Why this role, why now — anything that gives context."
+            placeholder="Why this role, why now, anything that gives context."
             rows={3}
             style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--rule)', background: 'var(--paper)', fontSize: 13.5, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", resize: 'vertical', outline: 'none' }}
           />

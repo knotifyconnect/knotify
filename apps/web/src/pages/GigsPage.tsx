@@ -85,7 +85,7 @@ export function GigsPage() {
             Help, and be helped.
           </h1>
           <p style={{ color: 'var(--ink-muted)', fontSize: 14, margin: '6px 0 0', maxWidth: 520, lineHeight: 1.5 }}>
-            CV reviews, referrals, mentorship and tours from people the community trusts — for a coffee or a fee.
+            CV reviews, referrals, mentorship and tours from people the community trusts, for a coffee or a fee.
           </p>
         </div>
         {elig?.can_offer && (
@@ -99,7 +99,7 @@ export function GigsPage() {
       {elig && !elig.can_offer && (
         <div style={{ marginBottom: 20, background: 'var(--paper-soft, #ede8df)', border: '0.5px solid var(--rule)', borderRadius: 12, padding: '14px 16px', fontSize: 13.5, color: 'var(--ink-muted)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <Lock size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-          <span>You can request gigs now. To <strong>offer</strong> gigs, reach <strong>{elig.unlock_at} credibility</strong> (Trusted) — you're at {elig.credibility_score}. Complete quests to get there.</span>
+          <span>You can request gigs now. To <strong>offer</strong> gigs, reach <strong>{elig.unlock_at} credibility</strong> (Trusted), you're at {elig.credibility_score}. Complete quests to get there.</span>
         </div>
       )}
 
@@ -111,7 +111,7 @@ export function GigsPage() {
             {GIG_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
           <input required placeholder="Title (e.g. I'll review your CV for a tech role)" value={title} onChange={e => setTitle(e.target.value)} style={field} />
-          <textarea placeholder="Details — what you offer, who it's for" value={description} onChange={e => setDescription(e.target.value)} rows={3} style={{ ...field, resize: 'vertical' }} />
+          <textarea placeholder="Details, what you offer, who it's for" value={description} onChange={e => setDescription(e.target.value)} rows={3} style={{ ...field, resize: 'vertical' }} />
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <select value={rewardType} onChange={e => setRewardType(e.target.value as any)} style={{ ...field, flex: 1, minWidth: 160 }}>
               <option value="coffee">For a coffee</option>

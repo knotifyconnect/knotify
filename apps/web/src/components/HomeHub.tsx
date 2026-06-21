@@ -95,7 +95,7 @@ export function HomeHub() {
             <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 15, color: 'var(--signal)' }}>+{nextQuest.points}</span>
           </button>
         ) : (
-          <span style={emptyTxt}>All caught up — nice work. New quests coming soon.</span>
+          <span style={emptyTxt}>All caught up, nice work. New quests coming soon.</span>
         )}
       </div>
 

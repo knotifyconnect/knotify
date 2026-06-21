@@ -49,7 +49,7 @@ function shouldFallback(res: Response, index: number, total: number, path: strin
 
   if (res.ok && isHtmlResponse(res)) return true
   if (res.status >= 500) return true
-  // Vercel platform 404 (NOT_FOUND HTML page) — try next candidate.
+  // Vercel platform 404 (NOT_FOUND HTML page), try next candidate.
   // Do NOT fallback on plain-JSON 404 from the real API (legitimate "not found").
   if (res.status === 404 && isHtmlResponse(res)) return true
   // 405 from static-host SPA rejecting POST on /api/* path
@@ -65,7 +65,7 @@ async function fetchApi(path: string, init: RequestInit) {
   for (let i = 0; i < candidates.length; i++) {
     const base = candidates[i]
 
-    // 15s timeout via AbortController — prevents hung requests from blocking the UI
+    // 15s timeout via AbortController, prevents hung requests from blocking the UI
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 15000)
 
@@ -73,7 +73,7 @@ async function fetchApi(path: string, init: RequestInit) {
       const res = await fetch(`${base}${path}`, { ...init, signal: controller.signal })
       clearTimeout(timer)
       if (shouldFallback(res, i, candidates.length, path)) {
-        // Bad base — invalidate the cache so subsequent calls re-resolve
+        // Bad base, invalidate the cache so subsequent calls re-resolve
         if (resolvedApiBase === base) resolvedApiBase = null
         continue
       }
@@ -96,7 +96,7 @@ async function fetchApi(path: string, init: RequestInit) {
 }
 
 async function authHeaders() {
-  // Prefer the Zustand store token — it's set synchronously by onAuthStateChange
+  // Prefer the Zustand store token, it's set synchronously by onAuthStateChange
   // so it's always available immediately after login, with no race condition.
   const zustandToken = useSessionStore.getState().token
   if (zustandToken) {
@@ -115,11 +115,11 @@ async function authHeaders() {
 
 async function buildError(res: Response) {
   const text = await res.text()
-  // Do NOT force sign-out on 401 here — it causes a logout loop right after login
+  // Do NOT force sign-out on 401 here, it causes a logout loop right after login
   // because the API call from AppSidebar can race ahead of the session being ready.
   // Token expiry is handled naturally by onAuthStateChange(SIGNED_OUT) from Supabase.
   const prefix = `[${res.status}] ${res.statusText} @ ${res.url}`
-  return new Error(text ? `${prefix} — ${text.slice(0, 300)}` : prefix)
+  return new Error(text ? `${prefix}, ${text.slice(0, 300)}` : prefix)
 }
 
 export async function apiGet<T>(path: string): Promise<T> {

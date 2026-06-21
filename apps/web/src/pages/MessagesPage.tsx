@@ -823,7 +823,7 @@ export function MessagesPage() {
 
   async function toggleReaction(msgId: string, emoji: string) {
     if (!selectedId) return
-    // Optimistic update — toggle locally so the UI responds instantly
+    // Optimistic update, toggle locally so the UI responds instantly
     setMessages((prev: Message[]) => prev.map((m) => {
       if (m.id !== msgId) return m
       const existing: MessageReaction[] = m.reactions ?? []
@@ -1311,7 +1311,7 @@ export function MessagesPage() {
                     <div
                       style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 2, alignItems: 'center', gap: 6 }}
                     >
-                      {/* Tiny react button — visible on hover, sits to the left of mine, right of others */}
+                      {/* Tiny react button, visible on hover, sits to the left of mine, right of others */}
                       {msg.is_mine && hoveredMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
                         <button
                           type="button"
@@ -1416,7 +1416,7 @@ export function MessagesPage() {
                             <button type="button" onClick={() => { setOptimistic((prev) => ({ ...prev, [selectedId!]: (prev[selectedId!] ?? []).filter((m) => m.id !== msg.id) })); void sendMessage(msg.content) }} style={{ fontSize: 10.5, color: 'var(--signal)', background: 'none', border: 'none', cursor: 'pointer', marginTop: 3, padding: 0, fontFamily: "'IBM Plex Sans'" }}>Retry</button>
                           )}
                         </div>
-                        {/* Reaction picker — drops BELOW the bubble when icon clicked */}
+                        {/* Reaction picker, drops BELOW the bubble when icon clicked */}
                         {pickerOpenMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
                           <>
                             {/* Click-outside backdrop */}
@@ -1467,7 +1467,7 @@ export function MessagesPage() {
                         )}
                       </div>
 
-                      {/* Tiny react button — right side for non-mine messages */}
+                      {/* Tiny react button, right side for non-mine messages */}
                       {!msg.is_mine && hoveredMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
                         <button
                           type="button"
@@ -1907,7 +1907,7 @@ function CoffeeScheduleModal({
             <select disabled={busy} value={cafeId} onChange={(e) => { setCafeId(e.target.value); setFormError(null) }} style={{ width: '100%', padding: '9px 11px', borderRadius: 10, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}>
               <option value="">Choose a café</option>
               {cafes.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}{c.address ? ' — ' + c.address : ''}</option>
+                <option key={c.id} value={c.id}>{c.name}{c.address ? ', ' + c.address : ''}</option>
               ))}
             </select>
           ) : (

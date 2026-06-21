@@ -275,7 +275,7 @@ export function MapPage() {
       setConnections(connectionResult.connections ?? [])
       setPeerEdges(mapResult.peerEdges ?? [])
 
-      // Load health data separately — never blocks knot from rendering
+      // Load health data separately, never blocks knot from rendering
       apiGet<{ connections: Array<{ peer: { id: string }; daysSince: number; health: KnotHealthState }> }>('/api/relationship-home')
         .then((homeResult) => {
           const healthMap = new Map<string, KnotHealthState>()

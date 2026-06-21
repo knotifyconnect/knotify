@@ -67,7 +67,7 @@ export function EmployersPage() {
         </h1>
         <p style={{ fontSize: 17, color: 'var(--ink-muted)', marginTop: 22, lineHeight: 1.6, maxWidth: 600 }}>
           knotify connects companies with the city's students, internationals and professionals
-          through real relationships — not cold job boards. Host meet-and-greets, offer office
+          through real relationships, not cold job boards. Host meet-and-greets, offer office
           tours, and build a warm pipeline of people who already know your team.
         </p>
       </section>
@@ -78,7 +78,7 @@ export function EmployersPage() {
           {[
             {
               title: 'Warm pipeline',
-              body: 'Reach candidates who have engaged with your events, tours and team — not anonymous applicants.',
+              body: 'Reach candidates who have engaged with your events, tours and team, not anonymous applicants.',
             },
             {
               title: 'Employer brand',
@@ -119,7 +119,7 @@ export function EmployersPage() {
             Interested in partnering with knotify?
           </p>
           <a href="mailto:hello@knotify.pro?subject=Employer%20partnership">
-            <KBtn variant="signal" size="lg">Get in touch — hello@knotify.pro</KBtn>
+            <KBtn variant="signal" size="lg">Get in touch, hello@knotify.pro</KBtn>
           </a>
         </div>
       </section>

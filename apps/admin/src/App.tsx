@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api, getSecret, setSecret, clearSecret } from './api'
+import { EventsAdmin, GigsAdmin, QuestsAdmin } from './AdminPanels'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface BetaSignup {
@@ -267,6 +268,7 @@ function exportCSV(signups: BetaSignup[]) {
 
 // ── Admin app ─────────────────────────────────────────────────────────────────
 function AdminApp({ onLogout }: { onLogout: () => void }) {
+  const [section, setSection] = useState<'signups' | 'events' | 'gigs' | 'quests'>('signups')
   const [stats, setStats] = useState<Stats | null>(null)
   const [signups, setSignups] = useState<BetaSignup[]>([])
   const [filter, setFilter] = useState<string>('all')
@@ -349,6 +351,25 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
 
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '36px 24px' }}>
 
+        {/* Section tabs */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 28, flexWrap: 'wrap' }}>
+          {(['signups', 'events', 'gigs', 'quests'] as const).map(s => (
+            <button key={s} onClick={() => setSection(s)} style={{
+              padding: '7px 16px', borderRadius: 999,
+              border: `0.5px solid ${section === s ? T.signal : T.rule}`,
+              background: section === s ? T.signal : 'transparent',
+              color: section === s ? '#fff' : T.inkMuted,
+              fontSize: 13, fontWeight: 500, cursor: 'pointer', textTransform: 'capitalize',
+              fontFamily: 'IBM Plex Sans, sans-serif',
+            }}>{s === 'signups' ? 'Beta signups' : s}</button>
+          ))}
+        </div>
+
+        {section === 'events' && <EventsAdmin />}
+        {section === 'gigs' && <GigsAdmin />}
+        {section === 'quests' && <QuestsAdmin />}
+
+        {section === 'signups' && (<>
         {/* Page title */}
         <div style={{ marginBottom: 28 }}>
           <h1 style={{
@@ -501,7 +522,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
                     }}
                   >
                     <td style={{ padding: '16px 24px', fontSize: 13, color: T.ink }}>
-                      {s.name ?? <span style={{ color: T.inkFaint }}>—</span>}
+                      {s.name ?? <span style={{ color: T.inkFaint }}>-</span>}
                       {s.is_international && (
                         <span style={{ marginLeft: 6, fontSize: 10, color: T.signal }} title="International newcomer">✈</span>
                       )}
@@ -510,7 +531,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
                       {s.email}
                     </td>
                     <td style={{ padding: '16px 24px', fontSize: 13, color: T.inkMuted, textTransform: 'capitalize' }}>
-                      {s.role ?? <span style={{ color: T.inkFaint }}>—</span>}
+                      {s.role ?? <span style={{ color: T.inkFaint }}>-</span>}
                     </td>
                     <td style={{ padding: '16px 24px' }}>
                       <Badge status={s.status} />
@@ -519,7 +540,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
                       {new Date(s.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </td>
                     <td style={{ padding: '16px 24px', fontSize: 13, color: s.marketing_consent ? T.verd : T.inkFaint }}>
-                      {s.marketing_consent ? '✓ Yes' : '— No'}
+                      {s.marketing_consent ? '✓ Yes' : '- No'}
                     </td>
                     <td style={{ padding: '16px 24px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -576,6 +597,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
             </table>
           )}
         </div>
+        </>)}
       </div>
 
       {/* Footer */}

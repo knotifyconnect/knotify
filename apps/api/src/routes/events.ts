@@ -20,7 +20,7 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
 
   const events = await supabase
     .from('events')
-    .select('id, title, description, location, starts_at, interests, host_id, created_at, users:host_id(full_name, username, avatar_url)')
+    .select('id, title, description, location, starts_at, interests, host_id, source, url, host_label, created_at, users:host_id(full_name, username, avatar_url)')
     .gte('starts_at', new Date(Date.now() - 6 * 3600 * 1000).toISOString())
     .order('starts_at', { ascending: true })
     .limit(limit)
@@ -42,6 +42,7 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
 
   const out = rows.map((e) => {
     const host = Array.isArray((e as any).users) ? (e as any).users[0] : (e as any).users
+    const curated = (e as any).source === 'curated'
     return {
       id: e.id,
       title: e.title,
@@ -49,9 +50,11 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
       location: e.location,
       starts_at: e.starts_at,
       interests: e.interests ?? [],
-      host_name: host?.full_name ?? 'Someone',
+      source: (e as any).source ?? 'peer',
+      url: (e as any).url ?? null,
+      host_name: curated ? ((e as any).host_label ?? 'Munich') : (host?.full_name ?? 'Someone'),
       host_avatar: host?.avatar_url ?? null,
-      is_host: e.host_id === req.appUserId,
+      is_host: !!e.host_id && e.host_id === req.appUserId,
       rsvp_count: counts.get(e.id) ?? 0,
       rsvped: mine.has(e.id),
     }

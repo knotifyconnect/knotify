@@ -1,5 +1,5 @@
 /**
- * knotify · Pulse — the social feed.
+ * knotify · Pulse, the social feed.
  *
  * Reddit-meets-Instagram: rich posts with image upload, upvotes, emoji reactions,
  * Instagram-flat comments with one reply level, public global feed plus channels.
@@ -223,7 +223,7 @@ export function HomePage() {
         onCreate={() => setCreateChannelOpen(true)}
       />
 
-      {/* ── Three-column layout (desktop only — rails hidden on mobile) ── */}
+      {/* ── Three-column layout (desktop only, rails hidden on mobile) ── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[200px_1fr_240px]">
         {/* Left rail: channel nav (desktop only) */}
         <div className="hidden lg:block">
@@ -286,7 +286,7 @@ export function HomePage() {
                   ? "You haven't posted yet."
                   : scope.kind === 'joined'
                   ? 'Join a channel to see posts here.'
-                  : 'No posts yet — be the first.'}
+                  : 'No posts yet, be the first.'}
               </p>
             </KCard>
           ) : (
@@ -334,7 +334,7 @@ export function HomePage() {
 }
 
 // ─── Channel rail ──────────────────────────────────────────────────────────
-// ─── Mobile scope strip — horizontal chips above the feed ─────────────────
+// ─── Mobile scope strip, horizontal chips above the feed ─────────────────
 function MobileScopeStrip({
   scope,
   setScope,
@@ -788,7 +788,7 @@ function Composer({
           onChange={(e) => { const f = e.target.files?.[0]; if (f) pickImage(f) }}
         />
         <button type="button" onClick={() => setShowTitle((v) => !v)} style={composerBtnStyle()}>
-          {showTitle ? '— Title' : '+ Title'}
+          {showTitle ? 'Remove title' : '+ Title'}
         </button>
         <select
           value={channelSlug}
@@ -916,7 +916,7 @@ function PostCard({
             <VerifiedBadge size={12} />
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
-            @{post.author?.username ?? '—'} · {relTime(post.created_at)}
+            @{post.author?.username ?? '-'} · {relTime(post.created_at)}
             {post.channel && (
               <> · <span style={{ color: 'var(--signal)' }}>#{post.channel.slug}</span></>
             )}
@@ -1140,7 +1140,7 @@ function PostCard({
 
         <div style={{ flex: 1 }} />
 
-        {/* Delete (own only — best-effort: server will 404 if not author) */}
+        {/* Delete (own only, best-effort: server will 404 if not author) */}
         <button
           type="button"
           onClick={remove}

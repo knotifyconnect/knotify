@@ -1,5 +1,5 @@
 /**
- * Cafés · IRL — real partner café list with check-in (discount-code) flow.
+ * Cafés · IRL, real partner café list with check-in (discount-code) flow.
  */
 import { useEffect, useState } from 'react'
 import { Coffee, Copy, MapPin, Clock } from 'lucide-react'

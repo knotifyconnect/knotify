@@ -241,7 +241,7 @@ function RoleRequestsTab({ onError }: { onError: (m: string | null) => void }) {
                       <span style={{ fontWeight: 400, color: 'var(--ink-muted)' }}>· @{r.user?.username ?? '?'}</span>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
-                      {r.user?.email ?? '—'} · wants{' '}
+                      {r.user?.email ?? '-'} · wants{' '}
                       <strong style={{ color: 'var(--signal)' }}>{roleLabel(r.requested_role)}</strong>
                       {r.company_name && <> at <strong>{r.company_name}</strong></>}
                     </div>

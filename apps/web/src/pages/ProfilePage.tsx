@@ -1,5 +1,5 @@
 /**
- * knotify · Profile — own profile with full edit (S2 rework).
+ * knotify · Profile, own profile with full edit (S2 rework).
  *
  * Sections:
  *  - Hero: avatar, name, headline, bio (500 char), status, stats
@@ -551,7 +551,7 @@ function OwnProfileView() {
       // Build the diff preview from Claude's profile extraction
       const pe = result.analysis.profileExtract
       const extractedNames = (result.analysis.extractedSkills ?? []).map((s) => s.name ?? '').filter(Boolean)
-      // Match against catalog — if catalog not yet loaded, IDs will be empty but we still
+      // Match against catalog, if catalog not yet loaded, IDs will be empty but we still
       // open the modal (hasDiff uses extractedNames, not matchedSkillIds, as the gate)
       const matchedSkillIds = skillCatalog
         .filter((s) => extractedNames.some((n) => n.toLowerCase() === s.name.toLowerCase()))
@@ -1164,7 +1164,7 @@ function OwnProfileView() {
             {skillCatalog.length === 0 ? (
               <div style={{ padding: '16px 14px', borderRadius: 10, background: 'var(--ochre-soft)', border: '0.5px solid rgba(200,148,31,0.22)', fontSize: 13, color: 'var(--ochre)', lineHeight: 1.55 }}>
                 <strong style={{ display: 'block', marginBottom: 4 }}>Skill catalog not loaded.</strong>
-                The skill catalog is empty — the database migration (<code style={{ fontFamily: "'IBM Plex Mono'", fontSize: 12 }}>018_profile_v2_messages_v2_jobs_v2.sql</code>) may not have been applied yet. Ask the admin to run it.
+                The skill catalog is empty, the database migration (<code style={{ fontFamily: "'IBM Plex Mono'", fontSize: 12 }}>018_profile_v2_messages_v2_jobs_v2.sql</code>) may not have been applied yet. Ask the admin to run it.
               </div>
             ) : (
               <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 10 }}>
@@ -1211,7 +1211,7 @@ function OwnProfileView() {
       <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
         <SectionHead label="CV & career paths" />
         <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
-          Upload your CV — Claude analyses it, suggests career paths, and extracts your skills.
+          Upload your CV, Claude analyses it, suggests career paths, and extracts your skills.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <label style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '0.5px dashed var(--rule)', background: 'var(--paper-soft)', fontSize: 13, color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1314,7 +1314,7 @@ function OwnProfileView() {
                   style={{ width: 16, height: 16, accentColor: 'var(--signal)', cursor: 'pointer' }}
                 />
                 <span style={{ fontSize: 13.5, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'" }}>
-                  Open to roles — I'm looking for opportunities
+                  Open to roles, I'm looking for opportunities
                 </span>
               </label>
               <div>
@@ -1621,7 +1621,7 @@ function PublicProfileView({ userId }: { userId: string }) {
     apiGet<{ posts: Array<{ id: string; title: string | null; body: string; created_at: string }> }>(`/api/posts?scope=all&limit=10`)
       .then((d) => {
         if (!mounted) return
-        // We only want posts by this user — filter client-side since the route doesn't have a "by user" filter
+        // We only want posts by this user, filter client-side since the route doesn't have a "by user" filter
         const filtered = (d.posts ?? []).filter((p: any) => p.author_id === userId).slice(0, 3)
         setPosts(filtered)
       }).catch(() => { /* ignore */ })

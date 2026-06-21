@@ -285,7 +285,7 @@ export function OnboardingPage() {
 
         {step === 2 && (
           <>
-            <StepHeader eyebrow="Interests" title="What are you into?" sub="Pick at least 3. We use these to match you with people, groups and events — beyond just work." />
+            <StepHeader eyebrow="Interests" title="What are you into?" sub="Pick at least 3. We use these to match you with people, groups and events, beyond just work." />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {INTERESTS.map(i => (
                 <Chip key={i} on={interests.includes(i)} onClick={() => toggle(interests, setInterests, i)}>{i}</Chip>
@@ -299,7 +299,7 @@ export function OnboardingPage() {
 
         {step === 3 && (
           <>
-            <StepHeader eyebrow="Goals" title="What do you want from knotify?" sub="Pick what matters most — this shapes what we surface for you." />
+            <StepHeader eyebrow="Goals" title="What do you want from knotify?" sub="Pick what matters most, this shapes what we surface for you." />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {GOALS.map(g => (
                 <Chip key={g} on={goals.includes(g)} onClick={() => toggle(goals, setGoals, g)}>{g}</Chip>
