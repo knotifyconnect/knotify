@@ -436,104 +436,65 @@ export function RelationshipHomePage() {
                 {ranked.map((entry) => {
                   const sc = STATE_COLOR[entry.state]
                   const isNew = entry.state === 'new'
-                  const pillBg =
-                    entry.state === 'cold'    ? 'rgba(216,68,40,0.07)'  :
-                    entry.state === 'cooling' ? 'rgba(201,146,42,0.07)' :
-                    'rgba(76,175,125,0.07)'
-                  const accentBorder = sc
 
                   return (
-                    <KCard key={entry.connectionId} style={{ padding: '16px 18px' }}>
-                      {/* Peer row */}
+                    <KCard key={entry.connectionId} style={{ padding: '12px 14px', borderLeft: `3px solid ${sc}` }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <button
                           type="button"
                           onClick={() => navigate(`/profile/${entry.peer.id}`)}
                           style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
                         >
-                          <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={40} />
+                          <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={38} />
                         </button>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {entry.peer.full_name}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {entry.peer.full_name}
+                            </span>
+                            <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: sc, flexShrink: 0 }}>
+                              {STATE_LABEL[entry.state]}
+                            </span>
                           </div>
-                          <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {entry.peer.headline ?? entry.peer.current_company ?? `@${entry.peer.username}`}
+                          <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", marginTop: 2, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                            {entry.reason}
                           </div>
                         </div>
-                        {/* State badge */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: sc, display: 'inline-block' }} />
-                          <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                            {STATE_LABEL[entry.state]}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Reason pill */}
-                      <div style={{
-                        margin: '12px 0 12px',
-                        padding: '8px 11px',
-                        borderRadius: 8,
-                        background: pillBg,
-                        borderLeft: `2.5px solid ${accentBorder}`,
-                        fontSize: 12.5,
-                        color: 'var(--ink-muted)',
-                        fontFamily: "'IBM Plex Sans'",
-                        lineHeight: 1.5,
-                      }}>
-                        {entry.reason}
-                      </div>
-
-                      {/* CTAs */}
-                      <div style={{ display: 'flex', gap: 7 }}>
-                        {/* Primary CTA, Ink dark */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            logAndAct(entry, 'acted')
-                            if (entry.suggestedAction === 'welcome' || entry.suggestedAction === 'reconnect' ||
-                                entry.suggestedAction === 'message' || entry.suggestedAction === 'congratulate' ||
-                                entry.suggestedAction === 'meet' || entry.suggestedAction === 'ask') {
-                              openMessage(entry.peer.id, entry.draftOpener)
-                            }
-                          }}
-                          disabled={messagingPeer === entry.peer.id}
-                          style={{
-                            flex: 1,
-                            padding: '8px 12px',
-                            borderRadius: 8,
-                            border: 'none',
-                            background: messagingPeer === entry.peer.id ? 'var(--ink-faint)' : 'var(--ink)',
-                            color: '#fff',
-                            fontSize: 12.5,
-                            fontFamily: "'IBM Plex Sans'",
-                            fontWeight: 500,
-                            cursor: messagingPeer === entry.peer.id ? 'default' : 'pointer',
-                          }}
-                        >
-                          {messagingPeer === entry.peer.id ? 'Opening…' : CTA_LABEL[entry.suggestedAction]}
-                        </button>
-
-                        {/* Secondary: Ask…, only for connections older than 7 days */}
-                        {!isNew && (
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
                           <button
                             type="button"
-                            onClick={() => setAskMenuPeer(entry.peer)}
+                            onClick={() => {
+                              logAndAct(entry, 'acted')
+                              if (entry.suggestedAction === 'welcome' || entry.suggestedAction === 'reconnect' ||
+                                  entry.suggestedAction === 'message' || entry.suggestedAction === 'congratulate' ||
+                                  entry.suggestedAction === 'meet' || entry.suggestedAction === 'ask') {
+                                openMessage(entry.peer.id, entry.draftOpener)
+                              }
+                            }}
+                            disabled={messagingPeer === entry.peer.id}
                             style={{
-                              padding: '8px 12px',
-                              borderRadius: 8,
-                              border: '0.5px solid var(--rule)',
-                              background: 'none',
-                              fontSize: 12.5,
-                              color: 'var(--ink-muted)',
-                              fontFamily: "'IBM Plex Sans'",
-                              cursor: 'pointer',
+                              padding: '8px 14px', borderRadius: 9, border: 'none',
+                              background: messagingPeer === entry.peer.id ? 'var(--ink-faint)' : 'var(--ink)',
+                              color: '#fff', fontSize: 12.5, fontFamily: "'IBM Plex Sans'", fontWeight: 600,
+                              cursor: messagingPeer === entry.peer.id ? 'default' : 'pointer', whiteSpace: 'nowrap',
                             }}
                           >
-                            Ask…
+                            {messagingPeer === entry.peer.id ? 'Opening...' : CTA_LABEL[entry.suggestedAction]}
                           </button>
-                        )}
+                          {!isNew && (
+                            <button
+                              type="button"
+                              onClick={() => setAskMenuPeer(entry.peer)}
+                              style={{
+                                padding: '8px 10px', borderRadius: 9, border: '0.5px solid var(--rule)',
+                                background: 'none', fontSize: 12.5, color: 'var(--ink-muted)',
+                                fontFamily: "'IBM Plex Sans'", cursor: 'pointer', whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Ask
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </KCard>
                   )

@@ -107,7 +107,7 @@ export function HomeHub() {
   const questDeck = [...claimable, ...completed].slice(0, 8)
 
   return (
-    <div style={{ marginBottom: 36, display: 'grid', gap: 30 }}>
+    <div style={{ marginBottom: 36, display: 'flex', flexDirection: 'column', gap: 30, minWidth: 0 }}>
 
       {/* ── Credibility hero + quests ─────────────────────────────────────── */}
       <div>
@@ -152,12 +152,12 @@ export function HomeHub() {
             <span style={{ fontSize: 12, color: 'var(--verd, #1f6b5e)', fontWeight: 600 }}>{claimable.length} ready</span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 6, scrollbarWidth: 'thin' }}>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 190px), 1fr))' }}>
           {questDeck.map(q => {
             const done = q.status === 'completed'
             return (
               <div key={q.key} style={{
-                flex: '0 0 200px', background: 'white', border: `0.5px solid ${done ? 'var(--rule)' : 'var(--signal)'}`,
+                background: 'white', border: `0.5px solid ${done ? 'var(--rule)' : 'var(--signal)'}`,
                 borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 10,
                 opacity: done ? 0.7 : 1,
               }}>
@@ -239,7 +239,7 @@ function EventsSection({ events, onRsvp, onCreated }: { events: EventItem[]; onR
           No events yet. Be the first to bring people together.
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
+        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))' }}>
           {events.map(e => (
             <div key={e.id} style={{ background: 'white', border: '0.5px solid var(--rule)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ fontSize: 11.5, color: 'var(--signal)', fontWeight: 600 }}>{whenLabel(e.starts_at)}</div>
@@ -331,7 +331,7 @@ function GigsSection({ gigs, elig, onCreated, rewardLabel }: { gigs: Gig[]; elig
           No open gigs yet. As members earn credibility, their offers appear here.
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
+        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))' }}>
           {gigs.map(g => (
             <div key={g.id} style={{ background: 'white', border: '0.5px solid var(--rule)', borderRadius: 14, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
