@@ -19,6 +19,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { ToastContainer } from './components/ui/Toast'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { ImpressumPage } from './pages/ImpressumPage'
+import { EmployersPage } from './pages/EmployersPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { apiGet } from './lib/api'
@@ -164,6 +165,7 @@ function PublicRoutes() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/impressum" element={<ImpressumPage />} />
+      <Route path="/employers" element={<EmployersPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

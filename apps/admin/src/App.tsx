@@ -5,6 +5,10 @@ import { api, getSecret, setSecret, clearSecret } from './api'
 interface BetaSignup {
   id: string
   email: string
+  name: string | null
+  role: string | null
+  interests: string[] | null
+  is_international: boolean | null
   status: 'pending' | 'approved' | 'rejected'
   marketing_consent: boolean
   created_at: string
@@ -262,9 +266,13 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 function exportCSV(signups: BetaSignup[]) {
-  const headers = ['Email', 'Status', 'Signed Up', 'Marketing Consent', 'Source']
+  const headers = ['Name', 'Email', 'Role', 'International', 'Interests', 'Status', 'Signed Up', 'Marketing Consent', 'Source']
   const rows = signups.map(s => [
+    s.name ?? '',
     s.email,
+    s.role ?? '',
+    s.is_international === true ? 'Yes' : s.is_international === false ? 'No' : '',
+    (s.interests ?? []).join('; '),
     s.status,
     new Date(s.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
     s.marketing_consent ? 'Yes' : 'No',
@@ -492,7 +500,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: `0.5px solid ${T.ruleSoft}` }}>
-                  {['Email', 'Status', 'Signed up', 'Consent', 'Actions'].map(h => (
+                  {['Name', 'Email', 'Role', 'Status', 'Signed up', 'Consent', 'Actions'].map(h => (
                     <th key={h} style={{
                       padding: '10px 24px',
                       textAlign: 'left',
@@ -518,8 +526,17 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
                       transition: 'background 0.15s',
                     }}
                   >
+                    <td style={{ padding: '16px 24px', fontSize: 13, color: T.ink }}>
+                      {s.name ?? <span style={{ color: T.inkFaint }}>—</span>}
+                      {s.is_international && (
+                        <span style={{ marginLeft: 6, fontSize: 10, color: T.signal }} title="International newcomer">✈</span>
+                      )}
+                    </td>
                     <td style={{ padding: '16px 24px', fontSize: 13, fontFamily: 'IBM Plex Mono, monospace', color: T.ink }}>
                       {s.email}
+                    </td>
+                    <td style={{ padding: '16px 24px', fontSize: 13, color: T.inkMuted, textTransform: 'capitalize' }}>
+                      {s.role ?? <span style={{ color: T.inkFaint }}>—</span>}
                     </td>
                     <td style={{ padding: '16px 24px' }}>
                       <Badge status={s.status} />

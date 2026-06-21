@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { KnotifyLogo, KnotifyMark, KnotifyWordmark, KBtn, KPill, VerifiedBadge } from '@/lib/knotify'
+import { KnotifyLogoImg, KBtn, VerifiedBadge } from '@/lib/knotify'
+
+// ─── Waiting-list taxonomy (seeds the connective layer) ──────────────────────
+const ROLE_OPTIONS = [
+  { value: 'student', label: 'Student' },
+  { value: 'professional', label: 'Professional' },
+  { value: 'professor', label: 'Professor' },
+  { value: 'investor', label: 'Investor' },
+  { value: 'company', label: 'Company / Recruiter' },
+] as const
+
+const INTEREST_OPTIONS = [
+  'Jobs & careers', 'Entrepreneurship', 'Tech', 'Arts & design', 'Music',
+  'Sports', 'Food & cafés', 'Cars', 'Academia', 'Travel', 'Gaming', 'Events & nightlife',
+]
 
 // ─── Animated Network Graphic ────────────────────────────────────────────────
 function NetworkGraphic() {
@@ -124,11 +138,32 @@ function FloatCard({
 }
 
 // ─── Beta signup form ─────────────────────────────────────────────────────────
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '12px 16px',
+  borderRadius: 10,
+  border: '0.5px solid var(--rule)',
+  background: 'white',
+  fontSize: 14,
+  color: 'var(--ink)',
+  outline: 'none',
+  fontFamily: "'IBM Plex Sans', sans-serif",
+  boxSizing: 'border-box',
+}
+
 function BetaForm({ compact = false }: { compact?: boolean }) {
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [role, setRole] = useState('')
+  const [interests, setInterests] = useState<string[]>([])
+  const [isInternational, setIsInternational] = useState(false)
   const [consent, setConsent] = useState(false)
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+
+  function toggleInterest(i: string) {
+    setInterests(prev => (prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -144,7 +179,14 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
       const res = await fetch(`${apiBase}/api/beta`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, marketing_consent: consent }),
+        body: JSON.stringify({
+          name,
+          email,
+          role: role || null,
+          interests,
+          is_international: isInternational,
+          marketing_consent: consent,
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -174,71 +216,114 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
       >
         <div style={{ fontWeight: 600, marginBottom: 4 }}>You're on the list.</div>
         <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
-          We'll be in touch when your spot opens up.
+          We'll be in touch when your spot opens up. We're onboarding Munich's international
+          community first.
         </div>
       </div>
     )
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          flexWrap: compact ? 'nowrap' : 'wrap',
-        }}
-      >
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          required
+          placeholder="Full name"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          style={{ ...inputStyle, flex: 1, minWidth: 140 }}
+        />
         <input
           type="email"
           required
           placeholder="your@email.com"
           value={email}
           onChange={e => setEmail(e.target.value)}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            padding: compact ? '10px 14px' : '12px 16px',
-            borderRadius: 10,
-            border: '0.5px solid var(--rule)',
-            background: 'white',
-            fontSize: 14,
-            color: 'var(--ink)',
-            outline: 'none',
-            fontFamily: "'IBM Plex Sans', sans-serif",
-          }}
+          style={{ ...inputStyle, flex: 1, minWidth: 140 }}
         />
-        <button
-          type="submit"
-          disabled={state === 'loading'}
-          style={{
-            padding: compact ? '10px 20px' : '12px 22px',
-            borderRadius: 10,
-            background: 'var(--signal)',
-            color: '#fff',
-            border: 'none',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: state === 'loading' ? 'not-allowed' : 'pointer',
-            opacity: state === 'loading' ? 0.7 : 1,
-            whiteSpace: 'nowrap',
-            fontFamily: "'IBM Plex Sans', sans-serif",
-          }}
-        >
-          {state === 'loading' ? 'Joining…' : 'Request access'}
-        </button>
       </div>
 
-      {/* Consent checkbox — GDPR required */}
-      <label
+      <select
+        required
+        value={role}
+        onChange={e => setRole(e.target.value)}
+        style={{ ...inputStyle, color: role ? 'var(--ink)' : 'var(--ink-faint)', cursor: 'pointer' }}
+      >
+        <option value="" disabled>I am a…</option>
+        {ROLE_OPTIONS.map(r => (
+          <option key={r.value} value={r.value} style={{ color: 'var(--ink)' }}>
+            {r.label}
+          </option>
+        ))}
+      </select>
+
+      {!compact && (
+        <div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 8 }}>
+            What are you into? (optional — helps us match people & events)
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {INTEREST_OPTIONS.map(i => {
+              const on = interests.includes(i)
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => toggleInterest(i)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 999,
+                    border: `0.5px solid ${on ? 'var(--signal)' : 'var(--rule)'}`,
+                    background: on ? 'var(--signal)' : 'transparent',
+                    color: on ? '#fff' : 'var(--ink-muted)',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    fontFamily: "'IBM Plex Sans', sans-serif",
+                    transition: 'all 0.14s',
+                  }}
+                >
+                  {i}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={isInternational}
+          onChange={e => setIsInternational(e.target.checked)}
+          style={{ accentColor: 'var(--signal)', flexShrink: 0 }}
+        />
+        <span style={{ fontSize: 12.5, color: 'var(--ink-muted)' }}>
+          I'm an international newcomer to Munich
+        </span>
+      </label>
+
+      <button
+        type="submit"
+        disabled={state === 'loading'}
         style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: 9,
-          marginTop: 12,
-          cursor: 'pointer',
+          padding: '12px 22px',
+          borderRadius: 10,
+          background: 'var(--signal)',
+          color: '#fff',
+          border: 'none',
+          fontSize: 14,
+          fontWeight: 600,
+          cursor: state === 'loading' ? 'not-allowed' : 'pointer',
+          opacity: state === 'loading' ? 0.7 : 1,
+          fontFamily: "'IBM Plex Sans', sans-serif",
         }}
       >
+        {state === 'loading' ? 'Joining…' : 'Join waiting list'}
+      </button>
+
+      {/* Consent checkbox — GDPR required */}
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, cursor: 'pointer' }}>
         <input
           type="checkbox"
           checked={consent}
@@ -256,15 +341,7 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
       </label>
 
       {errorMsg && (
-        <div
-          style={{
-            marginTop: 8,
-            fontSize: 12,
-            color: 'var(--signal)',
-          }}
-        >
-          {errorMsg}
-        </div>
+        <div style={{ fontSize: 12, color: 'var(--signal)' }}>{errorMsg}</div>
       )}
     </form>
   )
@@ -301,7 +378,7 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
       >
-        <KnotifyLogo size={20} />
+        <KnotifyLogoImg variant="wordmark" height={26} />
       </div>
 
       <div
@@ -316,7 +393,7 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
         <a href="#how-it-works" style={{ color: 'inherit', textDecoration: 'none' }}>
           How it works
         </a>
-        <a href="#pillars" style={{ color: 'inherit', textDecoration: 'none' }}>
+        <a href="#cafes" style={{ color: 'inherit', textDecoration: 'none' }}>
           Cafés
         </a>
         <a href="#manifesto" style={{ color: 'inherit', textDecoration: 'none' }}>
@@ -329,10 +406,10 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <KBtn variant="ghost" size="sm" onClick={onSignIn}>
-          Sign in
+          Beta login
         </KBtn>
         <KBtn variant="signal" size="sm" onClick={() => document.getElementById('beta-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
-          Request access
+          Join waiting list
         </KBtn>
       </div>
     </nav>
@@ -442,7 +519,7 @@ export function LandingPage() {
               color: 'var(--ink-faint)',
             }}
           >
-            Beta access is by approval. We're starting with Munich professionals.
+            Beta access is by approval. We're starting with Munich's international community.
           </p>
         </div>
 
@@ -498,7 +575,7 @@ export function LandingPage() {
 
       {/* ── Three pillars ── */}
       <section
-        id="pillars"
+        id="cafes"
         style={{
           background: 'var(--paper-soft)',
           borderTop: '0.5px solid var(--rule-soft)',
@@ -522,18 +599,18 @@ export function LandingPage() {
             {[
               {
                 n: '01',
-                title: 'See your knot',
-                body: 'Your network as a living map. Tier 1, 2 — and the path to anyone you want to meet.',
+                title: 'Land your network',
+                body: 'New to Munich? Get matched to the people, groups and events that fit who you are and what you are into.',
               },
               {
                 n: '02',
-                title: "Verify, don't endorse",
-                body: 'Skills are vouched for by named peers, timed challenges, or reviewed portfolios. No hollow likes.',
+                title: 'Keep it warm',
+                body: 'Your network is a living map. knotify nudges you before the people who matter slip away.',
               },
               {
                 n: '03',
-                title: 'Meet, in person',
-                body: 'Partner cafés in Munich. Soft check-in, perks for members, real conversations.',
+                title: 'Meet at the café',
+                body: 'Real connection happens in person. Partner cafés across Munich, perks for members, side quests to break the ice.',
               },
             ].map((p) => (
               <div key={p.n}>
@@ -763,7 +840,7 @@ export function LandingPage() {
             <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>losing people?</span>
           </h2>
           <p style={{ fontSize: 15, color: 'var(--ink-muted)', marginBottom: 28, lineHeight: 1.6 }}>
-            Munich beta is open to a limited group. Request your spot below.
+            The Munich beta is opening to a limited group. Join the waiting list below.
           </p>
           <BetaForm compact />
         </div>
@@ -773,27 +850,27 @@ export function LandingPage() {
       <footer
         style={{
           borderTop: '0.5px solid var(--rule-soft)',
-          padding: '36px 40px',
+          padding: '40px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 20,
           fontSize: 11,
           color: 'var(--ink-faint)',
         }}
       >
-        <KnotifyLogo size={16} />
-        <div style={{ display: 'flex', gap: 24 }}>
-          {['Manifesto', 'Cafés', 'For employers', 'Privacy', 'Impressum'].map((l) => (
-            <span
-              key={l}
-              style={{ cursor: 'pointer' }}
-              onClick={() => {
-                if (l === 'Privacy') navigate('/privacy')
-                else if (l === 'Impressum') navigate('/impressum')
-                else if (l === 'For employers') navigate('/employers')
-              }}
-            >
-              {l}
+        <KnotifyLogoImg variant="full" height={48} />
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          {([
+            ['Manifesto', () => document.getElementById('manifesto')?.scrollIntoView({ behavior: 'smooth' })],
+            ['Cafés', () => document.getElementById('cafes')?.scrollIntoView({ behavior: 'smooth' })],
+            ['For employers', () => navigate('/employers')],
+            ['Privacy', () => navigate('/privacy')],
+            ['Impressum', () => navigate('/impressum')],
+          ] as const).map(([label, fn]) => (
+            <span key={label} style={{ cursor: 'pointer' }} onClick={fn}>
+              {label}
             </span>
           ))}
         </div>

@@ -91,6 +91,32 @@ export function KnotifyLogo({
   )
 }
 
+// ─── KnotifyLogoImg (official raster logo) ──────────────────────────────────
+// The brand logo is a raster lockup (red knot mark + "knotify." wordmark).
+// variant: 'wordmark' = mark + wordmark, 'full' = adds the tagline, 'mark' = mark only.
+export function KnotifyLogoImg({
+  variant = 'wordmark',
+  height = 26,
+  className = '',
+  style,
+}: {
+  variant?: 'wordmark' | 'full' | 'mark'
+  height?: number
+  className?: string
+  style?: CSSProperties
+}) {
+  const src =
+    variant === 'full' ? '/logo-full.png' : variant === 'mark' ? '/mark.png' : '/logo.png'
+  return (
+    <img
+      src={src}
+      alt="knotify — networks worth keeping"
+      className={className}
+      style={{ height, width: 'auto', display: 'block', ...style }}
+    />
+  )
+}
+
 // ─── VerifiedBadge ───────────────────────────────────────────────────────────
 export function VerifiedBadge({ size = 16, className = '' }: { size?: number; className?: string }) {
   return (
