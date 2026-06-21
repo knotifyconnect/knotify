@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
+import { Check } from 'lucide-react'
 import { apiGet, apiPost } from '@/lib/api'
+import { QuestIcon } from '@/lib/questIcons'
 
 type Quest = {
   key: string
@@ -151,10 +153,11 @@ export function QuestsPage() {
             {/* status dot */}
             <div style={{
               width: 38, height: 38, borderRadius: 11, flexShrink: 0,
-              display: 'grid', placeItems: 'center', fontSize: 19,
+              display: 'grid', placeItems: 'center',
               background: q.status === 'completed' ? 'var(--verd-soft, rgba(31,107,94,0.12))' : 'var(--paper-soft, #ede8df)',
+              color: q.status === 'completed' ? 'var(--verd, #1f6b5e)' : 'var(--ink-muted)',
             }}>
-              {q.status === 'completed' ? '✓' : q.icon}
+              {q.status === 'completed' ? <Check size={18} /> : <QuestIcon name={q.icon} size={18} />}
             </div>
 
             <div style={{ flex: 1, minWidth: 0 }}>

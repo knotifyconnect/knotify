@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { Lock } from 'lucide-react'
 import { apiGet, apiPost } from '@/lib/api'
 
 type Gig = {
@@ -30,7 +31,7 @@ const field: React.CSSProperties = {
 }
 
 function rewardLabel(g: Gig) {
-  if (g.reward_type === 'coffee') return '☕ For a coffee'
+  if (g.reward_type === 'coffee') return 'For a coffee'
   if (g.reward_type === 'paid') return g.price_eur ? `€${g.price_eur}` : 'Paid'
   return 'Free'
 }
@@ -96,8 +97,9 @@ export function GigsPage() {
 
       {/* Eligibility banner */}
       {elig && !elig.can_offer && (
-        <div style={{ marginBottom: 20, background: 'var(--paper-soft, #ede8df)', border: '0.5px solid var(--rule)', borderRadius: 12, padding: '14px 16px', fontSize: 13.5, color: 'var(--ink-muted)' }}>
-          🔒 You can request gigs now. To <strong>offer</strong> gigs, reach <strong>{elig.unlock_at} credibility</strong> (Trusted) — you're at {elig.credibility_score}. Complete quests to get there.
+        <div style={{ marginBottom: 20, background: 'var(--paper-soft, #ede8df)', border: '0.5px solid var(--rule)', borderRadius: 12, padding: '14px 16px', fontSize: 13.5, color: 'var(--ink-muted)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <Lock size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>You can request gigs now. To <strong>offer</strong> gigs, reach <strong>{elig.unlock_at} credibility</strong> (Trusted) — you're at {elig.credibility_score}. Complete quests to get there.</span>
         </div>
       )}
 
@@ -112,7 +114,7 @@ export function GigsPage() {
           <textarea placeholder="Details — what you offer, who it's for" value={description} onChange={e => setDescription(e.target.value)} rows={3} style={{ ...field, resize: 'vertical' }} />
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <select value={rewardType} onChange={e => setRewardType(e.target.value as any)} style={{ ...field, flex: 1, minWidth: 160 }}>
-              <option value="coffee">For a coffee ☕</option>
+              <option value="coffee">For a coffee</option>
               <option value="paid">Paid</option>
               <option value="free">Free</option>
             </select>

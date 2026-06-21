@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet } from '@/lib/api'
+import { QuestIcon } from '@/lib/questIcons'
 
 type QuestsResp = {
   credibility_score: number
@@ -22,7 +23,7 @@ function whenLabel(iso: string) {
 }
 
 function rewardLabel(g: GigItem) {
-  if (g.reward_type === 'coffee') return '☕ Coffee'
+  if (g.reward_type === 'coffee') return 'For a coffee'
   if (g.reward_type === 'paid') return g.price_eur ? `€${g.price_eur}` : 'Paid'
   return 'Free'
 }
@@ -84,7 +85,9 @@ export function HomeHub() {
               padding: '10px 12px', cursor: 'pointer', width: '100%',
             }}
           >
-            <span style={{ fontSize: 18 }}>{nextQuest.icon}</span>
+            <span style={{ display: 'grid', placeItems: 'center', width: 28, height: 28, color: 'var(--ink-muted)' }}>
+              <QuestIcon name={nextQuest.icon} size={18} />
+            </span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{nextQuest.title}</span>
               <span style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>Next quest</span>

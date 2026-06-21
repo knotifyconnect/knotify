@@ -22,21 +22,21 @@ type Quest = {
 
 const CATALOG: Quest[] = [
   // Verified — getting set up
-  { key: 'complete_profile', title: 'First impressions',     description: 'Complete your profile so people get who you are.',     points: 20, category: 'profile', type: 'verified', icon: '🎯' },
-  { key: 'add_bio_photo',    title: 'Show your face',        description: 'Add a photo or a short bio.',                          points: 10, category: 'profile', type: 'verified', icon: '📸' },
-  { key: 'curious',          title: 'Many sides',            description: 'Pick 5+ interests — work is only part of you.',        points: 10, category: 'profile', type: 'verified', icon: '🎨' },
-  { key: 'polyglot',         title: 'Citizen of the world',  description: 'Add 2+ languages you speak.',                          points: 10, category: 'profile', type: 'verified', icon: '🌍' },
-  { key: 'first_connection', title: 'Ice breaker',           description: 'Make your very first connection.',                     points: 15, category: 'network', type: 'verified', icon: '🤝' },
-  { key: 'growing_network',  title: 'Inner circle',          description: 'Grow to 5 connections.',                               points: 25, category: 'network', type: 'verified', icon: '🔗' },
+  { key: 'complete_profile', title: 'First impressions',     description: 'Complete your profile so people get who you are.',     points: 20, category: 'profile', type: 'verified', icon: 'target' },
+  { key: 'add_bio_photo',    title: 'Show your face',        description: 'Add a photo or a short bio.',                          points: 10, category: 'profile', type: 'verified', icon: 'camera' },
+  { key: 'curious',          title: 'Many sides',            description: 'Pick 5+ interests — work is only part of you.',        points: 10, category: 'profile', type: 'verified', icon: 'palette' },
+  { key: 'polyglot',         title: 'Citizen of the world',  description: 'Add 2+ languages you speak.',                          points: 10, category: 'profile', type: 'verified', icon: 'globe' },
+  { key: 'first_connection', title: 'Ice breaker',           description: 'Make your very first connection.',                     points: 15, category: 'network', type: 'verified', icon: 'handshake' },
+  { key: 'growing_network',  title: 'Inner circle',          description: 'Grow to 5 connections.',                               points: 25, category: 'network', type: 'verified', icon: 'users' },
 
   // Real-life — out in the world (honour system)
-  { key: 'coffee_stranger',  title: 'Coffee with a stranger', description: 'Meet someone new from knotify for a real coffee.',    points: 30, category: 'social',  type: 'self', icon: '☕' },
-  { key: 'matchmaker',       title: 'Matchmaker',            description: 'Introduce two people in your network to each other.',  points: 25, category: 'social',  type: 'self', icon: '💞' },
-  { key: 'show_up',          title: 'Show up',               description: 'Go to a meetup or event — say yes and actually go.',    points: 25, category: 'social',  type: 'self', icon: '🎉' },
-  { key: 'urban_explorer',   title: 'Urban explorer',        description: 'Explore a Munich neighbourhood you have never been to.', points: 15, category: 'explore', type: 'self', icon: '🗺️' },
-  { key: 'sprachpartner',    title: 'Sprachpartner',         description: 'Hold a full conversation in German (or a language you are learning).', points: 20, category: 'explore', type: 'self', icon: '🇩🇪' },
-  { key: 'cafe_regular',     title: 'Café regular',          description: 'Visit one of the knotify partner cafés.',              points: 15, category: 'explore', type: 'self', icon: '🥨' },
-  { key: 'pay_it_forward',   title: 'Pay it forward',        description: 'Help someone — review a CV, share a referral, give real advice.', points: 30, category: 'give', type: 'self', icon: '🎁' },
+  { key: 'coffee_stranger',  title: 'Coffee with a stranger', description: 'Meet someone new from knotify for a real coffee.',    points: 30, category: 'social',  type: 'self', icon: 'coffee' },
+  { key: 'matchmaker',       title: 'Matchmaker',            description: 'Introduce two people in your network to each other.',  points: 25, category: 'social',  type: 'self', icon: 'heart-handshake' },
+  { key: 'show_up',          title: 'Show up',               description: 'Go to a meetup or event — say yes and actually go.',    points: 25, category: 'social',  type: 'self', icon: 'party' },
+  { key: 'urban_explorer',   title: 'Urban explorer',        description: 'Explore a Munich neighbourhood you have never been to.', points: 15, category: 'explore', type: 'self', icon: 'map' },
+  { key: 'sprachpartner',    title: 'Sprachpartner',         description: 'Hold a full conversation in German (or a language you are learning).', points: 20, category: 'explore', type: 'self', icon: 'languages' },
+  { key: 'cafe_regular',     title: 'Café regular',          description: 'Visit one of the knotify partner cafés.',              points: 15, category: 'explore', type: 'self', icon: 'croissant' },
+  { key: 'pay_it_forward',   title: 'Pay it forward',        description: 'Help someone — review a CV, share a referral, give real advice.', points: 30, category: 'give', type: 'self', icon: 'gift' },
 ]
 
 // Credibility tiers. Reaching "Trusted" unlocks offering gigs (Phase 5).
