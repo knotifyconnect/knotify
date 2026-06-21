@@ -97,16 +97,24 @@ export function KnotifyLogo({
 export function KnotifyLogoImg({
   variant = 'wordmark',
   height = 26,
+  light = false,
   className = '',
   style,
 }: {
   variant?: 'wordmark' | 'full' | 'mark'
   height?: number
+  light?: boolean // white wordmark for dark backgrounds
   className?: string
   style?: CSSProperties
 }) {
   const src =
-    variant === 'full' ? '/logo-full.png' : variant === 'mark' ? '/mark.png' : '/logo.png'
+    variant === 'mark'
+      ? '/mark.png'
+      : variant === 'full'
+        ? '/logo-full.png'
+        : light
+          ? '/logo-light.png'
+          : '/logo.png'
   return (
     <img
       src={src}

@@ -5,7 +5,7 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
-import { KnotifyLogo, KnotifyMark, KPill } from '@/lib/knotify'
+import { KnotifyLogoImg, KPill } from '@/lib/knotify'
 
 type AuthMode = 'login' | 'signup' | 'forgot'
 type MessageTone = 'error' | 'success'
@@ -172,7 +172,7 @@ export function SignInCard2({
         className="hidden lg:flex"
       >
         <div>
-          <KnotifyLogo size={20} markColor="var(--signal)" textColor="var(--paper)" />
+          <KnotifyLogoImg light height={24} />
         </div>
 
         <div>
@@ -229,7 +229,7 @@ export function SignInCard2({
         className="lg:ml-[42%] lg:pl-16 lg:pr-8"
       >
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }} className="lg:hidden">
-          <KnotifyLogo size={22} />
+          <KnotifyLogoImg variant="wordmark" height={26} />
         </div>
 
         <div style={{ marginBottom: 8 }}>
@@ -449,7 +449,6 @@ export function SignInCard2({
               />
             ) : (
               <>
-                <KnotifyMark size={16} color="#fff" />
                 {mode === 'login' && 'Sign in'}
                 {mode === 'signup' && 'Create account'}
                 {mode === 'forgot' && 'Send reset link'}

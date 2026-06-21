@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { KnotifyLogo, KnotifyMark, KPill } from '@/lib/knotify'
+import { KnotifyLogoImg, KPill } from '@/lib/knotify'
 
 const inputStyle: React.CSSProperties = {
   flex: 1,
@@ -124,7 +124,7 @@ export function ResetPasswordPage() {
     >
       <div style={{ width: '100%', maxWidth: 420 }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }}>
-          <KnotifyLogo size={22} />
+          <KnotifyLogoImg variant="wordmark" height={26} />
         </div>
 
         <div style={{ marginBottom: 8 }}>
@@ -234,12 +234,7 @@ export function ResetPasswordPage() {
                 transition: 'background 0.15s ease',
               }}
             >
-              {loading ? 'Updating password…' : (
-                <>
-                  <KnotifyMark size={16} color="#fff" />
-                  Update password
-                </>
-              )}
+              {loading ? 'Updating password…' : 'Update password'}
             </button>
           )}
 

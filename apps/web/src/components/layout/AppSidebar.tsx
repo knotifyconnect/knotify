@@ -16,7 +16,7 @@ import {
   Search,
   Settings,
 } from 'lucide-react'
-import { KAvatar, KnotifyMark, KnotifyWordmark } from '@/lib/knotify'
+import { KAvatar, KnotifyLogoImg } from '@/lib/knotify'
 import { supabase } from '@/lib/supabase'
 import { useSessionStore } from '@/store/session'
 import { apiGet } from '@/lib/api'
@@ -120,8 +120,7 @@ export function AppSidebar() {
           }}
           aria-label="Go to home"
         >
-          <KnotifyMark size={22} color="var(--signal)" />
-          <KnotifyWordmark size={22} />
+          <KnotifyLogoImg variant="wordmark" height={24} />
         </button>
 
         {/* Nav items */}

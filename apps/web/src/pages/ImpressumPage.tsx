@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { KnotifyLogo, KBtn } from '@/lib/knotify'
+import { KnotifyLogoImg, KBtn } from '@/lib/knotify'
 
 export function ImpressumPage() {
   const navigate = useNavigate()
@@ -23,7 +23,7 @@ export function ImpressumPage() {
           borderBottom: '0.5px solid var(--rule-soft)',
         }}
       >
-        <KnotifyLogo size={19} />
+        <KnotifyLogoImg variant="wordmark" height={24} />
         <KBtn variant="ghost" size="sm" onClick={() => navigate('/')}>← Back</KBtn>
       </nav>
 

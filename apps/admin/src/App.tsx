@@ -42,40 +42,14 @@ const T = {
   radiusSm:  '8px',
 }
 
-// ── Logo ──────────────────────────────────────────────────────────────────────
-function KnotifyMark({ size = 24, color = T.signal }: { size?: number; color?: string }) {
+// ── Logo (official raster lockup) ───────────────────────────────────────────
+function Logo({ size = 20 }: { size?: number; light?: boolean }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M16 4 C 22 4, 26 8, 26 14 C 26 20, 22 24, 16 24 C 10 24, 6 20, 6 14
-           M 16 4 C 12 8, 12 14, 16 18 C 20 22, 26 22, 28 18
-           M 6 14 C 10 14, 14 18, 14 22"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function Logo({ size = 20, light = false }: { size?: number; light?: boolean }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, lineHeight: 1 }}>
-      <KnotifyMark size={size} color={light ? T.signal : T.signal} />
-      <span style={{
-        fontFamily: "'Fraunces', Georgia, serif",
-        fontStyle: 'italic',
-        fontSize: size,
-        fontWeight: 400,
-        letterSpacing: '-0.03em',
-        color: light ? '#fff' : T.ink,
-        lineHeight: 1,
-        userSelect: 'none',
-      }}>
-        knotify
-      </span>
-    </span>
+    <img
+      src="/logo.png"
+      alt="knotify"
+      style={{ height: Math.round(size * 1.25), width: 'auto', display: 'block', userSelect: 'none' }}
+    />
   )
 }
 
