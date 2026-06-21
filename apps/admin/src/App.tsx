@@ -500,7 +500,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: `0.5px solid ${T.ruleSoft}` }}>
-                  {['Name', 'Email', 'Role', 'Status', 'Signed up', 'Consent', 'Actions'].map(h => (
+                  {['Name', 'Email', 'Role', 'Interests', 'Status', 'Signed up', 'Consent', 'Actions'].map(h => (
                     <th key={h} style={{
                       padding: '10px 24px',
                       textAlign: 'left',
@@ -537,6 +537,30 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
                     </td>
                     <td style={{ padding: '16px 24px', fontSize: 13, color: T.inkMuted, textTransform: 'capitalize' }}>
                       {s.role ?? <span style={{ color: T.inkFaint }}>—</span>}
+                    </td>
+                    <td style={{ padding: '16px 24px', maxWidth: 260 }}>
+                      {(s.interests ?? []).length === 0 ? (
+                        <span style={{ color: T.inkFaint, fontSize: 13 }}>—</span>
+                      ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                          {(s.interests ?? []).map(i => (
+                            <span
+                              key={i}
+                              style={{
+                                padding: '2px 9px',
+                                borderRadius: 999,
+                                background: T.paperSoft,
+                                border: `0.5px solid ${T.rule}`,
+                                color: T.inkMuted,
+                                fontSize: 11,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {i}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '16px 24px' }}>
                       <Badge status={s.status} />

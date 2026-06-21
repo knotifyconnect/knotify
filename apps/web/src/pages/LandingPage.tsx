@@ -211,7 +211,7 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <input
           type="text"
@@ -248,9 +248,9 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <div>
           <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 8 }}>
-            What are you into? (optional — helps us match people & events)
+            What are you into? <span style={{ opacity: 0.75 }}>(optional — helps us match people &amp; events)</span>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
             {INTEREST_OPTIONS.map(i => {
               const on = interests.includes(i)
               return (
@@ -259,12 +259,12 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
                   type="button"
                   onClick={() => toggleInterest(i)}
                   style={{
-                    padding: '5px 12px',
+                    padding: '6px 13px',
                     borderRadius: 999,
                     border: `0.5px solid ${on ? 'var(--signal)' : 'var(--rule)'}`,
                     background: on ? 'var(--signal)' : 'transparent',
                     color: on ? '#fff' : 'var(--ink-muted)',
-                    fontSize: 12,
+                    fontSize: 12.5,
                     cursor: 'pointer',
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     transition: 'all 0.14s',
@@ -278,28 +278,62 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
         </div>
       )}
 
-      <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+      {/* International newcomer — styled selectable row */}
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 11,
+          padding: '11px 14px',
+          borderRadius: 10,
+          border: `0.5px solid ${isInternational ? 'var(--signal)' : 'var(--rule)'}`,
+          background: isInternational ? 'var(--signal-soft)' : 'white',
+          cursor: 'pointer',
+          transition: 'all 0.14s',
+        }}
+      >
         <input
           type="checkbox"
           checked={isInternational}
           onChange={e => setIsInternational(e.target.checked)}
-          style={{ accentColor: 'var(--signal)', flexShrink: 0 }}
+          style={{ width: 16, height: 16, accentColor: 'var(--signal)', flexShrink: 0 }}
         />
-        <span style={{ fontSize: 12.5, color: 'var(--ink-muted)' }}>
+        <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>
           I'm an international newcomer to Munich
         </span>
       </label>
+
+      {/* Consent — GDPR required */}
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={consent}
+          onChange={e => setConsent(e.target.checked)}
+          style={{ marginTop: 2, width: 16, height: 16, accentColor: 'var(--signal)', flexShrink: 0 }}
+        />
+        <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.55 }}>
+          I agree to receive product updates and occasional marketing communications from knotify.
+          I can unsubscribe at any time. See our{' '}
+          <a href="/privacy" style={{ color: 'var(--ink-muted)', textDecoration: 'underline' }}>
+            Privacy Policy
+          </a>.
+        </span>
+      </label>
+
+      {errorMsg && (
+        <div style={{ fontSize: 12, color: 'var(--signal)' }}>{errorMsg}</div>
+      )}
 
       <button
         type="submit"
         disabled={state === 'loading'}
         style={{
-          padding: '12px 22px',
+          padding: '13px 22px',
           borderRadius: 10,
           background: 'var(--signal)',
           color: '#fff',
           border: 'none',
-          fontSize: 14,
+          fontSize: 14.5,
           fontWeight: 600,
           cursor: state === 'loading' ? 'not-allowed' : 'pointer',
           opacity: state === 'loading' ? 0.7 : 1,
@@ -308,28 +342,6 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
       >
         {state === 'loading' ? 'Joining…' : 'Join waiting list'}
       </button>
-
-      {/* Consent checkbox — GDPR required */}
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, cursor: 'pointer' }}>
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={e => setConsent(e.target.checked)}
-          style={{ marginTop: 2, accentColor: 'var(--signal)', flexShrink: 0 }}
-        />
-        <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.55 }}>
-          I agree to receive product updates and occasional marketing communications from knotify.
-          I can unsubscribe at any time. See our{' '}
-          <a href="/privacy" style={{ color: 'var(--ink-muted)', textDecoration: 'underline' }}>
-            Privacy Policy
-          </a>
-          .
-        </span>
-      </label>
-
-      {errorMsg && (
-        <div style={{ fontSize: 12, color: 'var(--signal)' }}>{errorMsg}</div>
-      )}
     </form>
   )
 }
