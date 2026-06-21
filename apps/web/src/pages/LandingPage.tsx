@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KnotifyLogoImg, KBtn, VerifiedBadge } from '@/lib/knotify'
-import { WAITLIST_ROLES as ROLE_OPTIONS, INTERESTS as INTEREST_OPTIONS } from '@/lib/taxonomy'
+import { WAITLIST_ROLES as ROLE_OPTIONS } from '@/lib/taxonomy'
 
 // ─── Animated Network Graphic ────────────────────────────────────────────────
 function NetworkGraphic() {
@@ -142,15 +142,10 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('')
-  const [interests, setInterests] = useState<string[]>([])
   const [isInternational, setIsInternational] = useState(false)
   const [consent, setConsent] = useState(false)
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
-
-  function toggleInterest(i: string) {
-    setInterests(prev => (prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]))
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -170,7 +165,6 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
           name,
           email,
           role: role || null,
-          interests,
           is_international: isInternational,
           marketing_consent: consent,
         }),
@@ -244,39 +238,6 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
           </option>
         ))}
       </select>
-
-      {!compact && (
-        <div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 8 }}>
-            What are you into? <span style={{ opacity: 0.75 }}>(optional — helps us match people &amp; events)</span>
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-            {INTEREST_OPTIONS.map(i => {
-              const on = interests.includes(i)
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => toggleInterest(i)}
-                  style={{
-                    padding: '6px 13px',
-                    borderRadius: 999,
-                    border: `0.5px solid ${on ? 'var(--signal)' : 'var(--rule)'}`,
-                    background: on ? 'var(--signal)' : 'transparent',
-                    color: on ? '#fff' : 'var(--ink-muted)',
-                    fontSize: 12.5,
-                    cursor: 'pointer',
-                    fontFamily: "'IBM Plex Sans', sans-serif",
-                    transition: 'all 0.14s',
-                  }}
-                >
-                  {i}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
 
       {/* International newcomer — styled selectable row */}
       <label

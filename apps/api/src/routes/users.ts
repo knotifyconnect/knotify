@@ -268,12 +268,6 @@ function normaliseDiscoverText(value: unknown) {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
 }
 
-function discoverStatusLabel(status: unknown) {
-  if (status === 'employed') return 'employed'
-  if (status === 'open_to_work') return 'open to work'
-  return 'studying'
-}
-
 async function skillsForUsers(userIds: string[]) {
   const byUser = new Map<string, DiscoverSkill[]>()
   if (userIds.length === 0) return byUser
@@ -319,11 +313,43 @@ function discoverProfileSignal(user: any, skills: DiscoverSkill[]) {
   return Math.min(score, 100)
 }
 
+// ── Connective-layer matching helpers ──────────────────────────────────────
+function lcSet(arr: unknown): Set<string> {
+  if (!Array.isArray(arr)) return new Set()
+  return new Set(arr.filter((x): x is string => typeof x === 'string').map((x) => x.trim().toLowerCase()))
+}
+
+// Returns the original-cased labels from `theirs` that also appear in `mine`.
+function overlapLabels(mine: Set<string>, theirs: unknown): string[] {
+  if (!Array.isArray(theirs)) return []
+  const out: string[] = []
+  for (const v of theirs) {
+    if (typeof v === 'string' && mine.has(v.trim().toLowerCase())) out.push(v)
+  }
+  return out
+}
+
 function discoverReasonFor(me: any, mySkills: DiscoverSkill[], candidate: any, candidateSkills: DiscoverSkill[], mutualCount = 0) {
   const mySkillNames = new Set(mySkills.map((s) => normaliseDiscoverText(s.name)).filter(Boolean))
   const sharedSkills = candidateSkills
     .filter((s) => mySkillNames.has(normaliseDiscoverText(s.name)))
     .map((s) => s.name)
+
+  // Connective layer: interests, goals, languages
+  const myInterests = lcSet(me?.interests)
+  const sharedInterests = overlapLabels(myInterests, candidate?.interests)
+  const myGoals = lcSet(me?.goals)
+  const candGoals = lcSet(candidate?.goals)
+  const sharedGoals = overlapLabels(myGoals, candidate?.goals)
+  const sharedLangs = overlapLabels(lcSet(me?.languages), candidate?.languages)
+
+  // Complementary goal pairing — the highest-value match (one mentors, one seeks)
+  const mentorMatch =
+    (myGoals.has('find a mentor') && candGoals.has('mentor others')) ||
+    (myGoals.has('mentor others') && candGoals.has('find a mentor'))
+  const iSeekMentor = myGoals.has('find a mentor') && candGoals.has('mentor others')
+
+  const bothInternational = me?.is_international === true && candidate?.is_international === true
 
   const sameCity =
     profileText(me?.location_city) &&
@@ -335,51 +361,55 @@ function discoverReasonFor(me: any, mySkills: DiscoverSkill[], candidate: any, c
     profileText(candidate?.university) &&
     normaliseDiscoverText(me.university) === normaliseDiscoverText(candidate.university)
 
-  const sameStatus =
-    profileText(me?.status) &&
-    profileText(candidate?.status) &&
-    normaliseDiscoverText(me.status) === normaliseDiscoverText(candidate.status)
-
+  const samePersona = profileText(me?.persona) && me?.persona === candidate?.persona
   const profileSignal = discoverProfileSignal(candidate, candidateSkills)
 
   let score = 0
-  if (sameCity) score += 4
+  score += Math.min(sharedInterests.length, 4) * 4
+  if (mentorMatch) score += 8
+  score += Math.min(sharedGoals.length, 3) * 2
+  if (bothInternational) score += 3
+  score += Math.min(sharedLangs.length, 2) * 1.5
+  if (samePersona) score += 1
   if (sameUniversity) score += 4
-  if (sameStatus) score += 1.5
-  score += Math.min(sharedSkills.length, 4) * 3
+  if (sameCity) score += 2
+  score += Math.min(sharedSkills.length, 4) * 2
   score += Math.min(mutualCount, 5) * 2
-  score += Math.min(candidateSkills.length, 5) * 0.75
-  if (profileSignal >= 70) score += 2
+  if (profileSignal >= 70) score += 1
 
   const tags: string[] = []
-  if (sameCity && candidate.location_city) tags.push(candidate.location_city)
+  if (sharedInterests.length) tags.push(...sharedInterests.slice(0, 2))
+  if (bothInternational) tags.push('New to Munich')
+  if (sharedLangs.length) tags.push(sharedLangs[0])
   if (sameUniversity && candidate.university) tags.push(candidate.university)
-  if (sharedSkills.length) tags.push(...sharedSkills.slice(0, 2))
   if (mutualCount > 0) tags.push(`${mutualCount} mutual`)
-  if (profileSignal >= 70) tags.push('strong profile')
+  if (sharedSkills.length) tags.push(sharedSkills[0])
 
-  let reason = 'Has enough profile context to explore intentionally.'
-
-  if (sameCity && sharedSkills.length) {
-    reason = `Also in ${candidate.location_city} and shares ${sharedSkills[0]}.`
-  } else if (sameUniversity && sharedSkills.length) {
-    reason = `Also connected to ${candidate.university} and shares ${sharedSkills[0]}.`
-  } else if (sharedSkills.length >= 2) {
-    reason = `Shares ${sharedSkills.slice(0, 2).join(' and ')} with you.`
-  } else if (sharedSkills.length === 1) {
-    reason = `Shares ${sharedSkills[0]} with you.`
+  let reason = 'Worth getting to know.'
+  if (iSeekMentor) {
+    reason = `Open to mentoring${sharedInterests.length ? ` — also into ${sharedInterests[0]}` : ''}.`
+  } else if (mentorMatch) {
+    reason = 'Looking for a mentor like you.'
+  } else if (sharedInterests.length >= 2) {
+    reason = `Both into ${sharedInterests.slice(0, 2).join(' and ')}.`
+  } else if (sharedInterests.length === 1 && bothInternational) {
+    reason = `Also new to Munich and into ${sharedInterests[0]}.`
+  } else if (sharedInterests.length === 1) {
+    reason = `Also into ${sharedInterests[0]}.`
+  } else if (bothInternational) {
+    reason = `Also new to Munich${candidate.home_country ? ` (from ${candidate.home_country})` : ''}.`
+  } else if (sharedGoals.length) {
+    reason = `Shares your goal: ${sharedGoals[0].toLowerCase()}.`
+  } else if (sharedLangs.length) {
+    reason = `Also speaks ${sharedLangs[0]}.`
   } else if (sameUniversity) {
-    reason = `Also connected to ${candidate.university}.`
-  } else if (sameCity) {
-    reason = `Also based in ${candidate.location_city}.`
+    reason = `Also at ${candidate.university}.`
+  } else if (sharedSkills.length) {
+    reason = `Shares ${sharedSkills[0]} with you.`
   } else if (mutualCount > 0) {
     reason = `${mutualCount} mutual connection${mutualCount === 1 ? '' : 's'} in your knot.`
-  } else if (sameStatus) {
-    reason = `Similar current status: ${discoverStatusLabel(candidate.status)}.`
-  } else if (profileSignal >= 70) {
-    reason = `Strong profile signal with ${candidateSkills.length} skill${candidateSkills.length === 1 ? '' : 's'}.`
-  } else if (candidateSkills.length > 0) {
-    reason = `Shows ${candidateSkills[0].name} and related skills.`
+  } else if (sameCity) {
+    reason = `Also based in ${candidate.location_city}.`
   }
 
   return {
@@ -781,7 +811,7 @@ usersRouter.get('/suggestions', requireAuth, async (req, res) => {
 
     const myUser = await supabase
       .from('users')
-      .select('id, full_name, username, headline, bio, location_city, university, current_company, status')
+      .select('id, full_name, username, headline, bio, location_city, university, current_company, status, persona, interests, goals, is_international, home_country, munich_tenure, languages')
       .eq('id', req.appUserId)
       .maybeSingle()
 
@@ -790,7 +820,7 @@ usersRouter.get('/suggestions', requireAuth, async (req, res) => {
     const excluded = [...excludeIds]
     const candidatesQuery = await supabase
       .from('users')
-      .select('id, full_name, username, avatar_url, headline, bio, location_city, university, current_company, status, created_at')
+      .select('id, full_name, username, avatar_url, headline, bio, location_city, university, current_company, status, persona, interests, goals, is_international, home_country, munich_tenure, languages, created_at')
       .not('id', 'in', `(${excluded.join(',')})`)
       .order('created_at', { ascending: false })
       .limit(80)
