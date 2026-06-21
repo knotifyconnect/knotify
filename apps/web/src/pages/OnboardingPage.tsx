@@ -1,437 +1,360 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet, apiPatch, apiPut } from '../lib/api'
+import { apiGet, apiPatch } from '../lib/api'
+import {
+  PERSONAS, INTERESTS, GOALS, MUNICH_TENURE, COMMON_LANGUAGES,
+} from '../lib/taxonomy'
 
 type Me = {
   id: string
   email?: string | null
   full_name?: string | null
-  headline?: string | null
   location_city?: string | null
-  university?: string | null
-  current_company?: string | null
-  status?: 'studying' | 'open_to_work' | 'employed' | null
+  persona?: string | null
+  interests?: string[] | null
+  goals?: string[] | null
+  is_international?: boolean | null
+  home_country?: string | null
+  munich_tenure?: string | null
+  languages?: string[] | null
 }
 
-type Skill = {
-  id: number
-  name: string
-  category: string | null
-}
+type MeResponse = { user: Me }
+type OnboardingStatus = { complete: boolean; missing: string[] }
 
-type ProfileExtended = {
-  skills: Array<{ skill_id: number; id?: number; name?: string; category?: string | null }>
-}
-
-type CatalogResponse = {
-  catalog: Skill[]
-}
-
-type MeResponse = {
-  user: Me
-}
-
-type OnboardingStatus = {
-  complete: boolean
-  missing: string[]
-  skillsCount: number
-  minSkills: number
-}
-
-const STATUS_OPTIONS = [
-  { value: 'studying', label: 'Studying' },
-  { value: 'open_to_work', label: 'Open to work' },
-  { value: 'employed', label: 'Employed' },
-] as const
-
-const pageStyle = {
+// ── shared styles ──────────────────────────────────────────────────────────
+const page = {
   minHeight: '100vh',
   background:
-    'radial-gradient(circle at 18% 0%, rgba(194, 57, 43, 0.10), transparent 32%), linear-gradient(135deg, #f8f3ea 0%, #eee4d6 100%)',
-  padding: '34px 18px 48px',
+    'radial-gradient(circle at 18% 0%, rgba(216,68,43,0.10), transparent 34%), var(--paper, #f5f0e8)',
+  fontFamily: "'IBM Plex Sans', sans-serif",
+  color: 'var(--ink)',
+  padding: '40px 18px 64px',
 } as const
 
-const shellStyle = {
-  maxWidth: 1140,
+const card = {
+  maxWidth: 640,
   margin: '0 auto',
-  display: 'grid',
-  gap: 22,
+  background: 'white',
+  border: '0.5px solid var(--rule)',
+  borderRadius: 24,
+  padding: 'clamp(24px, 4vw, 40px)',
+  boxShadow: '0 18px 60px rgba(40,30,20,0.08)',
 } as const
 
-const cardStyle = {
-  border: '1px solid rgba(35, 31, 28, 0.10)',
-  borderRadius: 30,
-  background: 'rgba(255,255,255,0.86)',
-  boxShadow: '0 28px 90px rgba(35, 31, 28, 0.09)',
-} as const
-
-const fieldStyle = {
+const input = {
   width: '100%',
-  border: '1px solid rgba(35, 31, 28, 0.16)',
-  borderRadius: 15,
-  padding: '13px 14px',
+  padding: '12px 14px',
+  borderRadius: 12,
+  border: '0.5px solid var(--rule)',
+  background: '#fffdf9',
   fontSize: 15,
-  background: '#fffaf3',
   color: 'var(--ink)',
   outline: 'none',
   boxSizing: 'border-box',
+  fontFamily: "'IBM Plex Sans', sans-serif",
 } as const
 
-const mutedStyle = {
-  color: 'var(--ink-muted)',
-  fontSize: 13,
-  lineHeight: 1.55,
-} as const
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string
-  hint?: string
-  children: ReactNode
-}) {
+function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <label style={{ display: 'grid', gap: 7 }}>
-      <span style={{ fontSize: 13, fontWeight: 850, color: 'var(--ink)' }}>{label}</span>
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '8px 14px',
+        borderRadius: 999,
+        border: `0.5px solid ${on ? 'var(--signal)' : 'var(--rule)'}`,
+        background: on ? 'var(--signal)' : 'transparent',
+        color: on ? '#fff' : 'var(--ink-muted)',
+        fontSize: 13.5,
+        cursor: 'pointer',
+        fontFamily: "'IBM Plex Sans', sans-serif",
+        transition: 'all 0.14s',
+      }}
+    >
       {children}
-      {hint ? <span style={mutedStyle}>{hint}</span> : null}
-    </label>
+    </button>
   )
 }
 
-function statusLabel(value: Me['status']) {
-  if (value === 'studying') return 'Studying'
-  if (value === 'employed') return 'Employed'
-  return 'Open to work'
+function StepHeader({ eyebrow, title, sub }: { eyebrow: string; title: string; sub?: string }) {
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--signal)', fontWeight: 700 }}>
+        {eyebrow}
+      </div>
+      <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(26px, 4vw, 34px)', fontWeight: 400, letterSpacing: '-0.03em', margin: '8px 0 6px' }}>
+        {title}
+      </h2>
+      {sub && <p style={{ color: 'var(--ink-muted)', fontSize: 14, lineHeight: 1.55, margin: 0 }}>{sub}</p>}
+    </div>
+  )
 }
+
+const TOTAL_STEPS = 4
 
 export function OnboardingPage() {
   const navigate = useNavigate()
-
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [step, setStep] = useState(0)
 
+  // form state
   const [fullName, setFullName] = useState('')
-  const [headline, setHeadline] = useState('')
-  const [locationCity, setLocationCity] = useState('Munich')
-  const [university, setUniversity] = useState('')
-  const [currentCompany, setCurrentCompany] = useState('')
-  const [status, setStatus] = useState<'studying' | 'open_to_work' | 'employed'>('open_to_work')
-
-  const [catalog, setCatalog] = useState<Skill[]>([])
-  const [selectedSkillIds, setSelectedSkillIds] = useState<number[]>([])
-  const [skillQuery, setSkillQuery] = useState('')
+  const [persona, setPersona] = useState<string>('')
+  const [city, setCity] = useState('Munich')
+  const [isInternational, setIsInternational] = useState<boolean | null>(null)
+  const [homeCountry, setHomeCountry] = useState('')
+  const [tenure, setTenure] = useState('')
+  const [languages, setLanguages] = useState<string[]>([])
+  const [customLang, setCustomLang] = useState('')
+  const [interests, setInterests] = useState<string[]>([])
+  const [goals, setGoals] = useState<string[]>([])
 
   useEffect(() => {
     let mounted = true
-
-    async function load() {
-      setLoading(true)
-      setError(null)
-
+    ;(async () => {
       try {
-        const [meResult, catalogResult, extendedResult] = await Promise.all([
-          apiGet<MeResponse>('/api/users/me'),
-          apiGet<CatalogResponse>('/api/users/skills/catalog'),
-          apiGet<ProfileExtended>('/api/users/me/profile-extended'),
-        ])
-
+        const { user } = await apiGet<MeResponse>('/api/users/me')
         if (!mounted) return
-
-        const user = meResult.user
         setFullName(user.full_name ?? '')
-        setHeadline(user.headline ?? '')
-        setLocationCity(user.location_city ?? 'Munich')
-        setUniversity(user.university ?? '')
-        setCurrentCompany(user.current_company ?? '')
-        setStatus(user.status ?? 'open_to_work')
-        setCatalog(catalogResult.catalog ?? [])
-        setSelectedSkillIds((extendedResult.skills ?? []).map((s) => s.skill_id).filter(Boolean))
+        setPersona(user.persona ?? '')
+        setCity(user.location_city ?? 'Munich')
+        setIsInternational(user.is_international ?? null)
+        setHomeCountry(user.home_country ?? '')
+        setTenure(user.munich_tenure ?? '')
+        setLanguages(user.languages ?? [])
+        setInterests(user.interests ?? [])
+        setGoals(user.goals ?? [])
       } catch (err) {
-        if (!mounted) return
-        setError(err instanceof Error ? err.message : 'Failed to load onboarding')
+        if (mounted) setError(err instanceof Error ? err.message : 'Failed to load')
       } finally {
         if (mounted) setLoading(false)
       }
-    }
-
-    void load()
-
-    return () => {
-      mounted = false
-    }
+    })()
+    return () => { mounted = false }
   }, [])
 
-  const selectedSkills = useMemo(() => {
-    const selected = new Set(selectedSkillIds)
-    return catalog.filter((skill) => selected.has(skill.id))
-  }, [catalog, selectedSkillIds])
-
-  const filteredSkills = useMemo(() => {
-    const q = skillQuery.trim().toLowerCase()
-    const selected = new Set(selectedSkillIds)
-
-    return catalog
-      .filter((skill) => !selected.has(skill.id))
-      .filter((skill) => {
-        if (!q) return true
-        return `${skill.name} ${skill.category ?? ''}`.toLowerCase().includes(q)
-      })
-      .slice(0, 20)
-  }, [catalog, selectedSkillIds, skillQuery])
-
-  const hasContext = Boolean(headline.trim() || university.trim() || currentCompany.trim())
-
-  const checks = [
-    { label: 'Add your name', done: fullName.trim().length >= 2 },
-    { label: 'Add context', done: hasContext },
-    { label: 'Add your city', done: locationCity.trim().length >= 2 },
-    { label: 'Choose 3 skills', done: selectedSkillIds.length >= 3 },
-  ]
-
-  const completedCount = checks.filter((check) => check.done).length
-  const canSave = completedCount === checks.length
-
-  function toggleSkill(skillId: number) {
-    setSelectedSkillIds((prev) => {
-      if (prev.includes(skillId)) return prev.filter((id) => id !== skillId)
-      if (prev.length >= 5) return prev
-      return [...prev, skillId]
-    })
+  function toggle(list: string[], setList: (v: string[]) => void, value: string, max?: number) {
+    if (list.includes(value)) setList(list.filter(x => x !== value))
+    else if (!max || list.length < max) setList([...list, value])
   }
 
-  async function save() {
-    if (!canSave) {
-      setError('Finish the missing items first. Empty profiles make the network useless.')
-      return
-    }
+  function addCustomLang() {
+    const v = customLang.trim()
+    if (v && !languages.includes(v)) setLanguages([...languages, v])
+    setCustomLang('')
+  }
 
+  const stepValid = [
+    fullName.trim().length >= 2 && !!persona,
+    !!tenure && (isInternational !== true || homeCountry.trim().length > 1),
+    interests.length >= 3,
+    goals.length >= 1,
+  ]
+
+  async function finish() {
     setSaving(true)
     setError(null)
-
     try {
       await apiPatch('/api/users/me', {
         fullName: fullName.trim(),
-        headline: headline.trim() || null,
-        locationCity: locationCity.trim(),
-        university: university.trim(),
-        currentCompany: currentCompany.trim(),
-        status,
+        persona,
+        locationCity: city.trim() || 'Munich',
+        isInternational,
+        homeCountry: isInternational ? homeCountry.trim() : null,
+        munichTenure: tenure,
+        languages,
+        interests,
+        goals,
       })
-
-      await apiPut('/api/users/me/skills', {
-        skillIds: selectedSkillIds,
-      })
-
-      const statusResult = await apiGet<OnboardingStatus>('/api/users/me/onboarding-status')
-      if (!statusResult.complete) {
-        throw new Error(`Still missing: ${statusResult.missing.join(', ')}`)
-      }
-
-      navigate('/profile', { replace: true })
+      const status = await apiGet<OnboardingStatus>('/api/users/me/onboarding-status')
+      if (!status.complete) throw new Error(`Still missing: ${status.missing.join(', ')}`)
+      navigate('/home', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save onboarding')
+      setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
   }
 
+  function next() {
+    setError(null)
+    if (step < TOTAL_STEPS - 1) setStep(step + 1)
+    else void finish()
+  }
+
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'grid', placeItems: 'center', color: 'var(--ink-muted)' }}>
-        Loading profile setup...
+      <div style={{ ...page, display: 'grid', placeItems: 'center' }}>
+        <span style={{ color: 'var(--ink-muted)' }}>Loading…</span>
       </div>
     )
   }
 
   return (
-    <main style={pageStyle}>
-      <section style={shellStyle}>
-        <header style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 18, alignItems: 'start' }}>
-          <div style={{ display: 'grid', gap: 10, maxWidth: 760 }}>
-            <div style={{ fontSize: 12, letterSpacing: '0.20em', textTransform: 'uppercase', color: 'var(--signal)', fontWeight: 900 }}>
-              knotify / profile setup
-            </div>
-            <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(42px, 6vw, 72px)', lineHeight: 0.92, letterSpacing: '-0.045em', margin: 0, fontWeight: 400 }}>
-              Build your first signal.
-            </h1>
-            <p style={{ maxWidth: 700, color: 'var(--ink-muted)', fontSize: 17, lineHeight: 1.62, margin: 0 }}>
-              This is not a CV. It is the card people see before they decide whether to connect, refer, message, or help.
-            </p>
-          </div>
+    <main style={page}>
+      <div style={{ maxWidth: 640, margin: '0 auto 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <KnotifyWord />
+        <span style={{ fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '0.06em' }}>
+          Step {step + 1} of {TOTAL_STEPS}
+        </span>
+      </div>
 
-          <div style={{ minWidth: 156, ...cardStyle, padding: 16 }}>
-            <div style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 800 }}>Ready</div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
-              <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 40, lineHeight: 1 }}>{completedCount}</span>
-              <span style={{ color: 'var(--ink-muted)' }}>/ {checks.length}</span>
-            </div>
-          </div>
-        </header>
+      {/* progress bar */}
+      <div style={{ maxWidth: 640, margin: '0 auto 18px', height: 4, borderRadius: 999, background: 'var(--rule-soft, rgba(84,72,58,0.12))' }}>
+        <div style={{ width: `${((step + 1) / TOTAL_STEPS) * 100}%`, height: '100%', borderRadius: 999, background: 'var(--signal)', transition: 'width 0.25s' }} />
+      </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 360px', gap: 18, alignItems: 'start' }}>
-          <section style={{ ...cardStyle, padding: 26, display: 'grid', gap: 24 }}>
-            <div style={{ display: 'grid', gap: 14 }}>
+      <div style={card}>
+        {step === 0 && (
+          <>
+            <StepHeader eyebrow="Welcome to knotify" title="Let's start with you." sub="The basics so people can recognise you." />
+            <div style={{ display: 'grid', gap: 16 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Full name</span>
+                <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Your name" style={input} />
+              </label>
               <div>
-                <div style={{ color: 'var(--signal)', fontWeight: 900, fontSize: 12, letterSpacing: '0.16em', textTransform: 'uppercase' }}>
-                  01 / Identity
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>I am a…</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {PERSONAS.map(p => (
+                    <Chip key={p.value} on={persona === p.value} onClick={() => setPersona(p.value)}>{p.label}</Chip>
+                  ))}
                 </div>
-                <h2 style={{ margin: '8px 0 4px', fontSize: 25, letterSpacing: '-0.03em' }}>How should people remember you?</h2>
-                <p style={{ ...mutedStyle, margin: 0 }}>Use a real name and a headline that gives people context quickly.</p>
               </div>
-
-              <Field label="Name">
-                <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jaydip Gohil" style={fieldStyle} />
-              </Field>
-
-              <Field label="Headline" hint="Examples: CS student building AI products, product designer, robotics researcher.">
-                <input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="CS student building AI products" maxLength={120} style={fieldStyle} />
-              </Field>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>City</span>
+                <input value={city} onChange={e => setCity(e.target.value)} placeholder="Munich" style={input} />
+              </label>
             </div>
+          </>
+        )}
 
-            <div style={{ height: 1, background: 'rgba(35, 31, 28, 0.08)' }} />
-
-            <div style={{ display: 'grid', gap: 14 }}>
+        {step === 1 && (
+          <>
+            <StepHeader eyebrow="You & Munich" title="Help us place you." sub="This is how we connect newcomers with the right people and events." />
+            <div style={{ display: 'grid', gap: 18 }}>
               <div>
-                <div style={{ color: 'var(--signal)', fontWeight: 900, fontSize: 12, letterSpacing: '0.16em', textTransform: 'uppercase' }}>
-                  02 / Context
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Are you an international newcomer to Munich?</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Chip on={isInternational === true} onClick={() => setIsInternational(true)}>Yes</Chip>
+                  <Chip on={isInternational === false} onClick={() => setIsInternational(false)}>No, I'm local</Chip>
                 </div>
-                <h2 style={{ margin: '8px 0 4px', fontSize: 25, letterSpacing: '-0.03em' }}>Where do you belong right now?</h2>
-                <p style={{ ...mutedStyle, margin: 0 }}>This helps the network place you: city, school, company, project, or current direction.</p>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <Field label="City">
-                  <input value={locationCity} onChange={(e) => setLocationCity(e.target.value)} placeholder="Munich" style={fieldStyle} />
-                </Field>
+              {isInternational === true && (
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>Where are you from?</span>
+                  <input value={homeCountry} onChange={e => setHomeCountry(e.target.value)} placeholder="e.g. India, Brazil, Italy" style={input} />
+                </label>
+              )}
 
-                <Field label="Current status">
-                  <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} style={fieldStyle}>
-                    {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
-                </Field>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <Field label="University">
-                  <input value={university} onChange={(e) => setUniversity(e.target.value)} placeholder="TUM" style={fieldStyle} />
-                </Field>
-
-                <Field label="Company or project">
-                  <input value={currentCompany} onChange={(e) => setCurrentCompany(e.target.value)} placeholder="knotify / student founder" style={fieldStyle} />
-                </Field>
-              </div>
-            </div>
-
-            <div style={{ height: 1, background: 'rgba(35, 31, 28, 0.08)' }} />
-
-            <div style={{ display: 'grid', gap: 14 }}>
               <div>
-                <div style={{ color: 'var(--signal)', fontWeight: 900, fontSize: 12, letterSpacing: '0.16em', textTransform: 'uppercase' }}>
-                  03 / Proof direction
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>How long have you been in Munich?</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {MUNICH_TENURE.map(t => (
+                    <Chip key={t} on={tenure === t} onClick={() => setTenure(t)}>{t}</Chip>
+                  ))}
                 </div>
-                <h2 style={{ margin: '8px 0 4px', fontSize: 25, letterSpacing: '-0.03em' }}>What should people come to you for?</h2>
-                <p style={{ ...mutedStyle, margin: 0 }}>Pick 3 to 5 skills. Start narrow. You can add more proof later.</p>
               </div>
 
-              <input value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder="Search skills..." style={fieldStyle} />
-
-              {selectedSkills.length > 0 ? (
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 850 }}>Selected</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {selectedSkills.map((skill) => (
-                      <button key={skill.id} type="button" onClick={() => toggleSkill(skill.id)} style={{ border: '1px solid rgba(194, 57, 43, 0.38)', background: 'rgba(194, 57, 43, 0.08)', color: 'var(--signal)', borderRadius: 999, padding: '9px 12px', fontSize: 13, fontWeight: 850, cursor: 'pointer' }}>
-                        Selected: {skill.name}
-                      </button>
-                    ))}
-                  </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Languages you speak <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>(optional)</span></div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                  {[...COMMON_LANGUAGES, ...languages.filter(l => !(COMMON_LANGUAGES as readonly string[]).includes(l))].map(l => (
+                    <Chip key={l} on={languages.includes(l)} onClick={() => toggle(languages, setLanguages, l)}>{l}</Chip>
+                  ))}
                 </div>
-              ) : null}
-
-              <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
-                {filteredSkills.map((skill) => (
-                  <button key={skill.id} type="button" onClick={() => toggleSkill(skill.id)} disabled={selectedSkillIds.length >= 5} style={{ border: '1px solid rgba(35, 31, 28, 0.13)', background: '#fffaf3', color: 'var(--ink)', borderRadius: 999, padding: '9px 12px', fontSize: 13, cursor: selectedSkillIds.length >= 5 ? 'not-allowed' : 'pointer', opacity: selectedSkillIds.length >= 5 ? 0.5 : 1 }}>
-                    Add {skill.name}
-                  </button>
-                ))}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    value={customLang}
+                    onChange={e => setCustomLang(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomLang() } }}
+                    placeholder="Add another language"
+                    style={{ ...input, flex: 1 }}
+                  />
+                  <button type="button" onClick={addCustomLang} style={{ ...input, width: 'auto', cursor: 'pointer', background: 'var(--paper-soft, #ede8df)' }}>Add</button>
+                </div>
               </div>
             </div>
+          </>
+        )}
 
-            {error ? (
-              <div style={{ border: '1px solid rgba(180, 40, 40, 0.25)', background: 'rgba(180, 40, 40, 0.08)', color: '#9f1d1d', borderRadius: 16, padding: 13, fontSize: 13 }}>
-                {error}
-              </div>
-            ) : null}
-
-            <button type="button" onClick={save} disabled={saving || !canSave} style={{ border: 0, borderRadius: 999, padding: '15px 18px', background: canSave ? 'var(--signal)' : 'rgba(35, 31, 28, 0.16)', color: canSave ? 'white' : 'rgba(35, 31, 28, 0.50)', fontWeight: 900, cursor: canSave && !saving ? 'pointer' : 'not-allowed', fontSize: 15 }}>
-              {saving ? 'Saving profile...' : canSave ? 'Finish and view profile' : 'Complete the missing signal'}
-            </button>
-          </section>
-
-          <aside style={{ display: 'grid', gap: 14, position: 'sticky', top: 18 }}>
-            <div style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
-              <div style={{ fontSize: 12, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontWeight: 900 }}>
-                Live profile card
-              </div>
-
-              <div style={{ display: 'flex', gap: 13, alignItems: 'center' }}>
-                <div style={{ width: 54, height: 54, borderRadius: 18, display: 'grid', placeItems: 'center', background: 'rgba(194, 57, 43, 0.10)', color: 'var(--signal)', fontWeight: 900, fontSize: 18 }}>
-                  {(fullName.trim()[0] ?? '?').toUpperCase()}
-                </div>
-                <div>
-                  <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: '-0.03em' }}>
-                    {fullName.trim() || 'Your name'}
-                  </div>
-                  <div style={{ color: 'var(--ink-muted)', fontSize: 13, marginTop: 2 }}>
-                    {headline.trim() || 'Add a headline'}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ borderRadius: 999, background: 'rgba(35,31,28,0.06)', padding: '7px 10px', fontSize: 12, color: 'var(--ink-muted)' }}>
-                  {locationCity.trim() || 'City'}
-                </span>
-                <span style={{ borderRadius: 999, background: 'rgba(35,31,28,0.06)', padding: '7px 10px', fontSize: 12, color: 'var(--ink-muted)' }}>
-                  {statusLabel(status)}
-                </span>
-              </div>
-
-              <div style={{ fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.55 }}>
-                {[university.trim(), currentCompany.trim()].filter(Boolean).join(' / ') || 'Add university, company, or project'}
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {selectedSkills.length ? selectedSkills.map((skill) => (
-                  <span key={skill.id} style={{ borderRadius: 999, border: '1px solid rgba(194,57,43,0.22)', background: 'rgba(194,57,43,0.07)', color: 'var(--signal)', padding: '7px 10px', fontSize: 12, fontWeight: 850 }}>
-                    {skill.name}
-                  </span>
-                )) : (
-                  <span style={{ color: 'var(--ink-faint)', fontSize: 13 }}>Your skills will appear here.</span>
-                )}
-              </div>
-            </div>
-
-            <div style={{ ...cardStyle, padding: 18, display: 'grid', gap: 10 }}>
-              {checks.map((check) => (
-                <div key={check.label} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <span style={{ width: 20, height: 20, borderRadius: 999, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 900, background: check.done ? 'rgba(45, 130, 80, 0.16)' : 'rgba(35, 31, 28, 0.09)', color: check.done ? '#21663e' : 'var(--ink-muted)' }}>
-                    {check.done ? '?' : ''}
-                  </span>
-                  <span style={{ fontSize: 13, color: check.done ? 'var(--ink)' : 'var(--ink-muted)', fontWeight: check.done ? 850 : 650 }}>
-                    {check.label}
-                  </span>
-                </div>
+        {step === 2 && (
+          <>
+            <StepHeader eyebrow="Interests" title="What are you into?" sub="Pick at least 3. We use these to match you with people, groups and events — beyond just work." />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {INTERESTS.map(i => (
+                <Chip key={i} on={interests.includes(i)} onClick={() => toggle(interests, setInterests, i)}>{i}</Chip>
               ))}
             </div>
-          </aside>
+            <div style={{ marginTop: 14, fontSize: 12, color: interests.length >= 3 ? 'var(--verd, #1f6b5e)' : 'var(--ink-faint)' }}>
+              {interests.length} selected {interests.length < 3 ? `· pick ${3 - interests.length} more` : '✓'}
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <StepHeader eyebrow="Goals" title="What do you want from knotify?" sub="Pick what matters most — this shapes what we surface for you." />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {GOALS.map(g => (
+                <Chip key={g} on={goals.includes(g)} onClick={() => toggle(goals, setGoals, g)}>{g}</Chip>
+              ))}
+            </div>
+            <div style={{ marginTop: 14, fontSize: 12, color: goals.length >= 1 ? 'var(--verd, #1f6b5e)' : 'var(--ink-faint)' }}>
+              {goals.length} selected {goals.length < 1 ? '· pick at least 1' : '✓'}
+            </div>
+          </>
+        )}
+
+        {error && (
+          <div style={{ marginTop: 18, border: '0.5px solid rgba(216,68,43,0.3)', background: 'rgba(216,68,43,0.07)', color: 'var(--signal)', borderRadius: 12, padding: 12, fontSize: 13 }}>
+            {error}
+          </div>
+        )}
+
+        {/* nav */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 28, gap: 12 }}>
+          <button
+            type="button"
+            onClick={() => { setError(null); setStep(Math.max(0, step - 1)) }}
+            disabled={step === 0}
+            style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', fontSize: 14, cursor: step === 0 ? 'default' : 'pointer', opacity: step === 0 ? 0.4 : 1, fontFamily: "'IBM Plex Sans', sans-serif" }}
+          >
+            ← Back
+          </button>
+          <button
+            type="button"
+            onClick={next}
+            disabled={!stepValid[step] || saving}
+            style={{
+              padding: '12px 28px',
+              borderRadius: 12,
+              border: 'none',
+              background: stepValid[step] && !saving ? 'var(--signal)' : 'rgba(84,72,58,0.2)',
+              color: '#fff',
+              fontWeight: 600,
+              fontSize: 14.5,
+              cursor: stepValid[step] && !saving ? 'pointer' : 'not-allowed',
+              fontFamily: "'IBM Plex Sans', sans-serif",
+            }}
+          >
+            {saving ? 'Saving…' : step === TOTAL_STEPS - 1 ? 'Finish' : 'Continue'}
+          </button>
         </div>
-      </section>
+      </div>
     </main>
+  )
+}
+
+function KnotifyWord() {
+  return (
+    <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 18, letterSpacing: '-0.03em', color: 'var(--ink)' }}>
+      knotify
+    </span>
   )
 }

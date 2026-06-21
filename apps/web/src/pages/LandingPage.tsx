@@ -1,20 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KnotifyLogoImg, KBtn, VerifiedBadge } from '@/lib/knotify'
-
-// ─── Waiting-list taxonomy (seeds the connective layer) ──────────────────────
-const ROLE_OPTIONS = [
-  { value: 'student', label: 'Student' },
-  { value: 'professional', label: 'Professional' },
-  { value: 'professor', label: 'Professor' },
-  { value: 'investor', label: 'Investor' },
-  { value: 'company', label: 'Company / Recruiter' },
-] as const
-
-const INTEREST_OPTIONS = [
-  'Jobs & careers', 'Entrepreneurship', 'Tech', 'Arts & design', 'Music',
-  'Sports', 'Food & cafés', 'Cars', 'Academia', 'Travel', 'Gaming', 'Events & nightlife',
-]
+import { WAITLIST_ROLES as ROLE_OPTIONS, INTERESTS as INTEREST_OPTIONS } from '@/lib/taxonomy'
 
 // ─── Animated Network Graphic ────────────────────────────────────────────────
 function NetworkGraphic() {
