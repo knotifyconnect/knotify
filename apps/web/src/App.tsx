@@ -12,6 +12,7 @@ import { DiscoverPage } from './pages/DiscoverPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { JobsPage } from './pages/JobsPage'
 import { MessagesPage } from './pages/MessagesPage'
+import { QuestsPage } from './pages/QuestsPage'
 import { AdminPage } from './pages/AdminPage'
 import { supabase } from './lib/supabase'
 import { useSessionStore } from './store/session'
@@ -130,6 +131,7 @@ function ProtectedAppRoutes() {
         <Route path="/profile/:userId" element={<ProfilePage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/messages" element={<MessagesPage />} />
+        <Route path="/quests" element={<QuestsPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/auth" element={<Navigate to="/home" replace />} />
         <Route path="*" element={<Navigate to="/home" replace />} />

@@ -21,6 +21,7 @@ import { asksRouter } from './routes/asks.js'
 import { relationshipHomeRouter } from './routes/relationshipHome.js'
 import { betaRouter } from './routes/beta.js'
 import { adminPanelRouter } from './routes/adminPanel.js'
+import { questsRouter } from './routes/quests.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { supabase } from './lib.js'
 
@@ -80,5 +81,6 @@ app.use('/api/asks', asksRouter)
 app.use('/api/relationship-home', relationshipHomeRouter)
 app.use('/api/beta', betaRouter)
 app.use('/api/admin-panel', adminPanelRouter)
+app.use('/api/quests', questsRouter)
 
 app.use(errorHandler)

@@ -15,6 +15,7 @@ import {
   Network,
   Search,
   Settings,
+  Trophy,
 } from 'lucide-react'
 import { KAvatar, KnotifyLogoImg } from '@/lib/knotify'
 import { supabase } from '@/lib/supabase'
@@ -46,6 +47,7 @@ const BASE_ITEMS: NavItem[] = [
   { title: 'Home',      href: '/home',     icon: <Home              size={15} /> },
   { title: 'Your Knot', href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
   { title: 'Discover',  href: '/discover', icon: <Search            size={15} /> },
+  { title: 'Quests',    href: '/quests',   icon: <Trophy            size={15} /> },
   { title: 'Jobs',      sub: 'Warm',       href: '/jobs',           icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
   { title: 'Messages',  href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },
 ]
