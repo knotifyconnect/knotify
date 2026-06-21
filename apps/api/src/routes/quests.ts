@@ -5,22 +5,38 @@ import { supabase } from '../lib.js'
 export const questsRouter = Router()
 
 // ── Quest catalog (code-defined; completions persisted in user_quests) ───────
-type QuestCategory = 'profile' | 'network' | 'social'
+// 'verified' quests are checked server-side against real data (not gameable).
+// 'self' quests are real-life challenges done out in the world — completed on the
+// honour system, which is itself part of building credibility (trust).
+type QuestCategory = 'profile' | 'network' | 'social' | 'explore' | 'give'
+type QuestType = 'verified' | 'self'
 type Quest = {
   key: string
   title: string
   description: string
   points: number
   category: QuestCategory
+  type: QuestType
+  icon: string
 }
 
 const CATALOG: Quest[] = [
-  { key: 'complete_profile', title: 'Complete your profile', description: 'Add your persona, 3+ interests and a goal.', points: 20, category: 'profile' },
-  { key: 'add_bio_photo',    title: 'Add a bio or photo',    description: 'Help people recognise you.',               points: 10, category: 'profile' },
-  { key: 'curious',          title: 'Pick 5 interests',       description: 'The more we know, the better we match you.', points: 10, category: 'profile' },
-  { key: 'polyglot',         title: 'Add 2 languages',        description: 'Languages help connect internationals.',   points: 10, category: 'profile' },
-  { key: 'first_connection', title: 'Make your first connection', description: 'Reach out and connect with someone.',  points: 15, category: 'network' },
-  { key: 'growing_network',  title: 'Grow to 5 connections',  description: 'Build a real network worth keeping.',      points: 25, category: 'network' },
+  // Verified — getting set up
+  { key: 'complete_profile', title: 'First impressions',     description: 'Complete your profile so people get who you are.',     points: 20, category: 'profile', type: 'verified', icon: '🎯' },
+  { key: 'add_bio_photo',    title: 'Show your face',        description: 'Add a photo or a short bio.',                          points: 10, category: 'profile', type: 'verified', icon: '📸' },
+  { key: 'curious',          title: 'Many sides',            description: 'Pick 5+ interests — work is only part of you.',        points: 10, category: 'profile', type: 'verified', icon: '🎨' },
+  { key: 'polyglot',         title: 'Citizen of the world',  description: 'Add 2+ languages you speak.',                          points: 10, category: 'profile', type: 'verified', icon: '🌍' },
+  { key: 'first_connection', title: 'Ice breaker',           description: 'Make your very first connection.',                     points: 15, category: 'network', type: 'verified', icon: '🤝' },
+  { key: 'growing_network',  title: 'Inner circle',          description: 'Grow to 5 connections.',                               points: 25, category: 'network', type: 'verified', icon: '🔗' },
+
+  // Real-life — out in the world (honour system)
+  { key: 'coffee_stranger',  title: 'Coffee with a stranger', description: 'Meet someone new from knotify for a real coffee.',    points: 30, category: 'social',  type: 'self', icon: '☕' },
+  { key: 'matchmaker',       title: 'Matchmaker',            description: 'Introduce two people in your network to each other.',  points: 25, category: 'social',  type: 'self', icon: '💞' },
+  { key: 'show_up',          title: 'Show up',               description: 'Go to a meetup or event — say yes and actually go.',    points: 25, category: 'social',  type: 'self', icon: '🎉' },
+  { key: 'urban_explorer',   title: 'Urban explorer',        description: 'Explore a Munich neighbourhood you have never been to.', points: 15, category: 'explore', type: 'self', icon: '🗺️' },
+  { key: 'sprachpartner',    title: 'Sprachpartner',         description: 'Hold a full conversation in German (or a language you are learning).', points: 20, category: 'explore', type: 'self', icon: '🇩🇪' },
+  { key: 'cafe_regular',     title: 'Café regular',          description: 'Visit one of the knotify partner cafés.',              points: 15, category: 'explore', type: 'self', icon: '🥨' },
+  { key: 'pay_it_forward',   title: 'Pay it forward',        description: 'Help someone — review a CV, share a referral, give real advice.', points: 30, category: 'give', type: 'self', icon: '🎁' },
 ]
 
 // Credibility tiers. Reaching "Trusted" unlocks offering gigs (Phase 5).
@@ -93,13 +109,21 @@ questsRouter.get('/', requireAuth, async (req, res) => {
 
   const quests = CATALOG.map((q) => {
     const st = evalMap[q.key] ?? { done: false }
-    const status = completed.has(q.key) ? 'completed' : st.done ? 'claimable' : 'locked'
+    const status = completed.has(q.key)
+      ? 'completed'
+      : q.type === 'self'
+        ? 'claimable' // real-life quests can be marked done anytime (honour system)
+        : st.done
+          ? 'claimable'
+          : 'locked'
     return {
       key: q.key,
       title: q.title,
       description: q.description,
       points: q.points,
       category: q.category,
+      type: q.type,
+      icon: q.icon,
       progress: st.progress,
       target: st.target,
       status,
@@ -125,9 +149,11 @@ questsRouter.post('/:key/claim', requireAuth, async (req, res) => {
   const quest = CATALOG.find((q) => q.key === req.params.key)
   if (!quest) return res.status(404).json({ error: 'Unknown quest' })
 
-  const evalMap = await evaluate(req.appUserId)
-  if (!evalMap[quest.key]?.done) {
-    return res.status(400).json({ error: 'Quest requirements not met yet.' })
+  if (quest.type === 'verified') {
+    const evalMap = await evaluate(req.appUserId)
+    if (!evalMap[quest.key]?.done) {
+      return res.status(400).json({ error: 'Quest requirements not met yet.' })
+    }
   }
 
   const ins = await supabase

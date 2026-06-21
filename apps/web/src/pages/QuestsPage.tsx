@@ -6,7 +6,9 @@ type Quest = {
   title: string
   description: string
   points: number
-  category: 'profile' | 'network' | 'social'
+  category: 'profile' | 'network' | 'social' | 'explore' | 'give'
+  type: 'verified' | 'self'
+  icon: string
   progress?: number
   target?: number
   status: 'completed' | 'claimable' | 'locked'
@@ -25,6 +27,8 @@ const CATEGORY_LABEL: Record<Quest['category'], string> = {
   profile: 'Profile',
   network: 'Network',
   social: 'Social',
+  explore: 'Explore',
+  give: 'Give back',
 }
 
 export function QuestsPage() {
@@ -46,6 +50,11 @@ export function QuestsPage() {
   useEffect(() => { void load() }, [load])
 
   async function claim(key: string) {
+    const quest = data?.quests.find(q => q.key === key)
+    if (quest?.type === 'self') {
+      const ok = window.confirm('On your honour — did you really do this? Credibility on knotify is built on trust.')
+      if (!ok) return
+    }
     setClaiming(key)
     setError(null)
     try {
@@ -141,12 +150,11 @@ export function QuestsPage() {
           >
             {/* status dot */}
             <div style={{
-              width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-              display: 'grid', placeItems: 'center', fontSize: 15,
+              width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+              display: 'grid', placeItems: 'center', fontSize: 19,
               background: q.status === 'completed' ? 'var(--verd-soft, rgba(31,107,94,0.12))' : 'var(--paper-soft, #ede8df)',
-              color: q.status === 'completed' ? 'var(--verd, #1f6b5e)' : 'var(--ink-faint)',
             }}>
-              {q.status === 'completed' ? '✓' : '◇'}
+              {q.status === 'completed' ? '✓' : q.icon}
             </div>
 
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -177,7 +185,7 @@ export function QuestsPage() {
                     cursor: claiming === q.key ? 'wait' : 'pointer', fontFamily: "'IBM Plex Sans', sans-serif",
                   }}
                 >
-                  {claiming === q.key ? '…' : 'Claim'}
+                  {claiming === q.key ? '…' : q.type === 'self' ? 'Mark done' : 'Claim'}
                 </button>
               )}
               {q.status === 'completed' && (

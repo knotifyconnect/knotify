@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
+import { HomeHub } from '../components/HomeHub'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 
@@ -382,6 +383,9 @@ export function RelationshipHomePage() {
           )}
         </div>
       </div>
+
+      {/* ── Hub: quests · events · gigs ─────────────────────────────────────── */}
+      <HomeHub />
 
       {/* ── Pending banner ──────────────────────────────────────────────────── */}
       {pendingForMe.length > 0 && (

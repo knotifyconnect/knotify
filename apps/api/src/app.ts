@@ -22,6 +22,8 @@ import { relationshipHomeRouter } from './routes/relationshipHome.js'
 import { betaRouter } from './routes/beta.js'
 import { adminPanelRouter } from './routes/adminPanel.js'
 import { questsRouter } from './routes/quests.js'
+import { eventsRouter } from './routes/events.js'
+import { gigsRouter } from './routes/gigs.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { supabase } from './lib.js'
 
@@ -82,5 +84,7 @@ app.use('/api/relationship-home', relationshipHomeRouter)
 app.use('/api/beta', betaRouter)
 app.use('/api/admin-panel', adminPanelRouter)
 app.use('/api/quests', questsRouter)
+app.use('/api/events', eventsRouter)
+app.use('/api/gigs', gigsRouter)
 
 app.use(errorHandler)

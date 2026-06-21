@@ -8,7 +8,9 @@ import { createPortal } from 'react-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness,
+  CalendarDays,
   ChevronRight,
+  HandHeart,
   Home,
   LogOut,
   MessageSquare,
@@ -48,6 +50,8 @@ const BASE_ITEMS: NavItem[] = [
   { title: 'Your Knot', href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
   { title: 'Discover',  href: '/discover', icon: <Search            size={15} /> },
   { title: 'Quests',    href: '/quests',   icon: <Trophy            size={15} /> },
+  { title: 'Events',    href: '/events',   icon: <CalendarDays      size={15} /> },
+  { title: 'Gigs',      href: '/gigs',     icon: <HandHeart         size={15} /> },
   { title: 'Jobs',      sub: 'Warm',       href: '/jobs',           icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
   { title: 'Messages',  href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },
 ]
