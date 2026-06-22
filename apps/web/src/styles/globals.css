@@ -99,7 +99,7 @@ body::before {
 }
 
 /* ── Responsive modal overlay ──────────────────────────────────────────────── */
-/* Mobile: bottom sheet — slides up, full width, rounded top corners.
+/* Mobile: bottom sheet — full width, rounded top corners, slides up.
    Desktop: centred in content area past the 220px sidebar. */
 .k-overlay {
   position: fixed;
@@ -110,14 +110,14 @@ body::before {
   -webkit-backdrop-filter: blur(6px);
   display: flex;
   justify-content: center;
-  /* Mobile default: bottom sheet */
+  /* Mobile: anchor card to bottom, expose backdrop above for dismiss tap */
   align-items: flex-end;
-  padding: 0;
-  /* tap the exposed backdrop at the top to dismiss */
-  padding-top: 60px;
-  overflow: hidden;
+  /* overflow-y: auto so tall cards can scroll within the overlay */
+  overflow-y: auto;
+  /* padding-top gives the exposed dim backdrop above the card */
+  padding: 60px 0 0 0;
 }
-/* Mobile modal card */
+/* Mobile modal card — full-width bottom sheet */
 .k-modal-card {
   width: 100% !important;
   max-width: 100% !important;
