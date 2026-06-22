@@ -9,6 +9,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness,
   ChevronRight,
+  Coffee,
   Home,
   LogOut,
   MessageSquare,
@@ -43,11 +44,12 @@ type NavItem = {
 }
 
 const BASE_ITEMS: NavItem[] = [
-  { title: 'Home',      href: '/home',     icon: <Home              size={15} /> },
-  { title: 'Your Knot', href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
-  { title: 'Discover',  href: '/discover', icon: <Search            size={15} /> },
-  { title: 'Jobs',      sub: 'Warm',       href: '/jobs',           icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
-  { title: 'Messages',  href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },
+  { title: 'Home',       href: '/home',     icon: <Home              size={15} /> },
+  { title: 'Your Knot',  href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
+  { title: 'Discover',   href: '/discover', icon: <Search            size={15} /> },
+  { title: 'Jobs',       sub: 'Warm',       href: '/jobs',           icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
+  { title: 'Cafes',      sub: 'IRL',        href: '/cafes',          icon: <Coffee            size={15} /> },
+  { title: 'Messages',   href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },
 ]
 
 export function AppSidebar() {

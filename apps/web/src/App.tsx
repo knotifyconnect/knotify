@@ -15,6 +15,7 @@ import { MessagesPage } from './pages/MessagesPage'
 import { QuestsPage } from './pages/QuestsPage'
 import { EventsPage } from './pages/EventsPage'
 import { GigsPage } from './pages/GigsPage'
+import { CafesPage } from './pages/CafesPage'
 import { AdminPage } from './pages/AdminPage'
 import { supabase } from './lib/supabase'
 import { useSessionStore } from './store/session'
@@ -136,6 +137,7 @@ function ProtectedAppRoutes() {
         <Route path="/quests" element={<QuestsPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/gigs" element={<GigsPage />} />
+        <Route path="/cafes" element={<CafesPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/auth" element={<Navigate to="/home" replace />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
