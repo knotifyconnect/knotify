@@ -87,7 +87,46 @@ async function activeDbQuests() {
 }
 
 async function completedRows(userId: string) {
-  return (await supabase.from('user_quests').select('quest_key, points_awarded').eq('user_id', userId)).data ?? []
+  return (await supabase.from('user_quests').select('quest_key, points_awarded, completed_at').eq('user_id', userId)).data ?? []
+}
+
+// Distinct-day streak: consecutive calendar days (ending today or yesterday)
+// on which the user earned credibility. Real signal, derived from completions.
+function computeStreak(rows: Array<{ completed_at?: string }>): number {
+  const days = new Set<string>()
+  for (const r of rows) {
+    if (!r.completed_at) continue
+    days.add(new Date(r.completed_at).toISOString().slice(0, 10))
+  }
+  if (!days.size) return 0
+  const today = new Date()
+  const dayStr = (d: Date) => d.toISOString().slice(0, 10)
+  // Allow the streak to be "alive" if the last action was today or yesterday.
+  let cursor = new Date(today)
+  if (!days.has(dayStr(cursor))) {
+    cursor.setUTCDate(cursor.getUTCDate() - 1)
+    if (!days.has(dayStr(cursor))) return 0
+  }
+  let streak = 0
+  while (days.has(dayStr(cursor))) {
+    streak++
+    cursor.setUTCDate(cursor.getUTCDate() - 1)
+  }
+  return streak
+}
+
+// "top X%" — share of users ranked above this score. Null for newcomers (score 0).
+async function computePercentile(score: number): Promise<number | null> {
+  if (score <= 0) return null
+  const totalR = await supabase.from('users').select('id', { count: 'exact', head: true })
+  const higherR = await supabase
+    .from('users')
+    .select('id', { count: 'exact', head: true })
+    .gt('credibility_score', score)
+  const total = totalR.count ?? 0
+  const higher = higherR.count ?? 0
+  if (total <= 1) return null
+  return Math.max(1, Math.round((higher / total) * 100))
 }
 
 questsRouter.get('/', requireAuth, async (req, res) => {
@@ -100,6 +139,15 @@ questsRouter.get('/', requireAuth, async (req, res) => {
   ])
   const completed = new Set(doneRows.map((r: any) => r.quest_key))
   const score = doneRows.reduce((s: number, r: any) => s + (r.points_awarded ?? 0), 0)
+
+  // Weekly delta + streak from completion timestamps; percentile across users.
+  const weekAgo = Date.now() - 7 * 86400 * 1000
+  const weeklyDelta = doneRows.reduce(
+    (s: number, r: any) => s + (r.completed_at && new Date(r.completed_at).getTime() >= weekAgo ? (r.points_awarded ?? 0) : 0),
+    0
+  )
+  const streak = computeStreak(doneRows as Array<{ completed_at?: string }>)
+  const percentile = await computePercentile(score)
 
   const verified = VERIFIED.map((q) => {
     const st = evalMap[q.key] ?? { done: false }
@@ -129,6 +177,9 @@ questsRouter.get('/', requireAuth, async (req, res) => {
     next_tier: next ? { name: next.name, at: next.min } : null,
     gig_unlocked: score >= GIG_UNLOCK_AT,
     gig_unlock_at: GIG_UNLOCK_AT,
+    weekly_delta: weeklyDelta,
+    percentile,
+    streak,
     quests: [...verified, ...self],
   })
 })

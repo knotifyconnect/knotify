@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { apiGet, apiPost } from '@/lib/api'
+import { ImagePlus } from 'lucide-react'
+import { apiGet, apiPost, apiPostForm } from '@/lib/api'
 import { T, DeskPage, DeskHeader, SectionLabel, Chip, RailCard, accentFor, gradientFor } from '@/lib/desk'
 
 type EventItem = {
@@ -13,6 +14,7 @@ type EventItem = {
   is_host: boolean
   rsvp_count: number
   rsvped: boolean
+  image_url?: string | null
 }
 
 function whenLabel(iso: string) {
@@ -41,6 +43,8 @@ export function EventsPage() {
   const [startsAt, setStartsAt] = useState('')
   const [location, setLocation] = useState('')
   const [description, setDescription] = useState('')
+  const [image, setImage] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try { setEvents((await apiGet<{ events: EventItem[] }>('/api/events')).events) }
@@ -54,12 +58,23 @@ export function EventsPage() {
     try { await apiPost(`/api/events/${id}/rsvp`, {}) } catch { void load() }
   }
 
+  function pickImage(file: File | null) {
+    setImage(file)
+    setPreview(file ? URL.createObjectURL(file) : null)
+  }
+
   async function createEvent(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true); setError(null)
     try {
-      await apiPost('/api/events', { title, startsAt: new Date(startsAt).toISOString(), location: location || null, description: description || null })
-      setTitle(''); setStartsAt(''); setLocation(''); setDescription(''); setShowForm(false)
+      const fd = new FormData()
+      fd.append('title', title)
+      fd.append('startsAt', new Date(startsAt).toISOString())
+      if (location) fd.append('location', location)
+      if (description) fd.append('description', description)
+      if (image) fd.append('image', image)
+      await apiPostForm('/api/events', fd)
+      setTitle(''); setStartsAt(''); setLocation(''); setDescription(''); pickImage(null); setShowForm(false)
       await load()
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not create event') }
     finally { setBusy(false) }
@@ -132,6 +147,10 @@ export function EventsPage() {
       {showForm && (
         <form onSubmit={createEvent} style={{ background: T.paperSoft, border: `0.5px solid ${T.rule}`, borderRadius: 18, padding: 22, display: 'grid', gap: 12, marginBottom: 22 }}>
           <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 17 }}>Tell people about it</div>
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: preview ? 150 : 'auto', padding: preview ? 0 : '14px', borderRadius: 12, border: `0.5px dashed ${T.rule}`, background: preview ? `center/cover no-repeat url(${preview})` : '#fffdf9', cursor: 'pointer', overflow: 'hidden', color: T.inkMuted, fontSize: 13, fontFamily: T.text }}>
+            {!preview && <><ImagePlus size={16} /> Add a cover photo (optional)</>}
+            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => pickImage(e.target.files?.[0] ?? null)} />
+          </label>
           <input required placeholder="Event title (e.g. International coffee meetup)" value={title} onChange={e => setTitle(e.target.value)} style={field} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <input required type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)} style={field} />
@@ -153,7 +172,7 @@ export function EventsPage() {
         <DeskPage rail={rail}>
           {/* Featured hero */}
           {featured && (
-            <div style={{ borderRadius: 18, overflow: 'hidden', border: `0.5px solid ${T.rule}`, position: 'relative', minHeight: 230, marginBottom: 22, background: gradientFor(accentFor(featured.id)) }}>
+            <div style={{ borderRadius: 18, overflow: 'hidden', border: `0.5px solid ${T.rule}`, position: 'relative', minHeight: 230, marginBottom: 22, background: featured.image_url ? `center/cover no-repeat url(${featured.image_url})` : gradientFor(accentFor(featured.id)) }}>
               <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, ${T.ink}f0 0%, ${T.ink}80 50%, transparent 100%)` }} />
               <div style={{ position: 'relative', padding: 30, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: T.paperSoft, maxWidth: 560, minHeight: 230 }}>
                 <Chip color="signal">Featured · next up</Chip>
@@ -176,7 +195,7 @@ export function EventsPage() {
                 const color = accentFor(e.id)
                 return (
                   <div key={e.id} style={{ borderRadius: 14, overflow: 'hidden', background: T.paper, border: `0.5px solid ${T.rule}`, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ position: 'relative', height: 120, background: gradientFor(color) }}>
+                    <div style={{ position: 'relative', height: 120, background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : gradientFor(color) }}>
                       <div style={{ position: 'absolute', top: 10, left: 10 }}><Chip color="signal" style={{ background: 'rgba(0,0,0,0.25)', color: '#fff', border: 'none' }}>{whenLabel(e.starts_at)}</Chip></div>
                     </div>
                     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
