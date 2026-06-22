@@ -22,21 +22,55 @@ export const questsRouter = Router()
 // ── Verified quests (code-defined: each condition is checked server-side) ────
 type QuestCategory = 'profile' | 'network' | 'social' | 'explore' | 'give'
 type VerifiedQuest = {
-  key: string
-  title: string
-  description: string
-  points: number
-  category: QuestCategory
-  icon: string
+  key: string; title: string; description: string; points: number
+  category: QuestCategory; icon: string
+  how_to: string; where_to_go: string | null; estimated_minutes: number
+  difficulty: 'easy' | 'medium' | 'hard'; partner_required: boolean
 }
 
 const VERIFIED: VerifiedQuest[] = [
-  { key: 'complete_profile', title: 'First impressions',    description: 'Complete your profile so people get who you are.', points: 20, category: 'profile', icon: 'target' },
-  { key: 'add_bio_photo',    title: 'Show your face',       description: 'Add a photo or a short bio.',                     points: 10, category: 'profile', icon: 'camera' },
-  { key: 'curious',          title: 'Many sides',           description: 'Pick 5+ interests. Work is only part of you.',    points: 10, category: 'profile', icon: 'palette' },
-  { key: 'polyglot',         title: 'Citizen of the world', description: 'Add 2+ languages you speak.',                     points: 10, category: 'profile', icon: 'globe' },
-  { key: 'first_connection', title: 'Ice breaker',          description: 'Make your very first connection.',                points: 15, category: 'network', icon: 'handshake' },
-  { key: 'growing_network',  title: 'Inner circle',         description: 'Grow to 5 connections.',                          points: 25, category: 'network', icon: 'users' },
+  {
+    key: 'complete_profile', title: 'First impressions', description: 'Complete your profile so people get who you are.',
+    points: 20, category: 'profile', icon: 'target',
+    how_to: 'Go to your profile and fill in your persona (student / professional / expat), pick at least 3 interests, and add one goal. That is all it takes.',
+    where_to_go: 'Profile page — click your avatar or go to Settings.',
+    estimated_minutes: 5, difficulty: 'easy', partner_required: false,
+  },
+  {
+    key: 'add_bio_photo', title: 'Show your face', description: 'Add a photo or a short bio.',
+    points: 10, category: 'profile', icon: 'camera',
+    how_to: 'Upload a real photo of yourself (not a logo, not a cartoon) and write two or three sentences about who you are and what you are up to in Munich.',
+    where_to_go: 'Profile page — Edit profile.',
+    estimated_minutes: 3, difficulty: 'easy', partner_required: false,
+  },
+  {
+    key: 'curious', title: 'Many sides', description: 'Pick 5+ interests. Work is only part of you.',
+    points: 10, category: 'profile', icon: 'palette',
+    how_to: 'Open your profile, go to Interests, and select at least 5 things that genuinely represent you — not just your degree or job. Sports, music, food, languages, hobbies all count.',
+    where_to_go: 'Profile page — Edit profile — Interests.',
+    estimated_minutes: 3, difficulty: 'easy', partner_required: false,
+  },
+  {
+    key: 'polyglot', title: 'Citizen of the world', description: 'Add 2+ languages you speak.',
+    points: 10, category: 'profile', icon: 'globe',
+    how_to: 'Go to your profile and add every language you can hold a real conversation in. Even if it is basic, add it — it is a connection point.',
+    where_to_go: 'Profile page — Edit profile — Languages.',
+    estimated_minutes: 2, difficulty: 'easy', partner_required: false,
+  },
+  {
+    key: 'first_connection', title: 'Ice breaker', description: 'Make your very first connection.',
+    points: 15, category: 'network', icon: 'handshake',
+    how_to: 'Go to Discover, find someone interesting, and send a connection request with a short note. Or accept a pending request from someone who reached out to you.',
+    where_to_go: 'Discover page or Your Knot — Pending requests.',
+    estimated_minutes: 5, difficulty: 'easy', partner_required: true,
+  },
+  {
+    key: 'growing_network', title: 'Inner circle', description: 'Grow to 5 connections.',
+    points: 25, category: 'network', icon: 'users',
+    how_to: 'Connect with 5 people on knotify. Quality matters — connect with people you have actually met, talked to, or genuinely want to know.',
+    where_to_go: 'Discover page to find people. Events are the fastest way to meet people to connect with.',
+    estimated_minutes: 30, difficulty: 'medium', partner_required: true,
+  },
 ]
 
 // Credibility tiers. Reaching "Trusted" unlocks offering gigs.
@@ -167,7 +201,11 @@ questsRouter.get('/', requireAuth, async (req, res) => {
   const verified = VERIFIED.map((q) => {
     const st = evalMap[q.key] ?? { done: false }
     const status = completed.has(q.key) ? 'completed' : st.done ? 'claimable' : 'locked'
-    return { ...q, type: 'verified' as const, progress: st.progress, target: st.target, status }
+    return {
+      ...q, type: 'verified' as const, progress: st.progress, target: st.target, status,
+      how_to: q.how_to, where_to_go: q.where_to_go,
+      estimated_minutes: q.estimated_minutes, difficulty: q.difficulty, partner_required: q.partner_required,
+    }
   })
 
   const self = dbQuests.map((q: any) => ({

@@ -169,7 +169,7 @@ function Overlay({ onClose, children }: { onClose: () => void; children: React.R
   }, [onClose])
   return (
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(26,24,21,0.6)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 220, zIndex: 9999, background: 'rgba(26,24,21,0.6)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <motion.div initial={{ y: 16, opacity: 0, scale: 0.97 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 16, opacity: 0, scale: 0.97 }} transition={{ duration: 0.18 }}
         onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', background: T.paper, borderRadius: 20, padding: '28px 24px 40px', position: 'relative', boxShadow: '0 32px 80px rgba(26,24,21,0.35)' }}>
