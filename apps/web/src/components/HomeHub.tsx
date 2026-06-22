@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, Plus, MapPin, Users, Lock, ChevronRight, Flame, ImagePlus } from 'lucide-react'
+import { Plus, MapPin, Users, Lock, ChevronRight, Flame, ImagePlus, X, ExternalLink, Camera, Share2, ChevronLeft } from 'lucide-react'
 import { apiGet, apiPost, apiPostForm } from '@/lib/api'
 import { QuestIcon } from '@/lib/questIcons'
 import { KAvatar } from '@/lib/knotify'
@@ -23,6 +23,7 @@ type EventItem = {
   id: string; title: string; description: string | null; location: string | null
   starts_at: string; host_name: string; is_host: boolean; rsvp_count: number; rsvped: boolean
   source: string; url: string | null; image_url?: string | null; interests?: string[]
+  host_label?: string | null
 }
 type Gig = {
   id: string; gig_type: string; title: string; description: string | null
@@ -37,7 +38,7 @@ type Person = {
   interests?: string[]; mutual_connections_count?: number; match_reason?: string
 }
 
-// ── Design tokens shorthand ──────────────────────────────────────────────────
+// ── Design tokens ────────────────────────────────────────────────────────────
 const T = {
   paper: '#F4EFE6', paperDeep: '#EBE4D6', paperSoft: '#FAF6EE',
   ink: '#1A1815', inkSoft: '#3A352D', inkMuted: '#6B6358', inkFaint: '#A29A8C',
@@ -50,7 +51,31 @@ const T = {
   text: "'IBM Plex Sans', system-ui, sans-serif",
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// ── Quest "how to complete" guides ───────────────────────────────────────────
+const QUEST_GUIDE: Record<string, { how: string; where?: string; tip?: string }> = {
+  coffee_stranger:  { how: 'Find someone on knotify you have not met yet. Message them and suggest a coffee. Show up.', where: 'Any cafe in Munich. Partner cafes earn you a discount.', tip: '30 minutes is plenty to start. Keep it casual.' },
+  matchmaker:       { how: 'Think of two people in your knot who do not know each other but should. Make the intro on knotify or over a message.', tip: 'The best intros come with a reason: "You are both in fintech and looking for the same thing."' },
+  show_up:          { how: 'RSVP to an event on knotify and actually go. Being there is the whole point.', tip: 'Say hi to at least one person you do not already know.' },
+  urban_explorer:   { how: 'Go to a Munich neighbourhood you have never been to. Walk around, find something worth sharing.', where: 'Try Haidhausen, Au, Neuhausen, Maxvorstadt, or Schwabing.', tip: 'Take a photo of something that surprised you.' },
+  sprachpartner:    { how: 'Have a real conversation in German (or another language you are learning) with someone from your knot for at least 15 minutes.', tip: 'Start with something simple. The awkward part only lasts 2 minutes.' },
+  cafe_regular:     { how: 'Visit one of the knotify partner cafes. Mention knotify at the counter.', where: 'Partner cafes are listed in the Cafes section.' },
+  pay_it_forward:   { how: 'Help someone concretely: review their CV, share a referral, or give real advice on something you know well.', tip: 'The help has to be real. A quick reply does not count.' },
+  welcome_newcomer: { how: 'Find someone on knotify who just arrived in Munich. Reach out and help them with one concrete thing this week.', tip: 'Recommending a neighbourhood, explaining how something works, or showing them around counts.' },
+  study_buddy:      { how: 'Find someone from your knot and meet to study, work, or co-work for at least an hour.', where: 'University library, a partner cafe, or anywhere you both focus well.' },
+  campus_guide:     { how: 'Show someone new around your campus, workplace, or favourite spots in the city.', tip: 'Even a 20-minute walk counts. The best guides share the things that are not on any map.' },
+  hidden_gem:       { how: 'Discover a hidden Munich spot recommended by someone in your knot. Visit it and share it back.', tip: 'It does not have to be unknown. Just not on the tourist trail.' },
+  night_out:        { how: 'Go out in Munich with at least one person from knotify. A bar, club, concert, anything social.', tip: 'Coordinate via knotify first so it counts as a shared experience.' },
+  professor_hours:  { how: 'Attend a professor or mentor office hours and have a genuine conversation, not just a quick question.', where: 'Your university department or a professional mentor from your knot.', tip: 'Come prepared with something real to discuss.' },
+  first_referral:   { how: 'Give someone a referral or actively help them get an interview. This means putting your name on it.', tip: 'Only refer people you would genuinely vouch for. Your credibility is on the line.' },
+  language_swap:    { how: 'Have a real conversation in a language you are learning with someone from your knot. At least 15 minutes, back and forth.', tip: 'It is fine to mix languages. Progress matters more than perfection.' },
+  intro_two:        { how: 'Introduce two people in your knot who do not know each other. Write a proper intro explaining why they should meet.', tip: 'The best intros are specific: "You are both building climate startups and both just moved to Munich."' },
+  host_study:       { how: 'Organise a study session at a partner cafe and invite people from your knot.', where: 'Partner cafes are listed in the Cafes section. They know us.' },
+  verify_skill:     { how: 'Go to a connection\'s profile and verify a skill you have actually seen them demonstrate.', tip: 'Only vouch for skills you have witnessed. It carries your name.' },
+  attend_event:     { how: 'RSVP to a knotify event this month and physically show up.', tip: 'Take a photo when you arrive.' },
+  reconnect:        { how: 'Find someone in your network you have not spoken to in over a month. Send them a real message, not a one-liner.', tip: 'Reference something specific you remember from your last conversation.' },
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function whenLabel(iso: string) {
   const d = new Date(iso); const now = new Date()
   const sameDay = d.toDateString() === now.toDateString()
@@ -75,7 +100,6 @@ function overlap(a: string[] = [], b: string[] = []) {
   const setB = new Set(b.map((x) => x.toLowerCase()))
   return a.reduce((n, x) => n + (setB.has(x.toLowerCase()) ? 1 : 0), 0)
 }
-// Stable accent per event for the gradient fallback (when no image)
 function accentFor(seed: string): 'signal' | 'verd' | 'ochre' | 'plum' {
   const order = ['signal', 'verd', 'ochre', 'plum'] as const
   let h = 0; for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
@@ -83,9 +107,9 @@ function accentFor(seed: string): 'signal' | 'verd' | 'ochre' | 'plum' {
 }
 const EVENT_GRAD: Record<string, string> = {
   signal: `linear-gradient(135deg, ${T.signal} 0%, ${T.signalDeep} 100%)`,
-  verd: `linear-gradient(135deg, ${T.verd} 0%, #134840 100%)`,
-  ochre: `linear-gradient(135deg, ${T.ochre} 0%, #9a6f10 100%)`,
-  plum: `linear-gradient(135deg, ${T.plum} 0%, #3d1c36 100%)`,
+  verd:   `linear-gradient(135deg, ${T.verd} 0%, #134840 100%)`,
+  ochre:  `linear-gradient(135deg, ${T.ochre} 0%, #9a6f10 100%)`,
+  plum:   `linear-gradient(135deg, ${T.plum} 0%, #3d1c36 100%)`,
 }
 
 const inputStyle: React.CSSProperties = {
@@ -97,9 +121,8 @@ const GIG_TYPES = [
   { value: 'mentorship', label: 'Mentorship' }, { value: 'tour', label: 'City / campus tour' },
   { value: 'advice', label: 'Advice' }, { value: 'other', label: 'Other' },
 ]
-type Filter = 'all' | 'events' | 'quests' | 'gigs' | 'people'
 
-// ── Shared primitives ────────────────────────────────────────────────────────
+// ── Shared primitives ─────────────────────────────────────────────────────────
 function SectionLabel({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
   return (
     <div style={{ fontSize: 11, color: T.inkMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 600, fontFamily: T.text, gap: 8 }}>
@@ -109,11 +132,11 @@ function SectionLabel({ children, right }: { children: React.ReactNode; right?: 
 }
 function Chip({ children, color = 'paper' }: { children: React.ReactNode; color?: 'paper' | 'signal' | 'verd' | 'ochre' | 'plum' }) {
   const map = {
-    paper: { bg: T.paperDeep, fg: T.inkSoft, bd: T.rule },
+    paper:  { bg: T.paperDeep, fg: T.inkSoft,    bd: T.rule },
     signal: { bg: T.signalSoft, fg: T.signalDeep, bd: T.signal },
-    verd: { bg: T.verdSoft, fg: T.verd, bd: T.verd },
-    ochre: { bg: T.ochreSoft, fg: '#7A5A0F', bd: T.ochre },
-    plum: { bg: T.plumSoft, fg: T.plum, bd: T.plum },
+    verd:   { bg: T.verdSoft,  fg: T.verd,        bd: T.verd },
+    ochre:  { bg: T.ochreSoft, fg: '#7A5A0F',     bd: T.ochre },
+    plum:   { bg: T.plumSoft,  fg: T.plum,        bd: T.plum },
   }
   const c = map[color]
   return (
@@ -127,8 +150,8 @@ function CredRing({ score, max }: { score: number; max: number }) {
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={4} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={T.ochre} strokeWidth={4} strokeLinecap="round"
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={4} />
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={T.ochre} strokeWidth={4} strokeLinecap="round"
           strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.display, fontStyle: 'italic', fontSize: 20, fontWeight: 500, color: T.paperSoft }}>{score}</div>
@@ -136,262 +159,336 @@ function CredRing({ score, max }: { score: number; max: number }) {
   )
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
-export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {}) {
-  const navigate = useNavigate()
-  const [quests, setQuests] = useState<QuestsResp | null>(null)
-  const [events, setEvents] = useState<EventItem[]>([])
-  const [gigs, setGigs] = useState<Gig[]>([])
-  const [elig, setElig] = useState<Eligibility | null>(null)
-  const [me, setMe] = useState<Me | null>(null)
-  const [people, setPeople] = useState<Person[]>([])
-  const [claiming, setClaiming] = useState<string | null>(null)
-  const [connecting, setConnecting] = useState<Record<string, 'idle' | 'busy' | 'sent'>>({})
-  const [activeFilter, setActiveFilter] = useState<Filter>('all')
-
-  const loadQuests = useCallback(() => { apiGet<QuestsResp>('/api/quests').then(setQuests).catch(() => {}) }, [])
-  const loadEvents = useCallback(() => { apiGet<{ events: EventItem[] }>('/api/events?limit=12').then(r => setEvents(r.events)).catch(() => {}) }, [])
-  const loadGigs = useCallback(() => { apiGet<{ gigs: Gig[] }>('/api/gigs?limit=6').then(r => setGigs(r.gigs)).catch(() => {}) }, [])
-
+// ── Overlay wrapper ────────────────────────────────────────────────────────────
+function Overlay({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
-    loadQuests(); loadEvents(); loadGigs()
-    apiGet<Eligibility>('/api/gigs/eligibility').then(setElig).catch(() => {})
-    apiGet<{ user: Me }>('/api/users/me').then(r => setMe(r.user)).catch(() => {})
-    apiGet<{ suggestions: Person[] }>('/api/users/suggestions').then(r => setPeople(r.suggestions ?? [])).catch(() => {})
-  }, [loadQuests, loadEvents, loadGigs])
+    const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', fn)
+    return () => document.removeEventListener('keydown', fn)
+  }, [onClose])
+  return (
+    <div onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(26,24,21,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0' }}>
+      <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ duration: 0.22 }}
+        style={{ width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', background: T.paper, borderRadius: '20px 20px 0 0', padding: '28px 24px 40px' }}>
+        {children}
+      </motion.div>
+    </div>
+  )
+}
 
-  async function claim(q: Quest) {
-    if (q.type === 'self') {
-      if (!window.confirm('On your honour, did you really do this? Credibility on knotify is built on trust.')) return
-    }
-    setClaiming(q.key)
-    try { await apiPost(`/api/quests/${q.key}/claim`, {}); loadQuests() }
-    finally { setClaiming(null) }
+// ── Quest detail + claim modal ─────────────────────────────────────────────────
+function QuestDetailModal({ quest: q, onClose, onClaimed }: { quest: Quest; onClose: () => void; onClaimed: () => void }) {
+  const guide = QUEST_GUIDE[q.key]
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [shareToFeed, setShareToFeed] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  function pickPhoto(file: File | null) {
+    setPhoto(file)
+    setPreview(file ? URL.createObjectURL(file) : null)
   }
 
-  async function toggleRsvp(id: string) {
-    setEvents(evs => evs.map(e => e.id === id ? { ...e, rsvped: !e.rsvped, rsvp_count: e.rsvp_count + (e.rsvped ? -1 : 1) } : e))
-    try { await apiPost(`/api/events/${id}/rsvp`, {}) } catch { loadEvents() }
-  }
-
-  async function askIntro(p: Person) {
-    setConnecting(s => ({ ...s, [p.id]: 'busy' }))
+  async function claim() {
+    if (q.type === 'self' && !photo) { setErr('Upload a photo to prove you did this.'); return }
+    setBusy(true); setErr('')
     try {
-      await apiPost('/api/connections', { addresseeId: p.id })
-      setConnecting(s => ({ ...s, [p.id]: 'sent' }))
-    } catch {
-      setConnecting(s => ({ ...s, [p.id]: 'idle' }))
-    }
+      if (q.type === 'self') {
+        const fd = new FormData()
+        fd.append('shareToFeed', String(shareToFeed))
+        if (photo) fd.append('photo', photo)
+        await apiPostForm(`/api/quests/${q.key}/claim`, fd)
+      } else {
+        await apiPost(`/api/quests/${q.key}/claim`, {})
+      }
+      onClaimed(); onClose()
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to claim')
+    } finally { setBusy(false) }
   }
 
-  const interests = me?.interests ?? []
-  const score = quests?.credibility_score ?? 0
-  const next = quests?.next_tier ?? null
-  const floor = next ? prevFloor(score, next.at) : score
-  const pct = next ? Math.min(100, Math.round(((score - floor) / (next.at - floor)) * 100)) : 100
-  const claimable = (quests?.quests ?? []).filter(q => q.status === 'claimable')
-  const inProgress = (quests?.quests ?? []).filter(q => q.status === 'locked' && q.progress != null && q.target != null)
-
-  // Interest-ranked events (most relevant to the user first)
-  const rankedEvents = useMemo(() => {
-    return [...events].sort((a, b) => {
-      const ov = overlap(b.interests, interests) - overlap(a.interests, interests)
-      if (ov !== 0) return ov
-      return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
-    })
-  }, [events, interests])
-
-  const showEvents = activeFilter === 'all' || activeFilter === 'events'
-  const showQuests = activeFilter === 'all' || activeFilter === 'quests'
-  const showGigs = activeFilter === 'all' || activeFilter === 'gigs'
-  const showPeople = activeFilter === 'all' || activeFilter === 'people'
-
-  const FILTERS: Array<{ k: Filter; label: string }> = [
-    { k: 'all', label: 'All' }, { k: 'events', label: 'Events' },
-    { k: 'people', label: 'People' }, { k: 'quests', label: 'Quests' }, { k: 'gigs', label: 'Gigs' },
-  ]
+  const catColor: Record<string, string> = {
+    profile: T.verd, network: T.verd, social: T.ochre, explore: T.plum, give: T.signal,
+  }
+  const cc = catColor[q.category] ?? T.inkMuted
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+    <Overlay onClose={onClose}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: `${cc}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: cc, flexShrink: 0, border: `1.5px solid ${cc}40` }}>
+            <QuestIcon name={q.icon} size={22} />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: cc, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: T.text }}>{q.category}</div>
+            <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, fontWeight: 500, letterSpacing: -0.3, color: T.ink, lineHeight: 1.1 }}>{q.title}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, color: T.ochre }}>+{q.points}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkFaint, display: 'flex' }}><X size={18} /></button>
+        </div>
+      </div>
 
-      {/* ── Top row: maintenance + credibility + side quests ─────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: maintenance ? 'minmax(0,1.6fr) minmax(0,1fr)' : 'minmax(0,1fr) minmax(0,1fr)', gap: 16, marginBottom: 20 }}>
+      <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.6, fontFamily: T.text, margin: '0 0 20px' }}>{q.description}</p>
 
-        {maintenance}
+      {guide && (
+        <div style={{ background: T.paperSoft, borderRadius: 14, padding: '16px 18px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12, border: `0.5px solid ${T.ruleSoft}` }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 5, fontFamily: T.text }}>How to complete</div>
+            <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.55, fontFamily: T.text }}>{guide.how}</div>
+          </div>
+          {guide.where && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 5, fontFamily: T.text }}>Where</div>
+              <div style={{ fontSize: 13, color: T.inkMuted, lineHeight: 1.5, fontFamily: T.text, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                <MapPin size={13} style={{ marginTop: 2, flexShrink: 0 }} />{guide.where}
+              </div>
+            </div>
+          )}
+          {guide.tip && (
+            <div style={{ borderTop: `0.5px solid ${T.ruleSoft}`, paddingTop: 12 }}>
+              <div style={{ fontSize: 12.5, color: T.inkMuted, fontStyle: 'italic', fontFamily: T.display, lineHeight: 1.5 }}>Tip: {guide.tip}</div>
+            </div>
+          )}
+        </div>
+      )}
 
-        <div style={{ display: maintenance ? 'flex' : 'contents', flexDirection: 'column', gap: 16 }}>
+      {q.status === 'completed' ? (
+        <div style={{ padding: '14px 18px', borderRadius: 12, background: T.verdSoft, border: `0.5px solid ${T.verd}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 18 }}>✓</span>
+          <span style={{ fontSize: 13.5, color: T.verd, fontWeight: 600, fontFamily: T.text }}>Quest completed. +{q.points} credibility earned.</span>
+        </div>
+      ) : q.type === 'self' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 12.5, color: T.inkMuted, fontFamily: T.text, lineHeight: 1.5 }}>
+            Upload a photo as proof you completed this quest. It is your word and your photo.
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: preview ? 180 : 100, borderRadius: 14, border: `1.5px dashed ${T.rule}`, background: preview ? `center/cover no-repeat url(${preview})` : T.paperSoft, cursor: 'pointer', overflow: 'hidden', color: T.inkMuted, fontSize: 13, fontFamily: T.text, position: 'relative' }}>
+            {!preview && <><Camera size={20} color={T.inkFaint} /><span>Tap to add photo evidence</span></>}
+            {preview && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: '#fff', fontSize: 12, fontFamily: T.text }}>Tap to change</span>
+            </div>}
+            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => pickPhoto(e.target.files?.[0] ?? null)} />
+          </label>
 
-          {/* Credibility dark card */}
-          <div style={{ padding: 22, borderRadius: 18, background: T.ink, color: T.paperSoft, position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', right: -30, top: -30, width: 160, height: 160, borderRadius: '50%', background: `radial-gradient(circle, rgba(216,68,43,0.3) 0%, transparent 70%)` }} />
-            <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <CredRing score={score} max={next?.at ?? 120} />
-                <div>
-                  <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, fontWeight: 500, letterSpacing: -0.3, lineHeight: 1.1 }}>{quests?.tier ?? 'Newcomer'}</div>
-                  <div style={{ fontSize: 11, color: 'rgba(250,246,238,0.55)', marginTop: 3, fontFamily: T.text }}>
-                    Credibility{quests?.percentile != null ? ` · top ${quests.percentile}%` : ''}
-                  </div>
+          <button onClick={() => setShareToFeed(s => !s)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, border: `0.5px solid ${shareToFeed ? T.verd : T.rule}`, background: shareToFeed ? T.verdSoft : 'transparent', cursor: 'pointer', textAlign: 'left' }}>
+            <Share2 size={15} color={shareToFeed ? T.verd : T.inkFaint} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: shareToFeed ? T.verd : T.ink, fontFamily: T.text }}>Share to your knot</div>
+              <div style={{ fontSize: 11.5, color: T.inkMuted, fontFamily: T.text, marginTop: 1 }}>Your photo and quest completion will appear in your connections' feed</div>
+            </div>
+          </button>
+
+          {err && <div style={{ fontSize: 12.5, color: T.signal, fontFamily: T.text }}>{err}</div>}
+          <button onClick={claim} disabled={busy || !photo}
+            style={{ padding: '13px', borderRadius: 999, border: 'none', background: photo ? T.ochre : T.ruleSoft, color: photo ? '#fff' : T.inkFaint, fontSize: 14, fontWeight: 700, cursor: photo ? 'pointer' : 'not-allowed', fontFamily: T.text, transition: 'all 0.15s' }}>
+            {busy ? 'Claiming...' : `Claim +${q.points} credibility`}
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {q.status === 'locked' && q.progress != null && q.target != null && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: T.inkMuted, marginBottom: 6, fontFamily: T.text }}>
+                <span>Progress</span><span>{q.progress} / {q.target}</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 999, background: T.ruleSoft }}>
+                <div style={{ width: `${Math.round(((q.progress ?? 0) / (q.target || 1)) * 100)}%`, height: '100%', borderRadius: 999, background: T.ochre }} />
+              </div>
+            </div>
+          )}
+          {err && <div style={{ fontSize: 12.5, color: T.signal, fontFamily: T.text }}>{err}</div>}
+          <button onClick={claim} disabled={busy || q.status === 'locked'}
+            style={{ padding: '13px', borderRadius: 999, border: 'none', background: q.status === 'claimable' ? T.ochre : T.ruleSoft, color: q.status === 'claimable' ? '#fff' : T.inkFaint, fontSize: 14, fontWeight: 700, cursor: q.status === 'claimable' ? 'pointer' : 'not-allowed', fontFamily: T.text }}>
+            {busy ? 'Claiming...' : q.status === 'claimable' ? `Claim +${q.points} credibility` : 'Not ready yet'}
+          </button>
+        </div>
+      )}
+    </Overlay>
+  )
+}
+
+// ── Event detail modal ─────────────────────────────────────────────────────────
+function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onClose: () => void; onRsvp: (id: string) => void }) {
+  const color = accentFor(e.id)
+  return (
+    <Overlay onClose={onClose}>
+      <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 20, background: 'rgba(26,24,21,0.5)', border: 'none', borderRadius: 999, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', zIndex: 10 }}><X size={15} /></button>
+
+      {/* Hero image */}
+      <div style={{ margin: '-28px -24px 24px', height: 200, background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : EVENT_GRAD[color], borderRadius: '20px 20px 0 0', position: 'relative' }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(26,24,21,0.6) 0%, transparent 50%)', borderRadius: '20px 20px 0 0' }} />
+        <div style={{ position: 'absolute', bottom: 16, left: 20, right: 60 }}>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', fontFamily: T.text, marginBottom: 4 }}>{whenLabel(e.starts_at)}</div>
+          <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 24, fontWeight: 500, color: '#fff', lineHeight: 1.1 }}>{e.title}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 18 }}>
+        {e.location && <Chip><MapPin size={11} style={{ marginRight: 3 }} />{e.location}</Chip>}
+        <Chip><Users size={11} style={{ marginRight: 3 }} />{e.rsvp_count} going</Chip>
+        {(e.host_name || e.host_label) && <Chip>By {e.host_name || e.host_label}</Chip>}
+        {e.source === 'curated' && <Chip color="verd">Curated</Chip>}
+      </div>
+
+      {e.description && (
+        <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.65, fontFamily: T.text, margin: '0 0 22px' }}>{e.description}</p>
+      )}
+
+      {e.interests && e.interests.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 22 }}>
+          {e.interests.map(i => <Chip key={i}>{i}</Chip>)}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={() => { onRsvp(e.id); onClose() }} disabled={e.is_host}
+          style={{ flex: 1, padding: '13px', borderRadius: 999, border: 'none', background: e.is_host ? T.rule : e.rsvped ? T.verd : T.signal, color: e.is_host ? T.inkFaint : '#fff', fontSize: 14, fontWeight: 700, cursor: e.is_host ? 'default' : 'pointer', fontFamily: T.text }}>
+          {e.is_host ? 'You are hosting' : e.rsvped ? 'Going (tap to cancel)' : 'RSVP'}
+        </button>
+        {e.url && (
+          <a href={e.url} target="_blank" rel="noopener noreferrer"
+            style={{ padding: '13px 16px', borderRadius: 999, border: `0.5px solid ${T.rule}`, background: 'transparent', color: T.inkMuted, fontSize: 13, cursor: 'pointer', fontFamily: T.text, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
+            <ExternalLink size={14} />More info
+          </a>
+        )}
+      </div>
+    </Overlay>
+  )
+}
+
+// ── Events Carousel ────────────────────────────────────────────────────────────
+function EventsCarousel({ events, interests, onRsvp, onOpen }: {
+  events: EventItem[]
+  interests: string[]
+  onRsvp: (id: string) => void
+  onOpen: (e: EventItem) => void
+}) {
+  const rail = useRef<HTMLDivElement>(null)
+  const [canLeft, setCanLeft] = useState(false)
+  const [canRight, setCanRight] = useState(true)
+
+  function scroll(dir: 'left' | 'right') {
+    const el = rail.current
+    if (!el) return
+    el.scrollBy({ left: dir === 'left' ? -280 : 280, behavior: 'smooth' })
+  }
+
+  function onScroll() {
+    const el = rail.current
+    if (!el) return
+    setCanLeft(el.scrollLeft > 8)
+    setCanRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 8)
+  }
+
+  useEffect(() => { onScroll() }, [events])
+
+  if (!events.length) return null
+
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <SectionLabel right={
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => scroll('left')} disabled={!canLeft}
+            style={{ width: 28, height: 28, borderRadius: 999, border: `0.5px solid ${T.rule}`, background: canLeft ? T.paperDeep : 'transparent', color: canLeft ? T.ink : T.inkFaint, cursor: canLeft ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={14} />
+          </button>
+          <button onClick={() => scroll('right')} disabled={!canRight}
+            style={{ width: 28, height: 28, borderRadius: 999, border: `0.5px solid ${T.rule}`, background: canRight ? T.paperDeep : 'transparent', color: canRight ? T.ink : T.inkFaint, cursor: canRight ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      }>Events · for you</SectionLabel>
+      <div ref={rail} onScroll={onScroll}
+        style={{ display: 'flex', gap: 12, overflowX: 'auto', scrollSnapType: 'x mandatory', paddingBottom: 8, scrollbarWidth: 'none' }}>
+        {events.map((e, i) => {
+          const color = accentFor(e.id)
+          const matched = overlap(e.interests, interests) > 0
+          return (
+            <motion.div key={e.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+              onClick={() => onOpen(e)}
+              style={{ flexShrink: 0, width: 240, borderRadius: 14, overflow: 'hidden', background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', flexDirection: 'column', cursor: 'pointer', scrollSnapAlign: 'start' }}>
+              <div style={{ height: 100, position: 'relative', background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : EVENT_GRAD[color] }}>
+                <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 6 }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(0,0,0,0.28)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text }}>Event</span>
+                  {matched && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(0,0,0,0.28)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text }}>For you</span>}
                 </div>
               </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: 10, color: 'rgba(250,246,238,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: T.text }}>This week</div>
-                <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 20, color: T.ochre, lineHeight: 1.2 }}>{(quests?.weekly_delta ?? 0) > 0 ? `+${quests?.weekly_delta}` : '0'}</div>
-                {(quests?.streak ?? 0) > 0 && (
-                  <div style={{ fontSize: 11, color: 'rgba(250,246,238,0.6)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>
-                    <Flame size={11} color={T.ochre} />{quests?.streak}d
+              <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 11, color: T.signal, fontWeight: 600, fontFamily: T.text }}>{whenLabel(e.starts_at)}</div>
+                <div style={{ fontFamily: T.display, fontSize: 14, fontWeight: 500, color: T.ink, lineHeight: 1.2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{e.title}</div>
+                {e.location && <div style={{ fontSize: 11, color: T.inkFaint, display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}><MapPin size={10} />{e.location}</div>}
+                <div style={{ flex: 1 }} />
+                <button onClick={(ev) => { ev.stopPropagation(); onRsvp(e.id) }} disabled={e.is_host}
+                  style={{ marginTop: 6, padding: '7px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: e.is_host ? 'default' : 'pointer', border: 'none', background: e.is_host ? T.rule : e.rsvped ? T.verd : T.ink, color: e.is_host ? T.inkFaint : '#fff', alignSelf: 'flex-start', fontFamily: T.text }}>
+                  {e.is_host ? 'Hosting' : e.rsvped ? 'Going' : 'RSVP'}
+                </button>
+              </div>
+            </motion.div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Side quests section ────────────────────────────────────────────────────────
+function SideQuestsSection({ quests, onOpen }: { quests: Quest[]; onOpen: (q: Quest) => void }) {
+  const claimable = quests.filter(q => q.status === 'claimable')
+  const inProgress = quests.filter(q => q.status === 'locked' && q.progress != null)
+  const visible = [...claimable, ...inProgress].slice(0, 6)
+
+  if (!visible.length) return null
+
+  const catColor: Record<string, string> = {
+    profile: T.verd, network: T.verd, social: T.ochre, explore: T.plum, give: T.signal,
+  }
+
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <SectionLabel right={
+        <button onClick={() => window.location.href = '/quests'} style={{ background: 'none', border: 'none', fontSize: 11, color: T.ochre, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>
+          All <ChevronRight size={11} />
+        </button>
+      }>Side quests · earn credibility</SectionLabel>
+      <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))' }}>
+        {visible.map((q, i) => {
+          const cc = catColor[q.category] ?? T.inkMuted
+          const isClaimable = q.status === 'claimable'
+          return (
+            <motion.div key={q.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+              onClick={() => onOpen(q)}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 14, background: isClaimable ? T.ochreSoft : T.paperSoft, border: `0.5px solid ${isClaimable ? T.ochre : T.ruleSoft}`, cursor: 'pointer', transition: 'all 0.12s' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = ''}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: `${cc}18`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: cc, border: `1px solid ${cc}30` }}>
+                <QuestIcon name={q.icon} size={17} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: T.ink, fontWeight: 600, fontFamily: T.text, lineHeight: 1.2 }}>{q.title}</div>
+                <div style={{ fontSize: 11.5, color: T.inkMuted, marginTop: 2, fontFamily: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {q.type === 'self' ? 'Photo required · tap to see how' : q.description}
+                </div>
+                {q.status === 'locked' && q.progress != null && q.target != null && (
+                  <div style={{ height: 3, borderRadius: 999, background: T.ruleSoft, marginTop: 6 }}>
+                    <div style={{ width: `${Math.round(((q.progress ?? 0) / (q.target || 1)) * 100)}%`, height: '100%', borderRadius: 999, background: cc }} />
                   </div>
                 )}
               </div>
-            </div>
-
-            {next && (
-              <div style={{ marginTop: 16, position: 'relative' }}>
-                <div style={{ height: 5, borderRadius: 999, background: 'rgba(250,246,238,0.1)' }}>
-                  <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: T.ochre, transition: 'width 0.6s ease' }} />
-                </div>
-                <div style={{ marginTop: 8, fontSize: 11.5, color: 'rgba(250,246,238,0.55)', fontFamily: T.text, display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{next.at - score} pts to {next.name}</span>
-                  <span style={{ color: quests?.gig_unlocked ? '#8fe0ab' : 'rgba(250,246,238,0.45)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    {!quests?.gig_unlocked && <Lock size={10} />}{quests?.gig_unlocked ? 'Gigs unlocked' : `Gigs at ${quests?.gig_unlock_at ?? 70}`}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Side quests ochre card */}
-          <div style={{ padding: 20, borderRadius: 18, background: T.ochreSoft, border: `0.5px solid ${T.ochre}` }}>
-            <SectionLabel right={<button onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.ochre, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>All <ChevronRight size={11} /></button>}>Side quests · earn cred</SectionLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {claimable.slice(0, 3).map((q, i) => (
-                <motion.div key={q.key} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `0.5px solid rgba(200,148,31,0.3)` }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.18)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A5A0F' }}>
-                      <QuestIcon name={q.icon} size={15} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, color: '#5A3F0E', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
-                      <div style={{ fontSize: 11, color: '#8A6A1A', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.description}</div>
-                    </div>
-                    <button onClick={() => claim(q)} disabled={claiming === q.key} style={{ flexShrink: 0, padding: '6px 12px', borderRadius: 999, border: 'none', background: T.ochre, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: T.display, fontStyle: 'italic' }}>
-                      {claiming === q.key ? '...' : `+${q.points}`}
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-
-              {/* In-progress (locked w/ measurable progress) */}
-              {claimable.length < 3 && inProgress.slice(0, 3 - claimable.length).map((q) => (
-                <div key={q.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: `0.5px solid rgba(200,148,31,0.3)`, opacity: 0.85 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.1)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9A7A2A' }}>
-                    <QuestIcon name={q.icon} size={15} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, color: '#5A3F0E', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
-                    <div style={{ height: 4, borderRadius: 999, background: 'rgba(200,148,31,0.2)', marginTop: 5 }}>
-                      <div style={{ width: `${Math.round(((q.progress ?? 0) / (q.target || 1)) * 100)}%`, height: '100%', borderRadius: 999, background: T.ochre }} />
-                    </div>
-                  </div>
-                  <span style={{ flexShrink: 0, fontSize: 11, color: '#8A6A1A', fontFamily: T.text }}>{q.progress}/{q.target}</span>
-                </div>
-              ))}
-
-              {claimable.length === 0 && inProgress.length === 0 && (
-                <div style={{ fontSize: 13, color: '#9A7020', fontStyle: 'italic', fontFamily: T.display, padding: '8px 0' }}>
-                  Complete quests to earn credibility.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+              <span style={{ flexShrink: 0, fontFamily: T.display, fontStyle: 'italic', fontSize: 16, color: isClaimable ? '#7A5A0F' : T.inkFaint }}>+{q.points}</span>
+            </motion.div>
+          )
+        })}
       </div>
-
-      {/* ── "For you" section ─────────────────────────────────────────────── */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, color: T.inkMuted, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, fontFamily: T.text, marginRight: 4 }}>For you</span>
-          {FILTERS.map(f => (
-            <button key={f.k} onClick={() => setActiveFilter(f.k)} style={{ padding: '5px 12px', borderRadius: 999, border: `0.5px solid ${activeFilter === f.k ? T.ink : T.rule}`, background: activeFilter === f.k ? T.ink : 'transparent', color: activeFilter === f.k ? T.paperSoft : T.inkSoft, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: T.text, transition: 'all 0.15s' }}>
-              {f.label}
-            </button>
-          ))}
-        </div>
-        {interests.length > 0 && (
-          <div style={{ fontSize: 11.5, color: T.inkFaint, marginBottom: 14, fontFamily: T.text }}>
-            Tuned to your interests · {interests.slice(0, 4).join(' · ')}
-          </div>
-        )}
-
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))' }}>
-          <AnimatePresence mode="popLayout">
-            {showEvents && rankedEvents.slice(0, activeFilter === 'all' ? 3 : 12).map((e, i) => (
-              <EventCard key={`ev-${e.id}`} event={e} onRsvp={toggleRsvp} index={i} matched={overlap(e.interests, interests) > 0} />
-            ))}
-            {showPeople && people.slice(0, activeFilter === 'all' ? 2 : 12).map((p, i) => (
-              <PersonCard key={`p-${p.id}`} person={p} index={i} state={connecting[p.id] ?? 'idle'} onAsk={() => askIntro(p)} onView={() => navigate(`/profile/${p.id}`)} interests={interests} />
-            ))}
-            {showQuests && claimable.slice(0, activeFilter === 'all' ? 1 : 12).map((q, i) => (
-              <QuestCard key={`q-${q.key}`} quest={q} onClaim={claim} busy={claiming === q.key} index={i} />
-            ))}
-            {showGigs && gigs.slice(0, activeFilter === 'all' ? 2 : 12).map((g, i) => (
-              <GigCard key={`g-${g.id}`} gig={g} index={i} />
-            ))}
-          </AnimatePresence>
-        </div>
-
-        {((showEvents && rankedEvents.length === 0) && (showPeople && people.length === 0) && (showQuests && claimable.length === 0) && (showGigs && gigs.length === 0)) && (
-          <div style={{ padding: '32px 20px', textAlign: 'center', borderRadius: 14, border: `0.5px solid ${T.rule}`, background: T.paperSoft }}>
-            <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 18, color: T.inkMuted }}>Nothing here yet.</div>
-            <div style={{ fontSize: 13, color: T.inkFaint, marginTop: 6, fontFamily: T.text }}>Events, people, quests and gigs will show up as they are added.</div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Host event / Offer gig inline ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 12, marginTop: 20 }}>
-        <CreateEventInline onCreated={loadEvents} />
-        {elig?.can_offer && <CreateGigInline onCreated={() => { loadGigs(); apiGet<Eligibility>('/api/gigs/eligibility').then(setElig).catch(() => {}) }} />}
-        {elig && !elig.can_offer && (
-          <div style={{ padding: 18, borderRadius: 14, background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Lock size={16} color={T.inkFaint} />
-            <div>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>Offer gigs at {elig.unlock_at} credibility</div>
-              <div style={{ fontSize: 12, color: T.inkMuted, marginTop: 2, fontFamily: T.text }}>You are at {elig.credibility_score}. Browse offers or earn more through quests.</div>
-            </div>
-          </div>
-        )}
-      </div>
-    </motion.div>
+    </div>
   )
 }
 
-// ── Card components ──────────────────────────────────────────────────────────
-function EventCard({ event: e, onRsvp, index, matched }: { event: EventItem; onRsvp: (id: string) => void; index: number; matched: boolean }) {
-  const color = accentFor(e.id)
-  return (
-    <motion.div key={e.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} transition={{ delay: index * 0.05 }}
-      style={{ borderRadius: 14, overflow: 'hidden', background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ height: 110, position: 'relative', background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : EVENT_GRAD[color], display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: 10 }}>
-        <span style={{ fontSize: 10.5, fontWeight: 600, color: '#fff', background: 'rgba(0,0,0,0.28)', padding: '3px 9px', borderRadius: 999, fontFamily: T.text }}>Event</span>
-        {matched && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(0,0,0,0.28)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text }}>For you</span>}
-      </div>
-      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-        <div style={{ fontSize: 11.5, color: T.signal, fontWeight: 600, fontFamily: T.text }}>{whenLabel(e.starts_at)}</div>
-        <div style={{ fontFamily: T.display, fontSize: 16, fontWeight: 500, letterSpacing: -0.2, color: T.ink, lineHeight: 1.15 }}>{e.title}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5, color: T.inkFaint, flexWrap: 'wrap', fontFamily: T.text }}>
-          {e.location && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><MapPin size={11} />{e.location}</span>}
-          <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Users size={11} />{e.rsvp_count}</span>
-        </div>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => onRsvp(e.id)} disabled={e.is_host} style={{ marginTop: 4, padding: '8px 16px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: e.is_host ? 'default' : 'pointer', border: 'none', background: e.is_host ? T.rule : e.rsvped ? T.verd : T.ink, color: e.is_host ? T.inkFaint : '#fff', alignSelf: 'flex-start', fontFamily: T.text, transition: 'all 0.15s' }}>
-          {e.is_host ? 'You are hosting' : e.rsvped ? 'Going' : 'RSVP'}
-        </button>
-      </div>
-    </motion.div>
-  )
-}
-
+// ── People card ────────────────────────────────────────────────────────────────
 function PersonCard({ person: p, index, state, onAsk, onView, interests }: { person: Person; index: number; state: 'idle' | 'busy' | 'sent'; onAsk: () => void; onView: () => void; interests: string[] }) {
   const shared = (p.interests ?? []).filter(x => interests.map(i => i.toLowerCase()).includes(x.toLowerCase()))
   const reason = p.match_reason
@@ -421,31 +518,10 @@ function PersonCard({ person: p, index, state, onAsk, onView, interests }: { per
   )
 }
 
-function QuestCard({ quest: q, onClaim, busy, index }: { quest: Quest; onClaim: (q: Quest) => void; busy: boolean; index: number }) {
-  return (
-    <motion.div key={q.key} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} transition={{ delay: index * 0.05 }}
-      style={{ padding: 18, borderRadius: 14, background: T.ochreSoft, border: `0.5px solid ${T.ochre}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${T.ochre}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ochre }}>
-          <QuestIcon name={q.icon} size={18} />
-        </div>
-        <span style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 18, color: '#7A5A0F' }}>+{q.points}</span>
-      </div>
-      <div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#4A3008', fontFamily: T.text }}>{q.title}</div>
-        <div style={{ fontSize: 12, color: '#7A6030', marginTop: 3, lineHeight: 1.45, fontFamily: T.text }}>{q.description}</div>
-      </div>
-      <button onClick={() => onClaim(q)} disabled={busy} style={{ padding: '8px 0', borderRadius: 999, border: 'none', background: T.ochre, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>
-        {busy ? '...' : q.type === 'self' ? 'Mark done' : 'Claim'}
-      </button>
-    </motion.div>
-  )
-}
-
 function GigCard({ gig: g, index }: { gig: Gig; index: number }) {
   const rewardColor = g.reward_type === 'paid' ? T.verd : g.reward_type === 'coffee' ? T.ochre : T.inkMuted
   return (
-    <motion.div key={g.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} transition={{ delay: index * 0.05 }}
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} transition={{ delay: index * 0.05 }}
       style={{ padding: 18, borderRadius: 14, background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
         <div style={{ fontFamily: T.display, fontSize: 15, fontWeight: 500, color: T.ink }}>{g.title}</div>
@@ -457,7 +533,7 @@ function GigCard({ gig: g, index }: { gig: Gig; index: number }) {
   )
 }
 
-// ── Inline creation panels ───────────────────────────────────────────────────
+// ── Create event inline ────────────────────────────────────────────────────────
 function CreateEventInline({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -465,10 +541,7 @@ function CreateEventInline({ onCreated }: { onCreated: () => void }) {
   const [image, setImage] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
 
-  function pickImage(file: File | null) {
-    setImage(file)
-    setPreview(file ? URL.createObjectURL(file) : null)
-  }
+  function pickImage(file: File | null) { setImage(file); setPreview(file ? URL.createObjectURL(file) : null) }
 
   async function create(e: React.FormEvent) {
     e.preventDefault(); setBusy(true)
@@ -493,7 +566,6 @@ function CreateEventInline({ onCreated }: { onCreated: () => void }) {
         </button>
       ) : (
         <form onSubmit={create} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* Cover photo */}
           <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: preview ? 110 : 'auto', padding: preview ? 0 : '12px', borderRadius: 10, border: `0.5px dashed ${T.rule}`, background: preview ? `center/cover no-repeat url(${preview})` : T.paper, cursor: 'pointer', overflow: 'hidden', color: T.inkMuted, fontSize: 12.5, fontFamily: T.text }}>
             {!preview && <><ImagePlus size={15} /> Add a cover photo</>}
             <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => pickImage(e.target.files?.[0] ?? null)} />
@@ -554,5 +626,214 @@ function CreateGigInline({ onCreated }: { onCreated: () => void }) {
         </form>
       )}
     </div>
+  )
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {}) {
+  const navigate = useNavigate()
+  const [quests, setQuests] = useState<QuestsResp | null>(null)
+  const [events, setEvents] = useState<EventItem[]>([])
+  const [gigs, setGigs] = useState<Gig[]>([])
+  const [elig, setElig] = useState<Eligibility | null>(null)
+  const [me, setMe] = useState<Me | null>(null)
+  const [people, setPeople] = useState<Person[]>([])
+  const [connecting, setConnecting] = useState<Record<string, 'idle' | 'busy' | 'sent'>>({})
+  const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null)
+  const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null)
+
+  const loadQuests = useCallback(() => { apiGet<QuestsResp>('/api/quests').then(setQuests).catch(() => {}) }, [])
+  const loadEvents = useCallback(() => { apiGet<{ events: EventItem[] }>('/api/events?limit=20').then(r => setEvents(r.events)).catch(() => {}) }, [])
+  const loadGigs   = useCallback(() => { apiGet<{ gigs: Gig[] }>('/api/gigs?limit=6').then(r => setGigs(r.gigs)).catch(() => {}) }, [])
+
+  useEffect(() => {
+    loadQuests(); loadEvents(); loadGigs()
+    apiGet<Eligibility>('/api/gigs/eligibility').then(setElig).catch(() => {})
+    apiGet<{ user: Me }>('/api/users/me').then(r => setMe(r.user)).catch(() => {})
+    apiGet<{ suggestions: Person[] }>('/api/users/suggestions').then(r => setPeople(r.suggestions ?? [])).catch(() => {})
+  }, [loadQuests, loadEvents, loadGigs])
+
+  async function toggleRsvp(id: string) {
+    setEvents(evs => evs.map(e => e.id === id ? { ...e, rsvped: !e.rsvped, rsvp_count: e.rsvp_count + (e.rsvped ? -1 : 1) } : e))
+    try { await apiPost(`/api/events/${id}/rsvp`, {}) } catch { loadEvents() }
+  }
+
+  async function askIntro(p: Person) {
+    setConnecting(s => ({ ...s, [p.id]: 'busy' }))
+    try {
+      await apiPost('/api/connections', { addresseeId: p.id })
+      setConnecting(s => ({ ...s, [p.id]: 'sent' }))
+    } catch { setConnecting(s => ({ ...s, [p.id]: 'idle' })) }
+  }
+
+  const interests    = me?.interests ?? []
+  const score        = quests?.credibility_score ?? 0
+  const next         = quests?.next_tier ?? null
+  const floor        = next ? prevFloor(score, next.at) : score
+  const pct          = next ? Math.min(100, Math.round(((score - floor) / (next.at - floor)) * 100)) : 100
+  const claimable    = (quests?.quests ?? []).filter(q => q.status === 'claimable')
+  const inProgress   = (quests?.quests ?? []).filter(q => q.status === 'locked' && q.progress != null && q.target != null)
+  const allQuests    = quests?.quests ?? []
+
+  const rankedEvents = useMemo(() => (
+    [...events].sort((a, b) => {
+      const ov = overlap(b.interests, interests) - overlap(a.interests, interests)
+      if (ov !== 0) return ov
+      return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
+    })
+  ), [events, interests])
+
+  return (
+    <>
+      <AnimatePresence>
+        {selectedQuest && (
+          <QuestDetailModal
+            quest={selectedQuest}
+            onClose={() => setSelectedQuest(null)}
+            onClaimed={() => { loadQuests(); setSelectedQuest(null) }}
+          />
+        )}
+        {selectedEvent && (
+          <EventDetailModal
+            event={selectedEvent}
+            onClose={() => setSelectedEvent(null)}
+            onRsvp={toggleRsvp}
+          />
+        )}
+      </AnimatePresence>
+
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+
+        {/* ── Top row: maintenance + credibility + side quests mini ─────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: maintenance ? 'minmax(0,1.6fr) minmax(0,1fr)' : 'minmax(0,1fr) minmax(0,1fr)', gap: 16, marginBottom: 28 }}>
+          {maintenance}
+          <div style={{ display: maintenance ? 'flex' : 'contents', flexDirection: 'column', gap: 16 }}>
+
+            {/* Credibility card */}
+            <div style={{ padding: 22, borderRadius: 18, background: T.ink, color: T.paperSoft, position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', right: -30, top: -30, width: 160, height: 160, borderRadius: '50%', background: `radial-gradient(circle, rgba(216,68,43,0.3) 0%, transparent 70%)` }} />
+              <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <CredRing score={score} max={next?.at ?? 120} />
+                  <div>
+                    <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, fontWeight: 500, letterSpacing: -0.3, lineHeight: 1.1 }}>{quests?.tier ?? 'Newcomer'}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(250,246,238,0.55)', marginTop: 3, fontFamily: T.text }}>Credibility{quests?.percentile != null ? ` · top ${quests.percentile}%` : ''}</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 10, color: 'rgba(250,246,238,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: T.text }}>This week</div>
+                  <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 20, color: T.ochre, lineHeight: 1.2 }}>{(quests?.weekly_delta ?? 0) > 0 ? `+${quests?.weekly_delta}` : '0'}</div>
+                  {(quests?.streak ?? 0) > 0 && (
+                    <div style={{ fontSize: 11, color: 'rgba(250,246,238,0.6)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>
+                      <Flame size={11} color={T.ochre} />{quests?.streak}d
+                    </div>
+                  )}
+                </div>
+              </div>
+              {next && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ height: 5, borderRadius: 999, background: 'rgba(250,246,238,0.1)' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: T.ochre, transition: 'width 0.6s ease' }} />
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 11.5, color: 'rgba(250,246,238,0.55)', fontFamily: T.text, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{next.at - score} pts to {next.name}</span>
+                    <span style={{ color: quests?.gig_unlocked ? '#8fe0ab' : 'rgba(250,246,238,0.45)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      {!quests?.gig_unlocked && <Lock size={10} />}{quests?.gig_unlocked ? 'Gigs unlocked' : `Gigs at ${quests?.gig_unlock_at ?? 70}`}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Side quests mini (top 3 claimable, tap to open detail) */}
+            <div style={{ padding: 20, borderRadius: 18, background: T.ochreSoft, border: `0.5px solid ${T.ochre}` }}>
+              <SectionLabel right={<button onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.ochre, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>All <ChevronRight size={11} /></button>}>Side quests · earn cred</SectionLabel>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {claimable.slice(0, 3).map((q, i) => (
+                  <motion.div key={q.key} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}>
+                    <button onClick={() => setSelectedQuest(q)} style={{ width: '100%', background: 'none', border: 'none', padding: '10px 0', borderBottom: `0.5px solid rgba(200,148,31,0.3)`, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.18)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A5A0F' }}>
+                        <QuestIcon name={q.icon} size={15} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, color: '#5A3F0E', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
+                        <div style={{ fontSize: 11, color: '#8A6A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {q.type === 'self' ? 'Tap to see how to complete' : q.description}
+                        </div>
+                      </div>
+                      <span style={{ flexShrink: 0, fontFamily: T.display, fontStyle: 'italic', fontSize: 15, color: '#7A5A0F' }}>+{q.points}</span>
+                    </button>
+                  </motion.div>
+                ))}
+                {claimable.length < 3 && inProgress.slice(0, 3 - claimable.length).map((q) => (
+                  <button key={q.key} onClick={() => setSelectedQuest(q)} style={{ width: '100%', background: 'none', border: 'none', padding: '10px 0', borderBottom: `0.5px solid rgba(200,148,31,0.3)`, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', opacity: 0.85, textAlign: 'left' }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.1)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9A7A2A' }}>
+                      <QuestIcon name={q.icon} size={15} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, color: '#5A3F0E', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
+                      <div style={{ height: 4, borderRadius: 999, background: 'rgba(200,148,31,0.2)', marginTop: 5 }}>
+                        <div style={{ width: `${Math.round(((q.progress ?? 0) / (q.target || 1)) * 100)}%`, height: '100%', borderRadius: 999, background: T.ochre }} />
+                      </div>
+                    </div>
+                    <span style={{ flexShrink: 0, fontSize: 11, color: '#8A6A1A', fontFamily: T.text }}>{q.progress}/{q.target}</span>
+                  </button>
+                ))}
+                {claimable.length === 0 && inProgress.length === 0 && (
+                  <div style={{ fontSize: 13, color: '#9A7020', fontStyle: 'italic', fontFamily: T.display, padding: '8px 0' }}>Complete quests to earn credibility.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Events carousel ───────────────────────────────────────────── */}
+        <EventsCarousel events={rankedEvents} interests={interests} onRsvp={toggleRsvp} onOpen={setSelectedEvent} />
+
+        {/* ── Side quests grid ──────────────────────────────────────────── */}
+        <SideQuestsSection quests={allQuests} onOpen={setSelectedQuest} />
+
+        {/* ── People suggestions ────────────────────────────────────────── */}
+        {people.length > 0 && (
+          <div style={{ marginBottom: 32 }}>
+            <SectionLabel>People · suggested for you</SectionLabel>
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))' }}>
+              <AnimatePresence mode="popLayout">
+                {people.slice(0, 4).map((p, i) => (
+                  <PersonCard key={p.id} person={p} index={i} state={connecting[p.id] ?? 'idle'} onAsk={() => askIntro(p)} onView={() => navigate(`/profile/${p.id}`)} interests={interests} />
+                ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {/* ── Gigs ──────────────────────────────────────────────────────── */}
+        {gigs.length > 0 && (
+          <div style={{ marginBottom: 32 }}>
+            <SectionLabel>Gigs · from your network</SectionLabel>
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))' }}>
+              <AnimatePresence mode="popLayout">
+                {gigs.slice(0, 4).map((g, i) => <GigCard key={g.id} gig={g} index={i} />)}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {/* ── Host event / Offer gig inline ─────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
+          <CreateEventInline onCreated={loadEvents} />
+          {elig?.can_offer && <CreateGigInline onCreated={() => { loadGigs(); apiGet<Eligibility>('/api/gigs/eligibility').then(setElig).catch(() => {}) }} />}
+          {elig && !elig.can_offer && (
+            <div style={{ padding: 18, borderRadius: 14, background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Lock size={16} color={T.inkFaint} />
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>Offer gigs at {elig.unlock_at} credibility</div>
+                <div style={{ fontSize: 12, color: T.inkMuted, marginTop: 2, fontFamily: T.text }}>You are at {elig.credibility_score}. Browse offers or earn more through quests.</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </>
   )
 }

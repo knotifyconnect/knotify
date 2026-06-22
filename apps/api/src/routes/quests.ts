@@ -1,6 +1,21 @@
 import { Router } from 'express'
+import multer from 'multer'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } })
+const QUEST_PHOTOS_BUCKET = 'quest-photos'
+
+async function ensureQuestPhotosBucket() {
+  const { data: buckets } = await supabase.storage.listBuckets()
+  if (!buckets?.find((b) => b.name === QUEST_PHOTOS_BUCKET)) {
+    await supabase.storage.createBucket(QUEST_PHOTOS_BUCKET, {
+      public: true,
+      allowedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+      fileSizeLimit: 8 * 1024 * 1024,
+    })
+  }
+}
 
 export const questsRouter = Router()
 
@@ -184,26 +199,52 @@ questsRouter.get('/', requireAuth, async (req, res) => {
   })
 })
 
-questsRouter.post('/:key/claim', requireAuth, async (req, res) => {
+questsRouter.post('/:key/claim', requireAuth, upload.single('photo'), async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
   const key = req.params.key
+  const shareToFeed = req.body.shareToFeed === 'true' || req.body.shareToFeed === true
 
   let points: number
+  let questTitle = key
+  let isSelfQuest = false
+
   const verified = VERIFIED.find((q) => q.key === key)
   if (verified) {
     const evalMap = await evaluate(req.appUserId)
     if (!evalMap[key]?.done) return res.status(400).json({ error: 'Quest requirements not met yet.' })
     points = verified.points
+    questTitle = verified.title
   } else {
     const dbQuest = (await activeDbQuests()).find((q: any) => q.key === key)
     if (!dbQuest) return res.status(404).json({ error: 'Unknown or inactive quest' })
     points = dbQuest.points
+    questTitle = dbQuest.title
+    isSelfQuest = true
+  }
+
+  // Upload photo evidence if provided (required for self quests, optional for verified)
+  let photoUrl: string | null = null
+  if (req.file) {
+    try {
+      await ensureQuestPhotosBucket()
+      const ext = req.file.mimetype.split('/')[1] ?? 'jpg'
+      const path = `${req.appUserId}/${key}-${Date.now()}.${ext}`
+      const upl = await supabase.storage.from(QUEST_PHOTOS_BUCKET).upload(path, req.file.buffer, {
+        contentType: req.file.mimetype, upsert: true,
+      })
+      if (upl.error) return res.status(500).json({ error: `Photo upload failed: ${upl.error.message}` })
+      photoUrl = supabase.storage.from(QUEST_PHOTOS_BUCKET).getPublicUrl(path).data.publicUrl
+    } catch (err) {
+      return res.status(500).json({ error: err instanceof Error ? err.message : 'Photo upload failed' })
+    }
+  } else if (isSelfQuest) {
+    return res.status(400).json({ error: 'Photo evidence is required for life quests.' })
   }
 
   const ins = await supabase
     .from('user_quests')
     .upsert(
-      { user_id: req.appUserId, quest_key: key, points_awarded: points },
+      { user_id: req.appUserId, quest_key: key, points_awarded: points, photo_url: photoUrl, share_to_feed: shareToFeed },
       { onConflict: 'user_id,quest_key', ignoreDuplicates: true }
     )
   if (ins.error) return res.status(500).json({ error: ins.error.message })
@@ -212,5 +253,14 @@ questsRouter.post('/:key/claim', requireAuth, async (req, res) => {
   const score = rows.reduce((s: number, r: any) => s + (r.points_awarded ?? 0), 0)
   await supabase.from('users').update({ credibility_score: score }).eq('id', req.appUserId)
 
-  return res.json({ ok: true, credibility_score: score, awarded: points })
+  // Post to updates feed if photo + shareToFeed
+  if (photoUrl && shareToFeed) {
+    await supabase.from('updates').insert({
+      user_id: req.appUserId,
+      content: `Completed the "${questTitle}" quest.`,
+      image_url: photoUrl,
+    }).catch(() => {})
+  }
+
+  return res.json({ ok: true, credibility_score: score, awarded: points, photo_url: photoUrl })
 })
