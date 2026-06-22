@@ -7,7 +7,7 @@
  * Design tokens: Fraunces headings · IBM Plex Sans body · Paper #F4EFE6
  * Signal Red (#D84428) used ONLY on: Review button, cold dot, cold pill accent, cold count.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
 import { HomeHub } from '../components/HomeHub'
@@ -236,11 +236,39 @@ export function RelationshipHomePage() {
   const [referralPeer, setReferralPeer] = useState<Peer | null>(null)
   const [askMenuPeer, setAskMenuPeer] = useState<Peer | null>(null)
   const [railEvents, setRailEvents] = useState<Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }>>([])
+  const [myAsks, setMyAsks] = useState<Array<{ id: string; content: string; status: 'open' | 'resolved'; created_at: string; reply_count?: number }>>([])
+  const [askOpen, setAskOpen] = useState(false)
+  const [askText, setAskText] = useState('')
+  const [askBusy, setAskBusy] = useState(false)
 
   useEffect(() => {
     apiGet<{ events: Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }> }>('/api/events?limit=3')
       .then((r) => setRailEvents(r.events ?? [])).catch(() => {})
   }, [])
+
+  const loadMyAsks = useCallback((uid: string) => {
+    if (!uid) return
+    apiGet<{ asks: Array<{ id: string; content: string; status: 'open' | 'resolved'; created_at: string; reply_count?: number }> }>(`/api/asks/by-user/${uid}`)
+      .then((r) => setMyAsks(r.asks ?? [])).catch(() => {})
+  }, [])
+
+  useEffect(() => { if (userId) loadMyAsks(userId) }, [userId, loadMyAsks])
+
+  async function postAsk() {
+    const content = askText.trim()
+    if (!content) return
+    setAskBusy(true)
+    try {
+      await apiPost('/api/asks', { content })
+      setAskText(''); setAskOpen(false)
+      loadMyAsks(userId)
+    } finally { setAskBusy(false) }
+  }
+
+  async function resolveAsk(id: string) {
+    setMyAsks((a) => a.map((x) => x.id === id ? { ...x, status: 'resolved' } : x))
+    try { await apiPost(`/api/asks/${id}/resolve`, {}) } catch { loadMyAsks(userId) }
+  }
 
   useEffect(() => {
     apiGet<{ user: { full_name: string; id: string } }>('/api/users/me')
@@ -420,6 +448,29 @@ export function RelationshipHomePage() {
       </div>
 
       <div>
+        <DeskSectionLabel right={
+          <button type="button" onClick={() => setAskOpen(true)} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>+ Ask</button>
+        }>Your asks</DeskSectionLabel>
+        {myAsks.filter(a => a.status === 'open').length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {myAsks.filter(a => a.status === 'open').slice(0, 4).map((a) => (
+              <div key={a.id} style={{ padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}` }}>
+                <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4, fontFamily: T.text }}>{a.content}</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                  <span style={{ fontSize: 10.5, color: T.inkFaint, fontFamily: T.text }}>{a.reply_count ? `${a.reply_count} repl${a.reply_count === 1 ? 'y' : 'ies'}` : 'No replies yet'}</span>
+                  <button type="button" onClick={() => resolveAsk(a.id)} style={{ background: 'none', border: `0.5px solid ${T.rule}`, borderRadius: 999, padding: '4px 10px', fontSize: 11, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>Mark resolved</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <button type="button" onClick={() => setAskOpen(true)} style={{ width: '100%', padding: '12px', borderRadius: 12, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 12.5, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>
+            Need something? Ask your knot for help.
+          </button>
+        )}
+      </div>
+
+      <div>
         <DeskSectionLabel>Next · IRL</DeskSectionLabel>
         {railEvents.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -450,11 +501,39 @@ export function RelationshipHomePage() {
           onClose={() => setAskMenuPeer(null)}
         />
       )}
+      {askOpen && (
+        <div onClick={() => setAskOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(26,24,21,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(3px)' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: T.paper, borderRadius: 18, padding: 22 }}>
+            <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 21, color: T.ink, marginBottom: 4 }}>Ask your knot</div>
+            <div style={{ fontSize: 13, color: T.inkMuted, marginBottom: 14, fontFamily: T.text, lineHeight: 1.5 }}>
+              Need a hand, an intro, a recommendation? Post it and the people in your knot will see it.
+            </div>
+            <textarea
+              autoFocus
+              value={askText}
+              onChange={(e) => setAskText(e.target.value.slice(0, 280))}
+              placeholder="e.g. Looking for a flat in Schwabing, anyone subletting? Or: who knows someone at Celonis?"
+              rows={4}
+              style={{ width: '100%', padding: '11px 13px', borderRadius: 12, border: `0.5px solid ${T.rule}`, background: T.paperSoft, fontSize: 14, color: T.ink, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: T.text, lineHeight: 1.5 }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+              <span style={{ fontSize: 11, color: T.inkFaint, fontFamily: T.text }}>{askText.length}/280</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <KBtn variant="ghost" size="sm" onClick={() => setAskOpen(false)}>Cancel</KBtn>
+                <KBtn variant="signal" size="sm" onClick={postAsk} disabled={askBusy || !askText.trim()}>{askBusy ? 'Posting…' : 'Post ask'}</KBtn>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <DeskHeader
         kicker={`Home · ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`}
         title={<span style={{ fontStyle: 'italic' }}>Welcome back{firstName ? `, ${firstName}` : ''}.</span>}
-        right={<KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>}
+        right={<>
+          <KBtn variant="ghost" size="sm" onClick={() => setAskOpen(true)}>Ask your knot</KBtn>
+          <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
+        </>}
       />
 
       {pendingForMe.length > 0 && (

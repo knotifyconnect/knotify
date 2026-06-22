@@ -43,6 +43,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })()
     req.url = '/api/' + raw + queryString
 
+    // Resilient diagnostics: report which env vars are configured WITHOUT
+    // importing the app (which throws when Supabase env is missing). This lets
+    // you verify production config at /api/health even when the API is down.
+    if (raw === 'health' || raw === 'health/') {
+      const present = (k: string) => Boolean(process.env[k] && String(process.env[k]).length > 0)
+      return res.status(200).json({
+        ok: present('SUPABASE_URL') && present('SUPABASE_SERVICE_ROLE_KEY'),
+        env: {
+          SUPABASE_URL: present('SUPABASE_URL'),
+          SUPABASE_SERVICE_ROLE_KEY: present('SUPABASE_SERVICE_ROLE_KEY'),
+          ANTHROPIC_API_KEY: present('ANTHROPIC_API_KEY'),
+          ADMIN_PANEL_SECRET: present('ADMIN_PANEL_SECRET'),
+          DATABASE_URL: present('DATABASE_URL'),
+        },
+        node_env: process.env.NODE_ENV ?? null,
+        time: new Date().toISOString(),
+      })
+    }
+
     const app = await getApp()
     return app(req, res)
   } catch (err) {
