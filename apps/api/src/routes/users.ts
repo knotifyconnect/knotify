@@ -40,6 +40,7 @@ const updateMeSchema = z.object({
   isInternational: z.boolean().optional().nullable(),
   homeCountry: z.string().max(80).optional().nullable(),
   munichTenure: z.string().max(40).optional().nullable(),
+  socialEnergy: z.enum(['active', 'selective', 'gentle']).optional().nullable(),
 })
 
 const searchUsersQuerySchema = z.object({
@@ -189,6 +190,7 @@ usersRouter.patch('/me', requireAuth, async (req, res) => {
   if (data.isInternational !== undefined) update.is_international = data.isInternational
   if (data.homeCountry !== undefined) update.home_country = data.homeCountry ? data.homeCountry.trim() : null
   if (data.munichTenure !== undefined) update.munich_tenure = data.munichTenure
+  if (data.socialEnergy !== undefined) update.social_energy = data.socialEnergy
 
   if (Object.keys(update).length === 0) {
     return res.status(400).json({ error: 'No fields provided' })

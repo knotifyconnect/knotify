@@ -14,7 +14,7 @@ import { HomeHub } from '../components/HomeHub'
 import { KAvatar, KBtn } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel, RailCard } from '../lib/desk'
-import { MessageSquare, Coffee } from 'lucide-react'
+import { MessageSquare, Coffee, CalendarDays } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,11 +57,21 @@ type PendingEntry = {
   created_at: string
 }
 
+type SharedEvent = {
+  eventId:   string
+  title:     string
+  starts_at: string
+  location:  string | null
+  peerId:    string
+  peer:      Peer | null
+}
+
 type HomeData = {
-  ranked:      RankedEntry[]
-  milestones:  NetworkItem[]
-  openAsks:    NetworkItem[]
+  ranked:       RankedEntry[]
+  milestones:   NetworkItem[]
+  openAsks:     NetworkItem[]
   pendingForMe: PendingEntry[]
+  sharedEvents: SharedEvent[]
 }
 
 // ── Fallback: build from /api/connections ────────────────────────────────────
@@ -128,7 +138,7 @@ function buildFallbackData(
     .filter((c) => c.addressee_id === userId && c.user)
     .map((c) => ({ id: c.id, peer: c.user!, created_at: c.created_at }))
 
-  return { ranked, milestones: [], openAsks: [], pendingForMe }
+  return { ranked, milestones: [], openAsks: [], pendingForMe, sharedEvents: [] }
 }
 
 // ── Design constants ──────────────────────────────────────────────────────────
@@ -233,6 +243,9 @@ export function RelationshipHomePage() {
   const [firstName, setFirstName] = useState('')
   const [userId, setUserId] = useState('')
   const [messagingPeer, setMessagingPeer] = useState<string | null>(null)
+  const [actedIds, setActedIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem('knotify:acted') ?? '[]')) } catch { return new Set() }
+  })
   const [referralPeer, setReferralPeer] = useState<Peer | null>(null)
   const [askMenuPeer, setAskMenuPeer] = useState<Peer | null>(null)
   const [railEvents, setRailEvents] = useState<Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }>>([])
@@ -301,7 +314,7 @@ export function RelationshipHomePage() {
             if (!mounted) return
             setData(buildFallbackData(connections, userId))
           })
-          .catch(() => { if (mounted) setData({ ranked: [], milestones: [], openAsks: [], pendingForMe: [] }) })
+          .catch(() => { if (mounted) setData({ ranked: [], milestones: [], openAsks: [], pendingForMe: [], sharedEvents: [] }) })
           .finally(() => { if (mounted) setLoading(false) })
       })
 
@@ -322,6 +335,14 @@ export function RelationshipHomePage() {
   }
 
   function logAndAct(entry: RankedEntry, outcome: 'acted' | 'dismissed') {
+    if (outcome === 'acted' || outcome === 'dismissed') {
+      setActedIds(prev => {
+        const next = new Set(prev)
+        next.add(entry.connectionId)
+        try { sessionStorage.setItem('knotify:acted', JSON.stringify([...next])) } catch {}
+        return next
+      })
+    }
     apiPost('/api/relationship-home/feedback', {
       connectionId:    entry.connectionId,
       priorityScore:   entry.priorityScore,
@@ -342,10 +363,11 @@ export function RelationshipHomePage() {
     )
   }
 
-  const ranked      = data?.ranked ?? []
-  const milestones  = data?.milestones ?? []
-  const openAsks    = data?.openAsks ?? []
+  const ranked       = (data?.ranked ?? []).filter(r => !actedIds.has(r.connectionId))
+  const milestones   = data?.milestones ?? []
+  const openAsks     = data?.openAsks ?? []
   const pendingForMe = data?.pendingForMe ?? []
+  const sharedEvents = data?.sharedEvents ?? []
 
   const coldCount     = ranked.filter((r) => r.state === 'cold').length
   const coolingCount  = ranked.filter((r) => r.state === 'cooling').length
@@ -358,20 +380,53 @@ export function RelationshipHomePage() {
   const newCount = ranked.filter((r) => r.state === 'new').length
   const allWarm = ranked.length > 0 && coldCount === 0 && coolingCount === 0 && newCount === 0
 
+  // ── Shared-event moment cards ─────────────────────────────────────────────
+  const momentCards = sharedEvents.length > 0 ? (
+    <div style={{ marginBottom: 16 }}>
+      <DeskSectionLabel>Happening in your knot</DeskSectionLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {sharedEvents.slice(0, 3).map((ev) => {
+          const d = new Date(ev.starts_at)
+          const when = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+          const firstName = ev.peer?.full_name?.split(' ')[0] ?? 'Someone'
+          return (
+            <div key={`${ev.eventId}-${ev.peerId}`} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}`, borderLeft: `3px solid ${T.verd}` }}>
+              <CalendarDays size={16} color={T.verd} style={{ flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: T.text }}>{ev.title}</div>
+                <div style={{ fontSize: 11.5, color: T.inkMuted, marginTop: 2, fontFamily: T.text }}>
+                  {firstName} is also going · {when}{ev.location ? ` · ${ev.location}` : ''}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => ev.peer && openMessage(ev.peer.id, `Hey! Saw we're both going to ${ev.title} — want to meet there?`)}
+                style={{ flexShrink: 0, padding: '7px 13px', borderRadius: 999, border: 'none', background: T.verd, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.text, whiteSpace: 'nowrap' }}
+              >
+                Say hi
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  ) : null
+
   // ── Maintenance card ("Keep your knot warm") — design top-left region ──────
-  const maintenanceNode = ranked.length > 0 ? (
+  const maintenanceNode = (ranked.length > 0 || momentCards) ? (
     <div style={{ padding: 20, borderRadius: 16, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
+      {momentCards}
       <DeskSectionLabel right={
-        <span style={{ color: coldCount > 0 ? T.signal : coolingCount > 0 ? T.ochre : T.verd, textTransform: 'none', letterSpacing: 0, fontWeight: 700 }}>
+        ranked.length > 0 ? <span style={{ color: coldCount > 0 ? T.signal : coolingCount > 0 ? T.ochre : T.verd, textTransform: 'none', letterSpacing: 0, fontWeight: 700 }}>
           {allWarm ? 'All warm' : coldCount > 0 ? `${coldCount} going cold` : coolingCount > 0 ? `${coolingCount} cooling` : ''}
-        </span>
+        </span> : undefined
       }>Keep your knot warm</DeskSectionLabel>
 
-      {allWarm ? (
+      {ranked.length === 0 && !momentCards ? null : allWarm ? (
         <div style={{ fontSize: 13.5, color: T.inkMuted, fontFamily: T.display, fontStyle: 'italic', padding: '6px 0' }}>
           Nothing overdue. Your relationships are warm.
         </div>
-      ) : (
+      ) : ranked.length === 0 ? null : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {ranked.slice(0, 4).map((entry) => {
             const sc = STATE_COLOR[entry.state]

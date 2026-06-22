@@ -8,7 +8,6 @@ import { createPortal } from 'react-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness,
-  CalendarDays,
   ChevronRight,
   Coffee,
   Home,
@@ -17,7 +16,6 @@ import {
   Network,
   Search,
   Settings,
-  Target,
 } from 'lucide-react'
 import { KAvatar, KnotifyLogoImg } from '@/lib/knotify'
 import { supabase } from '@/lib/supabase'
@@ -49,8 +47,6 @@ const BASE_ITEMS: NavItem[] = [
   { title: 'Home',         href: '/home',     icon: <Home              size={15} /> },
   { title: 'Your Knot',    href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
   { title: 'Discover',     href: '/discover', icon: <Search            size={15} /> },
-  { title: 'Events',       href: '/events',   icon: <CalendarDays      size={15} /> },
-  { title: 'Quests',       href: '/quests',   icon: <Target            size={15} /> },
   { title: 'Jobs & Gigs',  href: '/jobs',     icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
   { title: 'Cafes',        sub: 'IRL',        href: '/cafes',          icon: <Coffee            size={15} /> },
   { title: 'Messages',     href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },

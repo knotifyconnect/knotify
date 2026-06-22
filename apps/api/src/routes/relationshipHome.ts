@@ -51,7 +51,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
     )
 
     if (!peerIds.length) {
-      return res.json({ ranked: [], milestones: [], openAsks: [], pendingForMe: [] })
+      return res.json({ ranked: [], milestones: [], openAsks: [], pendingForMe: [], sharedEvents: [] })
     }
 
     // 3. Current user profile
@@ -164,7 +164,63 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       )
     } catch { /* non-critical */ }
 
-    // 8. Mutual connection counts (lightweight)
+    // 8. Shared upcoming events (user + connection both RSVPed)
+    type SharedEvent = {
+      eventId: string; title: string; starts_at: string; location: string | null
+      peerId: string; peer: PeerProfile | null
+    }
+    let sharedEvents: SharedEvent[] = []
+    try {
+      const nowIso = new Date().toISOString()
+      const { data: myRsvps } = await supabase
+        .from('event_rsvps')
+        .select('event_id')
+        .eq('user_id', userId)
+
+      const myEventIds = ((myRsvps ?? []) as Array<{ event_id: string }>).map((r) => r.event_id)
+
+      if (myEventIds.length) {
+        const { data: peerRsvps } = await supabase
+          .from('event_rsvps')
+          .select('event_id, user_id')
+          .in('user_id', peerIds)
+          .in('event_id', myEventIds)
+
+        const peerEventPairs = (peerRsvps ?? []) as Array<{ event_id: string; user_id: string }>
+
+        if (peerEventPairs.length) {
+          const eventIds = [...new Set(peerEventPairs.map((r) => r.event_id))]
+          const { data: eventsData } = await supabase
+            .from('events')
+            .select('id, title, starts_at, location')
+            .in('id', eventIds)
+            .gt('starts_at', nowIso)
+            .order('starts_at', { ascending: true })
+            .limit(10)
+
+          const eventsById = new Map(
+            ((eventsData ?? []) as Array<{ id: string; title: string; starts_at: string; location: string | null }>)
+              .map((e) => [e.id, e])
+          )
+
+          for (const pair of peerEventPairs) {
+            const ev = eventsById.get(pair.event_id)
+            if (!ev) continue
+            sharedEvents.push({
+              eventId: ev.id,
+              title: ev.title,
+              starts_at: ev.starts_at,
+              location: ev.location,
+              peerId: pair.user_id,
+              peer: peerProfiles.get(pair.user_id) ?? null,
+            })
+          }
+          sharedEvents = sharedEvents.slice(0, 6)
+        }
+      }
+    } catch { /* non-critical */ }
+
+    // 10. Mutual connection counts (lightweight)
     const mutualConnectionCounts = new Map<string, number>()
     try {
       const { data: allConnsData } = await supabase
@@ -183,7 +239,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       }
     } catch { /* non-critical */ }
 
-    // 9. Load cached Layer 2 insights
+    // 11. Load cached Layer 2 insights
     type L2Cached = { relationshipType: string; whyNow: string; suggestedAction: import('../engine/relationshipPriority.js').SuggestedAction; toneGuidance: string; draftOpener?: string }
     const cachedInsights = new Map<string, L2Cached>()
     try {
@@ -207,7 +263,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       }
     } catch { /* non-critical */ }
 
-    // 10. Pending user details
+    // 12. Pending user details
     const pendingRequesterIds = pendingRaw.map((c) => c.requester_id)
     let pendingForMe: Array<{ id: string; peer: PeerProfile; created_at: string }> = []
     if (pendingRequesterIds.length) {
@@ -223,7 +279,7 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       } catch { /* non-critical */ }
     }
 
-    // 11. Run Layer 1 engine
+    // 13. Run Layer 1 engine
     const ranked = rankConnections({
       userId,
       userProfile,
@@ -239,10 +295,10 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       cachedInsights,
     })
 
-    // 12. Send response immediately
-    res.json({ ranked, milestones, openAsks, pendingForMe })
+    // 14. Send response immediately
+    res.json({ ranked, milestones, openAsks, pendingForMe, sharedEvents })
 
-    // 13. Fire Layer 2 refresh in background (after response sent)
+    // 15. Fire Layer 2 refresh in background (after response sent)
     setImmediate(() => {
       refreshLayer2InBackground({
         userId,

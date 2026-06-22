@@ -18,6 +18,7 @@ type Me = {
   home_country?: string | null
   munich_tenure?: string | null
   languages?: string[] | null
+  social_energy?: 'active' | 'selective' | 'gentle' | null
 }
 
 type MeResponse = { user: Me }
@@ -92,7 +93,13 @@ function StepHeader({ eyebrow, title, sub }: { eyebrow: string; title: string; s
   )
 }
 
-const TOTAL_STEPS = 4
+const TOTAL_STEPS = 5
+
+const SOCIAL_ENERGY_OPTIONS: Array<{ value: 'active' | 'selective' | 'gentle'; label: string; sub: string }> = [
+  { value: 'active',    label: 'Active networker',  sub: 'Surface lots of opportunities. I want to grow fast.' },
+  { value: 'selective', label: 'Selective',          sub: 'Show me things when they are genuinely relevant.' },
+  { value: 'gentle',    label: 'Gentle nudges only', sub: 'Keep it quiet. I prefer to discover things myself.' },
+]
 
 export function OnboardingPage() {
   const navigate = useNavigate()
@@ -112,6 +119,7 @@ export function OnboardingPage() {
   const [customLang, setCustomLang] = useState('')
   const [interests, setInterests] = useState<string[]>([])
   const [goals, setGoals] = useState<string[]>([])
+  const [socialEnergy, setSocialEnergy] = useState<'active' | 'selective' | 'gentle'>('selective')
 
   useEffect(() => {
     let mounted = true
@@ -128,6 +136,7 @@ export function OnboardingPage() {
         setLanguages(user.languages ?? [])
         setInterests(user.interests ?? [])
         setGoals(user.goals ?? [])
+        setSocialEnergy(user.social_energy ?? 'selective')
       } catch (err) {
         if (mounted) setError(err instanceof Error ? err.message : 'Failed to load')
       } finally {
@@ -153,6 +162,7 @@ export function OnboardingPage() {
     !!tenure && (isInternational !== true || homeCountry.trim().length > 1),
     interests.length >= 3,
     goals.length >= 1,
+    !!socialEnergy,
   ]
 
   async function finish() {
@@ -169,6 +179,7 @@ export function OnboardingPage() {
         languages,
         interests,
         goals,
+        socialEnergy,
       })
       const status = await apiGet<OnboardingStatus>('/api/users/me/onboarding-status')
       if (!status.complete) throw new Error(`Still missing: ${status.missing.join(', ')}`)
@@ -307,6 +318,41 @@ export function OnboardingPage() {
             </div>
             <div style={{ marginTop: 14, fontSize: 12, color: goals.length >= 1 ? 'var(--verd, #1f6b5e)' : 'var(--ink-faint)' }}>
               {goals.length} selected {goals.length < 1 ? '· pick at least 1' : '✓'}
+            </div>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <StepHeader
+              eyebrow="Your rhythm"
+              title="How social do you want knotify to be?"
+              sub="This controls how often we surface people, events, and quests for you. You can change it anytime."
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {SOCIAL_ENERGY_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setSocialEnergy(opt.value)}
+                  style={{
+                    textAlign: 'left',
+                    padding: '16px 18px',
+                    borderRadius: 14,
+                    border: `1.5px solid ${socialEnergy === opt.value ? 'var(--signal)' : 'var(--rule)'}`,
+                    background: socialEnergy === opt.value ? 'rgba(216,68,43,0.05)' : 'transparent',
+                    cursor: 'pointer',
+                    transition: 'all 0.14s',
+                  }}
+                >
+                  <div style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--ink)', fontFamily: "'IBM Plex Sans', sans-serif", marginBottom: 4 }}>
+                    {opt.label}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans', sans-serif", lineHeight: 1.4 }}>
+                    {opt.sub}
+                  </div>
+                </button>
+              ))}
             </div>
           </>
         )}
