@@ -163,7 +163,6 @@ export function SignInCard2({
           width: '42%',
           height: '100vh',
           background: 'var(--ink)',
-          display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: 52,
