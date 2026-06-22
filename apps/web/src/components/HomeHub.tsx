@@ -11,6 +11,9 @@ type Quest = {
   key: string; title: string; description: string; points: number
   category: string; type: 'verified' | 'self'; icon: string
   progress?: number; target?: number; status: 'completed' | 'claimable' | 'locked'
+  how_to?: string | null; where_to_go?: string | null
+  estimated_minutes?: number | null; difficulty?: 'easy' | 'medium' | 'hard' | null
+  partner_required?: boolean
 }
 type QuestsResp = {
   credibility_score: number; tier: string
@@ -21,9 +24,11 @@ type QuestsResp = {
 }
 type EventItem = {
   id: string; title: string; description: string | null; location: string | null
-  starts_at: string; host_name: string; is_host: boolean; rsvp_count: number; rsvped: boolean
+  starts_at: string; ends_at?: string | null
+  host_name: string; is_host: boolean; rsvp_count: number; rsvped: boolean
   source: string; url: string | null; image_url?: string | null; interests?: string[]
-  host_label?: string | null
+  host_label?: string | null; capacity?: number | null
+  price_eur?: number | null; event_type?: string | null
 }
 type Gig = {
   id: string; gig_type: string; title: string; description: string | null
@@ -51,30 +56,6 @@ const T = {
   text: "'IBM Plex Sans', system-ui, sans-serif",
 }
 
-// ── Quest "how to complete" guides ───────────────────────────────────────────
-const QUEST_GUIDE: Record<string, { how: string; where?: string; tip?: string }> = {
-  coffee_stranger:  { how: 'Find someone on knotify you have not met yet. Message them and suggest a coffee. Show up.', where: 'Any cafe in Munich. Partner cafes earn you a discount.', tip: '30 minutes is plenty to start. Keep it casual.' },
-  matchmaker:       { how: 'Think of two people in your knot who do not know each other but should. Make the intro on knotify or over a message.', tip: 'The best intros come with a reason: "You are both in fintech and looking for the same thing."' },
-  show_up:          { how: 'RSVP to an event on knotify and actually go. Being there is the whole point.', tip: 'Say hi to at least one person you do not already know.' },
-  urban_explorer:   { how: 'Go to a Munich neighbourhood you have never been to. Walk around, find something worth sharing.', where: 'Try Haidhausen, Au, Neuhausen, Maxvorstadt, or Schwabing.', tip: 'Take a photo of something that surprised you.' },
-  sprachpartner:    { how: 'Have a real conversation in German (or another language you are learning) with someone from your knot for at least 15 minutes.', tip: 'Start with something simple. The awkward part only lasts 2 minutes.' },
-  cafe_regular:     { how: 'Visit one of the knotify partner cafes. Mention knotify at the counter.', where: 'Partner cafes are listed in the Cafes section.' },
-  pay_it_forward:   { how: 'Help someone concretely: review their CV, share a referral, or give real advice on something you know well.', tip: 'The help has to be real. A quick reply does not count.' },
-  welcome_newcomer: { how: 'Find someone on knotify who just arrived in Munich. Reach out and help them with one concrete thing this week.', tip: 'Recommending a neighbourhood, explaining how something works, or showing them around counts.' },
-  study_buddy:      { how: 'Find someone from your knot and meet to study, work, or co-work for at least an hour.', where: 'University library, a partner cafe, or anywhere you both focus well.' },
-  campus_guide:     { how: 'Show someone new around your campus, workplace, or favourite spots in the city.', tip: 'Even a 20-minute walk counts. The best guides share the things that are not on any map.' },
-  hidden_gem:       { how: 'Discover a hidden Munich spot recommended by someone in your knot. Visit it and share it back.', tip: 'It does not have to be unknown. Just not on the tourist trail.' },
-  night_out:        { how: 'Go out in Munich with at least one person from knotify. A bar, club, concert, anything social.', tip: 'Coordinate via knotify first so it counts as a shared experience.' },
-  professor_hours:  { how: 'Attend a professor or mentor office hours and have a genuine conversation, not just a quick question.', where: 'Your university department or a professional mentor from your knot.', tip: 'Come prepared with something real to discuss.' },
-  first_referral:   { how: 'Give someone a referral or actively help them get an interview. This means putting your name on it.', tip: 'Only refer people you would genuinely vouch for. Your credibility is on the line.' },
-  language_swap:    { how: 'Have a real conversation in a language you are learning with someone from your knot. At least 15 minutes, back and forth.', tip: 'It is fine to mix languages. Progress matters more than perfection.' },
-  intro_two:        { how: 'Introduce two people in your knot who do not know each other. Write a proper intro explaining why they should meet.', tip: 'The best intros are specific: "You are both building climate startups and both just moved to Munich."' },
-  host_study:       { how: 'Organise a study session at a partner cafe and invite people from your knot.', where: 'Partner cafes are listed in the Cafes section. They know us.' },
-  verify_skill:     { how: 'Go to a connection\'s profile and verify a skill you have actually seen them demonstrate.', tip: 'Only vouch for skills you have witnessed. It carries your name.' },
-  attend_event:     { how: 'RSVP to a knotify event this month and physically show up.', tip: 'Take a photo when you arrive.' },
-  reconnect:        { how: 'Find someone in your network you have not spoken to in over a month. Send them a real message, not a one-liner.', tip: 'Reference something specific you remember from your last conversation.' },
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function whenLabel(iso: string) {
   const d = new Date(iso); const now = new Date()
@@ -84,6 +65,20 @@ function whenLabel(iso: string) {
   if (sameDay) return `Today, ${time}`
   if (tomorrow) return `Tomorrow, ${time}`
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + `, ${time}`
+}
+function timeOnly(iso: string) {
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+}
+function minuteLabel(m: number) {
+  if (m < 60) return `~${m} min`
+  const h = Math.floor(m / 60); const rem = m % 60
+  return rem ? `~${h}h ${rem}min` : `~${h}h`
+}
+const DIFFICULTY_LABEL: Record<string, string> = { easy: 'Easy', medium: 'Medium', hard: 'Hard' }
+const DIFFICULTY_COLOR: Record<string, string> = { easy: T.verd, medium: T.ochre, hard: T.signal }
+const EVENT_TYPE_LABEL: Record<string, string> = {
+  networking: 'Networking', social: 'Social', sports: 'Sports', music: 'Music',
+  career: 'Career', workshop: 'Workshop', outdoor: 'Outdoor', party: 'Party',
 }
 function rewardLabel(g: Gig) {
   if (g.reward_type === 'coffee') return 'Coffee'
@@ -186,7 +181,6 @@ function Overlay({ onClose, children }: { onClose: () => void; children: React.R
 
 // ── Quest detail + claim modal ─────────────────────────────────────────────────
 function QuestDetailModal({ quest: q, onClose, onClaimed }: { quest: Quest; onClose: () => void; onClaimed: () => void }) {
-  const guide = QUEST_GUIDE[q.key]
   const [photo, setPhoto] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [shareToFeed, setShareToFeed] = useState(true)
@@ -223,41 +217,46 @@ function QuestDetailModal({ quest: q, onClose, onClaimed }: { quest: Quest; onCl
 
   return (
     <Overlay onClose={onClose}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: `${cc}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: cc, flexShrink: 0, border: `1.5px solid ${cc}40` }}>
-            <QuestIcon name={q.icon} size={22} />
+          <div style={{ width: 52, height: 52, borderRadius: 16, background: `${cc}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: cc, flexShrink: 0, border: `1.5px solid ${cc}40` }}>
+            <QuestIcon name={q.icon} size={24} />
           </div>
           <div>
-            <div style={{ fontSize: 10, color: cc, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: T.text }}>{q.category}</div>
+            <div style={{ fontSize: 10, color: cc, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: T.text, marginBottom: 2 }}>{q.category}</div>
             <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, fontWeight: 500, letterSpacing: -0.3, color: T.ink, lineHeight: 1.1 }}>{q.title}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, color: T.ochre }}>+{q.points}</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkFaint, display: 'flex' }}><X size={18} /></button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkFaint, display: 'flex', padding: 4 }}><X size={18} /></button>
         </div>
       </div>
 
-      <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.6, fontFamily: T.text, margin: '0 0 20px' }}>{q.description}</p>
+      {/* Meta chips */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+        {q.difficulty && <Chip color={q.difficulty === 'easy' ? 'verd' : q.difficulty === 'hard' ? 'signal' : 'ochre'}>{DIFFICULTY_LABEL[q.difficulty]}</Chip>}
+        {q.estimated_minutes && <Chip>{minuteLabel(q.estimated_minutes)}</Chip>}
+        {q.partner_required && <Chip color="plum"><Users size={10} style={{ marginRight: 3 }} />Needs a partner</Chip>}
+        {q.type === 'self' && <Chip color="ochre"><Camera size={10} style={{ marginRight: 3 }} />Photo required</Chip>}
+      </div>
 
-      {guide && (
-        <div style={{ background: T.paperSoft, borderRadius: 14, padding: '16px 18px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12, border: `0.5px solid ${T.ruleSoft}` }}>
+      <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.65, fontFamily: T.text, margin: '0 0 18px' }}>{q.description}</p>
+
+      {/* How to complete — from DB */}
+      {q.how_to && (
+        <div style={{ background: T.paperSoft, borderRadius: 14, padding: '18px 20px', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 14, border: `0.5px solid ${T.ruleSoft}` }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 5, fontFamily: T.text }}>How to complete</div>
-            <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.55, fontFamily: T.text }}>{guide.how}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6, fontFamily: T.text }}>How to complete</div>
+            <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.65, fontFamily: T.text }}>{q.how_to}</div>
           </div>
-          {guide.where && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 5, fontFamily: T.text }}>Where</div>
-              <div style={{ fontSize: 13, color: T.inkMuted, lineHeight: 1.5, fontFamily: T.text, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                <MapPin size={13} style={{ marginTop: 2, flexShrink: 0 }} />{guide.where}
+          {q.where_to_go && (
+            <div style={{ borderTop: `0.5px solid ${T.ruleSoft}`, paddingTop: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6, fontFamily: T.text }}>Where</div>
+              <div style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.55, fontFamily: T.text, display: 'flex', alignItems: 'flex-start', gap: 7 }}>
+                <MapPin size={14} color={T.signal} style={{ marginTop: 2, flexShrink: 0 }} />{q.where_to_go}
               </div>
-            </div>
-          )}
-          {guide.tip && (
-            <div style={{ borderTop: `0.5px solid ${T.ruleSoft}`, paddingTop: 12 }}>
-              <div style={{ fontSize: 12.5, color: T.inkMuted, fontStyle: 'italic', fontFamily: T.display, lineHeight: 1.5 }}>Tip: {guide.tip}</div>
             </div>
           )}
         </div>
@@ -369,8 +368,14 @@ function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onC
         </div>
       </div>
 
-      {/* Key info row */}
-      <div style={{ display: 'grid', gridTemplateColumns: e.location ? '1fr 1fr' : '1fr', gap: 10, margin: '20px 0 18px' }}>
+      {/* Meta chips row */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '20px 0 16px' }}>
+        {e.event_type && <Chip color="plum">{EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}</Chip>}
+        {e.price_eur === 0 ? <Chip color="verd">Free entry</Chip> : e.price_eur != null ? <Chip color="ochre">€{e.price_eur}</Chip> : null}
+      </div>
+
+      {/* Key info grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginBottom: 18 }}>
         {e.location && (
           <div style={{ padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}` }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 4, fontFamily: T.text }}>Location</div>
@@ -380,9 +385,15 @@ function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onC
           </div>
         )}
         <div style={{ padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}` }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 4, fontFamily: T.text }}>Attendees</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 4, fontFamily: T.text }}>Time</div>
+          <div style={{ fontSize: 13, color: T.ink, fontFamily: T.text }}>
+            {timeOnly(e.starts_at)}{e.ends_at ? ` – ${timeOnly(e.ends_at)}` : ''}
+          </div>
+        </div>
+        <div style={{ padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}` }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 4, fontFamily: T.text }}>Going</div>
           <div style={{ fontSize: 13, color: T.ink, fontFamily: T.text, display: 'flex', alignItems: 'center', gap: 5 }}>
-            <Users size={13} color={T.verd} />{count} {count === 1 ? 'person' : 'people'} going
+            <Users size={13} color={T.verd} />{count}{e.capacity ? ` / ${e.capacity}` : ''}
           </div>
         </div>
       </div>

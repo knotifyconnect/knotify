@@ -93,7 +93,7 @@ async function evaluate(userId: string): Promise<Record<string, EvalEntry>> {
 // Active honour quests from the DB (admin-managed), respecting schedule window.
 async function activeDbQuests() {
   const nowIso = new Date().toISOString()
-  const rows = (await supabase.from('quests').select('*').eq('active', true)).data ?? []
+  const rows = (await supabase.from('quests').select('key, title, description, points, category, icon, active, starts_at, ends_at, how_to, where_to_go, estimated_minutes, difficulty, partner_required').eq('active', true)).data ?? []
   return rows.filter((q: any) => {
     if (q.starts_at && q.starts_at > nowIso) return false
     if (q.ends_at && q.ends_at < nowIso) return false
@@ -181,6 +181,11 @@ questsRouter.get('/', requireAuth, async (req, res) => {
     progress: undefined,
     target: undefined,
     status: completed.has(q.key) ? 'completed' : 'claimable',
+    how_to: q.how_to ?? null,
+    where_to_go: q.where_to_go ?? null,
+    estimated_minutes: q.estimated_minutes ?? null,
+    difficulty: q.difficulty ?? null,
+    partner_required: q.partner_required ?? false,
   }))
 
   const tier = tierFor(score)

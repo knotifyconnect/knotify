@@ -41,7 +41,7 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
 
   const events = await supabase
     .from('events')
-    .select('id, title, description, location, starts_at, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)')
+    .select('id, title, description, location, starts_at, ends_at, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)')
     .gte('starts_at', new Date(Date.now() - 6 * 3600 * 1000).toISOString())
     .order('starts_at', { ascending: true })
     .limit(limit)
@@ -79,6 +79,10 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
       is_host: !!e.host_id && e.host_id === req.appUserId,
       rsvp_count: counts.get(e.id) ?? 0,
       rsvped: mine.has(e.id),
+      ends_at: (e as any).ends_at ?? null,
+      capacity: (e as any).capacity ?? null,
+      price_eur: (e as any).price_eur ?? null,
+      event_type: (e as any).event_type ?? null,
     }
   })
 
