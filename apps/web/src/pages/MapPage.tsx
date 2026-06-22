@@ -1221,7 +1221,29 @@ function KnotStage({
   const hasRelationships = nodes.length > 0
 
   return (
+    <>
+      {/* Mobile: graph is unusable at small sizes — show a simple prompt instead */}
+      <div
+        className="flex md:hidden"
+        style={{
+          marginTop: 5,
+          padding: '20px 16px',
+          borderRadius: 14,
+          background: 'var(--paper-soft)',
+          border: '0.5px solid var(--rule)',
+          textAlign: 'center',
+          color: 'var(--ink-muted)',
+          fontSize: 13,
+          lineHeight: 1.55,
+        }}
+      >
+        <span style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', color: 'var(--ink-faint)' }}>
+          Your knot graph is best on a larger screen. Your connections are listed below.
+        </span>
+      </div>
+
     <KCard
+      className="hidden md:block"
       style={{
         marginTop: 5,
         padding: 0,
@@ -1358,6 +1380,7 @@ function KnotStage({
 
       </div>
     </KCard>
+    </>
   )
 }
 

@@ -1060,7 +1060,7 @@ export function DiscoverPage() {
       {managerOpen ? (
         <div style={{ maxWidth: 1040, margin: '0 auto' }}><ConnectionManager /></div>
       ) : (
-        <DeskPage rail={discoverRail}><DiscoverContent /></DeskPage>
+        <DeskPage rail={discoverRail}>{DiscoverContent()}</DeskPage>
       )}
     </div>
   )
