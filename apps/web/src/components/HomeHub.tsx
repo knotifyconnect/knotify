@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, MapPin, Users, Lock, ChevronRight, Flame, ImagePlus, X, ExternalLink, Camera, Share2, ChevronLeft } from 'lucide-react'
 import { apiGet, apiPost, apiPostForm } from '@/lib/api'
@@ -172,7 +173,7 @@ function Overlay({ onClose, children }: { onClose: () => void; children: React.R
       document.removeEventListener('keydown', fn)
     }
   }, [onClose])
-  return (
+  return createPortal(
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose() }} className="k-overlay">
       <motion.div
         initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
@@ -181,9 +182,12 @@ function Overlay({ onClose, children }: { onClose: () => void; children: React.R
         className="k-modal-card"
         style={{ background: T.paper, position: 'relative', boxShadow: '0 -8px 40px rgba(26,24,21,0.18)' }}
       >
+        {/* Drag handle indicator — mobile only */}
+        <div className="md:hidden" style={{ width: 36, height: 4, borderRadius: 999, background: 'rgba(26,24,21,0.15)', margin: '0 auto 12px' }} />
         {children}
       </motion.div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -602,7 +606,7 @@ function PersonCard({ person: p, index, state, onAsk, onView, interests }: { per
           <div style={{ fontSize: 11.5, color: T.inkFaint, fontFamily: T.text }}>{(p.mutual_connections_count ?? 0) > 0 ? '2nd degree' : 'Suggested'}</div>
         </div>
       </div>
-      <div style={{ fontSize: 12.5, color: T.inkMuted, lineHeight: 1.4, fontFamily: T.text, flex: 1 }}>{reason}</div>
+      <div style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.5, fontFamily: T.text, flex: 1 }}>{reason}</div>
       <div style={{ display: 'flex', gap: 6 }}>
         <button onClick={onAsk} disabled={state !== 'idle'} style={{ flex: 1, padding: '8px', borderRadius: 999, border: 'none', background: state === 'sent' ? T.verdSoft : T.ink, color: state === 'sent' ? T.verd : '#fff', fontSize: 12.5, fontWeight: 600, cursor: state === 'idle' ? 'pointer' : 'default', fontFamily: T.text }}>
           {state === 'busy' ? '...' : state === 'sent' ? 'Request sent' : 'Ask for intro'}
