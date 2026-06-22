@@ -19,6 +19,7 @@ import { apiGet, apiPatch, apiPost, apiPostForm, apiPut } from '../lib/api'
 import { CareerPathCard } from '../components/profile/CareerPathCard'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '../lib/knotify'
+import { DeskHeader } from '../lib/desk'
 import { AvatarPicker } from '../components/ui/avatar-picker'
 import { AvatarGroup } from '../components/ui/avatar-1'
 import { avatarUrl } from '../lib/avatar'
@@ -237,6 +238,7 @@ export function ProfilePage() {
 }
 
 function OwnProfileView() {
+  const navigate = useNavigate()
   const [me, setMe] = useState<Me | null>(null)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -679,7 +681,18 @@ function OwnProfileView() {
   return (
     <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 16 }}>
 
-
+      <DeskHeader
+        kicker="Profile · manage"
+        title={<span style={{ fontStyle: 'italic' }}>Your knotify</span>}
+        right={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
+            <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
+              {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
+            </KBtn>
+          </div>
+        }
+      />
 
       <KCard style={{ padding: 0, marginBottom: 2, overflow: 'hidden', background: '#fffaf3' }}>
         <div

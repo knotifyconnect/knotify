@@ -110,7 +110,7 @@ const GIG_TYPES = [
 ]
 
 // ── Main component ───────────────────────────────────────────────────────────
-export function HomeHub() {
+export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {}) {
   const navigate = useNavigate()
   const [quests, setQuests] = useState<QuestsResp | null>(null)
   const [events, setEvents] = useState<EventItem[]>([])
@@ -151,8 +151,14 @@ export function HomeHub() {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
 
-      {/* ── Credibility + quests row ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 14, marginBottom: 20 }}>
+      {/* ── Top row: maintenance + credibility + side quests ─────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: maintenance ? 'minmax(0,1.6fr) minmax(0,1fr)' : 'minmax(0,1fr) minmax(0,1fr)', gap: 16, marginBottom: 20 }}>
+
+        {/* Network maintenance (left, when provided) */}
+        {maintenance}
+
+        {/* Credibility + side quests, stacked when maintenance present */}
+        <div style={{ display: maintenance ? 'flex' : 'contents', flexDirection: 'column', gap: 16 }}>
 
         {/* Credibility dark card */}
         <div style={{ padding: 22, borderRadius: 18, background: T.ink, color: T.paperSoft, position: 'relative', overflow: 'hidden' }}>
@@ -210,6 +216,7 @@ export function HomeHub() {
               </div>
             )}
           </div>
+        </div>
         </div>
       </div>
 

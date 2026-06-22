@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '../lib/knotify'
+import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
 
 type Skill = {
   skill_id?: number
@@ -963,8 +964,6 @@ export function DiscoverPage() {
 
           </div>
 
-        <ConnectionQueuePreview />
-
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
           <div>
             <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink-faint)', marginBottom: 4 }}>
@@ -1019,28 +1018,38 @@ export function DiscoverPage() {
     )
   }
 
-  return (
-    <div style={{ maxWidth: 1040, margin: '0 auto' }}>
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 7, fontFamily: "'IBM Plex Sans', sans-serif" }}>
-          knotify / discover
+  const discoverRail = !managerOpen ? (
+    <>
+      <div>
+        <DeskSectionLabel right={
+          <button type="button" onClick={() => openManager('Incoming')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>Manage</button>
+        }>Connection requests</DeskSectionLabel>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          {[['Incoming', incomingRequests.length, T.verd] as const, ['Sent', outgoingRequests.length, T.ochre] as const, ['In knot', acceptedConnections.length, T.ink] as const].map(([k, n, c]) => (
+            <div key={k} style={{ flex: 1, padding: '10px 8px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, textAlign: 'center' }}>
+              <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 20, fontWeight: 500, color: c }}>{n}</div>
+              <div style={{ fontSize: 10, color: T.inkMuted, marginTop: 2 }}>{k}</div>
+            </div>
+          ))}
         </div>
-
-        <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(30px, 4vw, 48px)', fontWeight: 400, letterSpacing: '-0.04em', lineHeight: 1.02, margin: '0 0 8px' }}>
-          Discover people{' '}
-          <span style={{ fontStyle: 'italic', color: 'var(--verd)' }}>worth knowing.</span>
-        </h1>
-
-        <p style={{ fontSize: 14, color: 'var(--ink-muted)', margin: '0 0 12px', maxWidth: 640, lineHeight: 1.5 }}>
-          Relevant people based on your city, skills, and profile signal. No follower theater. No random collecting.
-        </p>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-          <KPill color="verd">Based on {contextBits.length ? contextBits.join(' - ') : 'your profile'}</KPill>
-          <KPill>Connection intent first</KPill>
-          <KPill>No vanity counts</KPill>
-        </div>
+        {incomingRequests.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {incomingRequests.slice(0, 4).map((c) => <IncomingActionRow key={c.id} connection={c} />)}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>No one is waiting on your decision.</div>
+        )}
       </div>
+    </>
+  ) : undefined
+
+  return (
+    <div style={{ paddingBottom: 40 }}>
+      <DeskHeader
+        kicker="Discover · Munich"
+        title={<span style={{ fontStyle: 'italic' }}>People worth knowing.</span>}
+        right={<div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}><KPill color="verd">Based on {contextBits.length ? contextBits.join(' · ') : 'your profile'}</KPill></div>}
+      />
 
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.2)', color: 'var(--signal)', fontSize: 13, marginBottom: 14 }}>
@@ -1048,7 +1057,11 @@ export function DiscoverPage() {
         </div>
       )}
 
-      {managerOpen ? <ConnectionManager /> : <DiscoverContent />}
+      {managerOpen ? (
+        <div style={{ maxWidth: 1040, margin: '0 auto' }}><ConnectionManager /></div>
+      ) : (
+        <DeskPage rail={discoverRail}><DiscoverContent /></DeskPage>
+      )}
     </div>
   )
 }

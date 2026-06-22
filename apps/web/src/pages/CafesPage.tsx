@@ -2,9 +2,10 @@
  * Cafés · IRL, real partner café list with check-in (discount-code) flow.
  */
 import { useEffect, useState } from 'react'
-import { Coffee, Copy, MapPin, Clock } from 'lucide-react'
+import { Coffee, Copy, MapPin, Clock, Pin } from 'lucide-react'
 import { KBtn, KCard, KPill } from '@/lib/knotify'
 import { apiGet, apiPost } from '@/lib/api'
+import { T, DeskPage, DeskHeader, SectionLabel, Chip, RailCard } from '@/lib/desk'
 
 type Cafe = {
   id: string
@@ -62,89 +63,94 @@ export function CafesPage() {
     }
   }
 
-  return (
-    <div style={{ maxWidth: 1020, margin: '0 auto', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-      {/* Page header */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6 }}>
-          knotify · cafés
-        </div>
-        <h1
-          style={{
-            fontFamily: "'Fraunces', Georgia, serif",
-            fontSize: 'clamp(28px, 3vw, 40px)',
-            fontWeight: 400,
-            letterSpacing: '-0.03em',
-            lineHeight: 1.05,
-            margin: '0 0 8px',
-          }}
-        >
-          Real meetings, <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>real coffee.</span>
-        </h1>
-        <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0, lineHeight: 1.5 }}>
-          Check in at a partner café to unlock your member discount. Bring a friend from your knot for the best experience.
-        </p>
+  const featured = cafes.find((c) => c.current_checkins > 0) ?? cafes[0]
+  const rest = cafes.filter((c) => c.id !== featured?.id)
+  const busiest = [...cafes].filter((c) => c.current_checkins > 0).sort((a, b) => b.current_checkins - a.current_checkins).slice(0, 3)
+
+  const rail = (
+    <>
+      <RailCard tone="signal">
+        <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.9, fontWeight: 600 }}>Your café pass</div>
+        <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, marginTop: 6 }}>Member · 2026</div>
+        <div style={{ fontSize: 12, opacity: 0.92, marginTop: 6, lineHeight: 1.45 }}>Check in at any partner café to unlock your member perk. Bring a friend from your knot.</div>
+      </RailCard>
+
+      <div>
+        <SectionLabel>Busiest right now</SectionLabel>
+        {busiest.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {busiest.map((c) => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}` }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: c.photo_url ? `center/cover url(${c.photo_url})` : T.verdSoft, color: T.verd, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{!c.photo_url && <Coffee size={15} />}</div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink }}>{c.name}</div><div style={{ fontSize: 10.5, color: T.verd, fontWeight: 600 }}>{c.current_checkins} here now</div></div>
+                <KBtn variant="ghost" size="sm" onClick={() => checkin(c)}>Join</KBtn>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>Quiet everywhere right now. Be the first to check in.</div>
+        )}
       </div>
+    </>
+  )
+
+  return (
+    <div style={{ paddingBottom: 40, fontFamily: T.text }}>
+      <DeskHeader
+        kicker="Cafés · IRL · Munich"
+        title={<span style={{ fontStyle: 'italic' }}>Rooms to sit in.</span>}
+        right={<button onClick={() => { setSuggestOpen(true); setSuggestDone(false); setSuggestName(''); setSuggestAddress(''); setSuggestNotes('') }} style={{ padding: '9px 16px', borderRadius: 999, border: `0.5px solid ${T.rule}`, background: T.paperSoft, fontSize: 13, cursor: 'pointer', fontFamily: T.text, color: T.ink }}>Suggest a café</button>}
+      />
 
       {error && (
-        <div
-          style={{
-            padding: '10px 14px',
-            borderRadius: 10,
-            background: 'var(--signal-soft)',
-            border: '0.5px solid rgba(216,68,43,0.2)',
-            color: 'var(--signal)',
-            fontSize: 13,
-            marginBottom: 14,
-          }}
-        >
-          {error}
-        </div>
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: T.signalSoft, border: '0.5px solid rgba(216,68,43,0.2)', color: T.signal, fontSize: 13, marginBottom: 14 }}>{error}</div>
       )}
 
-      {/* Section heading + suggest button */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 18, fontWeight: 500 }}>
-          Partner cafés · {cafes.length}
-        </div>
-        <button onClick={() => { setSuggestOpen(true); setSuggestDone(false); setSuggestName(''); setSuggestAddress(''); setSuggestNotes('') }} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
-          + Suggest a café
-        </button>
-      </div>
-
       {loading ? (
-        <KCard style={{ padding: 32, textAlign: 'center' }}>
-          <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', color: 'var(--ink-muted)' }}>Loading cafés…</p>
-        </KCard>
+        <div style={{ padding: 40, textAlign: 'center', fontFamily: T.display, fontStyle: 'italic', color: T.inkMuted }}>Loading cafés…</div>
       ) : cafes.length === 0 ? (
-        <KCard style={{ padding: 32, textAlign: 'center' }}>
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 14,
-              background: 'var(--signal-soft)',
-              color: 'var(--signal)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 18px',
-            }}
-          >
+        <KCard style={{ padding: 40, textAlign: 'center' }}>
+          <div style={{ width: 56, height: 56, borderRadius: 14, background: T.signalSoft, color: T.signal, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
             <Coffee size={26} />
           </div>
-          <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 22, fontWeight: 500, marginBottom: 8, letterSpacing: -0.2 }}>
-            Cafés roll out next.
-          </div>
-          <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', lineHeight: 1.5, maxWidth: 380, margin: '0 auto 16px' }}>
+          <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, fontWeight: 500, marginBottom: 8 }}>Cafés roll out next.</div>
+          <p style={{ fontSize: 13.5, color: T.inkMuted, lineHeight: 1.5, maxWidth: 380, margin: '0 auto 16px' }}>
             We're partnering with independent cafés around Munich for member perks, drop-in check-ins, and event tickets.
           </p>
           <KPill color="signal">Coming soon</KPill>
         </KCard>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-          {cafes.map((c) => <CafeCard key={c.id} cafe={c} onCheckin={() => checkin(c)} busy={checkingInId === c.id} />)}
-        </div>
+        <DeskPage rail={rail}>
+          {/* Featured café */}
+          {featured && (
+            <div style={{ borderRadius: 18, overflow: 'hidden', border: `0.5px solid ${T.rule}`, display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', background: T.paperSoft, marginBottom: 22 }}>
+              <div style={{ position: 'relative', minHeight: 240, background: featured.photo_url ? `center/cover url(${featured.photo_url})` : `linear-gradient(135deg, ${T.signal} 0%, ${T.signalDeep} 100%)` }}>
+                <div style={{ position: 'absolute', top: 14, left: 14 }}><Chip color="signal">Partner · flagship</Chip></div>
+              </div>
+              <div style={{ padding: 26, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ fontFamily: T.display, fontSize: 30, fontWeight: 500, letterSpacing: '-0.02em' }}>{featured.name}</div>
+                <div style={{ fontSize: 13, color: T.inkMuted, marginTop: 4 }}>{[featured.address, featured.hours_text].filter(Boolean).join(' · ')}</div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                  {featured.perk_text && <Chip color="ochre">{featured.perk_text}</Chip>}
+                  <Chip color={featured.current_checkins > 0 ? 'verd' : 'paper'}>{featured.current_checkins > 0 ? `${featured.current_checkins} here now` : 'Quiet now'}</Chip>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
+                  <KBtn variant="signal" size="md" onClick={() => checkin(featured)} disabled={checkingInId === featured.id}>
+                    <Pin size={13} style={{ marginRight: 5 }} />{checkingInId === featured.id ? 'Generating…' : 'Check in'}
+                  </KBtn>
+                  {featured.lat && featured.lng && (
+                    <a href={`https://www.google.com/maps?q=${featured.lat},${featured.lng}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: T.signal, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}><MapPin size={13} /> View on map</a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <SectionLabel>{cafes.length} partner café{cafes.length === 1 ? '' : 's'} in Munich</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))', gap: 14 }}>
+            {rest.map((c) => <CafeCard key={c.id} cafe={c} onCheckin={() => checkin(c)} busy={checkingInId === c.id} />)}
+          </div>
+        </DeskPage>
       )}
 
       {checkinFor && (
@@ -205,77 +211,24 @@ export function CafesPage() {
 
 function CafeCard({ cafe, onCheckin, busy }: { cafe: Cafe; onCheckin: () => void; busy: boolean }) {
   return (
-    <KCard style={{ padding: 0, overflow: 'hidden' }}>
-      {cafe.photo_url ? (
-        <div
-          style={{
-            height: 120,
-            backgroundImage: `url(${cafe.photo_url})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            height: 120,
-            background: 'linear-gradient(135deg, var(--signal-soft) 0%, var(--paper-deep) 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--signal)',
-          }}
-        >
-          <Coffee size={36} />
-        </div>
-      )}
-      <div style={{ padding: '14px 16px' }}>
-        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 17, fontWeight: 500, color: 'var(--ink)', marginBottom: 4, letterSpacing: -0.2 }}>
-          {cafe.name}
-        </div>
-        {cafe.address && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>
-            <MapPin size={11} /> {cafe.address}
-          </div>
-        )}
-        {cafe.hours_text && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--ink-muted)', marginBottom: 6 }}>
-            <Clock size={11} /> {cafe.hours_text}
-          </div>
-        )}
-        <div style={{ fontSize: 12, color: cafe.current_checkins > 0 ? 'var(--verd)' : 'var(--ink-faint)', marginBottom: 10 }}>
-          {cafe.current_checkins > 0
-            ? `🟢 ${cafe.current_checkins} ${cafe.current_checkins === 1 ? 'person' : 'people'} here now`
-            : '🔴 Empty right now'}
-        </div>
-        {cafe.lat && cafe.lng && (
-          <div style={{ marginBottom: 6 }}>
-            <a href={`https://www.google.com/maps?q=${cafe.lat},${cafe.lng}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--signal)', textDecoration: 'none' }}>
-              📍 View on map
-            </a>
-          </div>
-        )}
-        {cafe.perk_text && (
-          <div
-            style={{
-              padding: '7px 10px',
-              borderRadius: 8,
-              background: 'var(--ochre-soft)',
-              border: '0.5px solid rgba(200,148,31,0.22)',
-              fontSize: 12,
-              color: 'var(--ochre)',
-              marginBottom: 12,
-              lineHeight: 1.35,
-            }}
-          >
-            {cafe.perk_text}
-          </div>
-        )}
-        <KBtn variant="signal" size="sm" fullWidth disabled={busy} onClick={onCheckin}>
-          {busy ? 'Generating code…' : 'Check in & get code'}
-        </KBtn>
+    <div style={{ borderRadius: 14, overflow: 'hidden', background: T.paper, border: `0.5px solid ${T.rule}`, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'relative', height: 120, background: cafe.photo_url ? `center/cover url(${cafe.photo_url})` : `linear-gradient(135deg, ${T.signalSoft} 0%, ${T.paperDeep} 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.signal }}>
+        {!cafe.photo_url && <Coffee size={32} />}
       </div>
-    </KCard>
+      <div style={{ padding: 13, display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+          <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 17, fontWeight: 600 }}>{cafe.name}</div>
+          {cafe.hours_text && <div style={{ fontFamily: T.mono, fontSize: 10.5, color: T.inkMuted, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Clock size={10} />{cafe.hours_text}</div>}
+        </div>
+        {cafe.address && <div style={{ fontSize: 11.5, color: T.inkMuted, display: 'inline-flex', alignItems: 'center', gap: 4 }}><MapPin size={11} />{cafe.address}</div>}
+        {cafe.perk_text && <div style={{ fontSize: 11, color: '#7A5A0F', background: T.ochreSoft, border: `0.5px solid ${T.ochre}`, borderRadius: 8, padding: '5px 8px', marginTop: 2, lineHeight: 1.3 }}>{cafe.perk_text}</div>}
+        <div style={{ flex: 1 }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+          <span style={{ fontSize: 10.5, color: cafe.current_checkins > 0 ? T.verd : T.inkFaint, fontWeight: 600 }}>{cafe.current_checkins > 0 ? `${cafe.current_checkins} here now` : 'Quiet'}</span>
+          <KBtn variant="ghost" size="sm" disabled={busy} onClick={onCheckin}>{busy ? '…' : 'Check in'}</KBtn>
+        </div>
+      </div>
+    </div>
   )
 }
 

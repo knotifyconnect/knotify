@@ -11,8 +11,10 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
 import { HomeHub } from '../components/HomeHub'
-import { KAvatar, KBtn, KCard } from '../lib/knotify'
+import { KAvatar, KBtn } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
+import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel, RailCard } from '../lib/desk'
+import { MessageSquare, Coffee } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -233,6 +235,12 @@ export function RelationshipHomePage() {
   const [messagingPeer, setMessagingPeer] = useState<string | null>(null)
   const [referralPeer, setReferralPeer] = useState<Peer | null>(null)
   const [askMenuPeer, setAskMenuPeer] = useState<Peer | null>(null)
+  const [railEvents, setRailEvents] = useState<Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }>>([])
+
+  useEffect(() => {
+    apiGet<{ events: Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }> }>('/api/events?limit=3')
+      .then((r) => setRailEvents(r.events ?? [])).catch(() => {})
+  }, [])
 
   useEffect(() => {
     apiGet<{ user: { full_name: string; id: string } }>('/api/users/me')
@@ -313,9 +321,6 @@ export function RelationshipHomePage() {
 
   const coldCount     = ranked.filter((r) => r.state === 'cold').length
   const coolingCount  = ranked.filter((r) => r.state === 'cooling').length
-  const milestoneWeek = milestones.filter((m) => {
-    return (Date.now() - new Date(m.created_at).getTime()) / 86400000 <= 7
-  }).length
 
   const networkFeed: NetworkItem[] = [
     ...milestones.map((m) => ({ ...m, type: 'milestone' as const })),
@@ -325,8 +330,116 @@ export function RelationshipHomePage() {
   const newCount = ranked.filter((r) => r.state === 'new').length
   const allWarm = ranked.length > 0 && coldCount === 0 && coolingCount === 0 && newCount === 0
 
+  // ── Maintenance card ("Keep your knot warm") — design top-left region ──────
+  const maintenanceNode = ranked.length > 0 ? (
+    <div style={{ padding: 20, borderRadius: 16, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
+      <DeskSectionLabel right={
+        <span style={{ color: coldCount > 0 ? T.signal : coolingCount > 0 ? T.ochre : T.verd, textTransform: 'none', letterSpacing: 0, fontWeight: 700 }}>
+          {allWarm ? 'All warm' : coldCount > 0 ? `${coldCount} going cold` : coolingCount > 0 ? `${coolingCount} cooling` : ''}
+        </span>
+      }>Keep your knot warm</DeskSectionLabel>
+
+      {allWarm ? (
+        <div style={{ fontSize: 13.5, color: T.inkMuted, fontFamily: T.display, fontStyle: 'italic', padding: '6px 0' }}>
+          Nothing overdue. Your relationships are warm.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {ranked.slice(0, 4).map((entry) => {
+            const sc = STATE_COLOR[entry.state]
+            const isNew = entry.state === 'new'
+            return (
+              <div key={entry.connectionId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, borderLeft: `3px solid ${sc}` }}>
+                <button type="button" onClick={() => navigate(`/profile/${entry.peer.id}`)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
+                  <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={42} />
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>{entry.peer.full_name}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: sc }}>{STATE_LABEL[entry.state]}</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: T.signalDeep, marginTop: 3, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {entry.reason}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => { logAndAct(entry, 'acted'); openMessage(entry.peer.id, entry.draftOpener) }}
+                    disabled={messagingPeer === entry.peer.id}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 999, border: 'none', background: T.ink, color: T.paperSoft, fontSize: 12.5, fontFamily: T.text, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    <MessageSquare size={13} />{messagingPeer === entry.peer.id ? 'Opening...' : CTA_LABEL[entry.suggestedAction]}
+                  </button>
+                  {!isNew && (
+                    <button type="button" onClick={() => setAskMenuPeer(entry.peer)} style={{ padding: '8px 10px', borderRadius: 999, border: 'none', background: T.paperDeep, color: T.ink, fontSize: 12.5, fontFamily: T.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }} aria-label="Suggest meeting">
+                      <Coffee size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  ) : (
+    <div style={{ padding: '40px 32px', textAlign: 'center', borderRadius: 16, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
+      <p style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, color: T.ink, margin: '0 0 10px' }}>Your knot is empty.</p>
+      <p style={{ fontSize: 13.5, color: T.inkMuted, margin: '0 auto 20px', maxWidth: 380, lineHeight: 1.55, fontFamily: T.text }}>
+        Connect with people and knotify will tell you who to reach out to, when, and why.
+      </p>
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+        <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
+        <KBtn variant="ghost" size="sm" onClick={() => navigate('/map')}>View your knot</KBtn>
+      </div>
+    </div>
+  )
+
+  // ── Right rail: Pulse (real network feed) + Next IRL (real events) ─────────
+  const rail = (
+    <>
+      <div>
+        <DeskSectionLabel right={networkFeed.length > 0 ? <span style={{ color: T.signal }}>● live</span> : undefined}>Pulse · your knot</DeskSectionLabel>
+        {networkFeed.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {networkFeed.slice(0, 5).map((it) => (
+              <div key={it.id} style={{ padding: 10, borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 6, height: 6, borderRadius: 3, background: it.type === 'milestone' ? T.verd : T.ochre, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.3 }}>
+                  {it.user && <span style={{ fontWeight: 500 }}>{it.user.full_name} · </span>}
+                  <span style={{ color: T.inkMuted }}>{it.content}</span>
+                </div>
+                <div style={{ fontSize: 10, color: T.inkFaint, flexShrink: 0 }}>{timeAgo(it.created_at)}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>Activity from your knot will appear here.</div>
+        )}
+      </div>
+
+      <div>
+        <DeskSectionLabel>Next · IRL</DeskSectionLabel>
+        {railEvents.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {railEvents.map((ev, i) => (
+              <button key={ev.id} type="button" onClick={() => navigate('/events')} style={{ textAlign: 'left', cursor: 'pointer', padding: 14, borderRadius: 12, background: i === 0 ? T.signal : T.paper, color: i === 0 ? '#fff' : T.ink, border: i === 0 ? 'none' : `0.5px solid ${T.rule}` }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: i === 0 ? 'rgba(255,255,255,0.85)' : T.inkMuted }}>{shortWhen(ev.starts_at)}{ev.location ? ` · ${ev.location}` : ''}</div>
+                <div style={{ fontFamily: T.display, fontSize: 16, fontWeight: 400, marginTop: 3, lineHeight: 1.15 }}>{ev.title}</div>
+                <div style={{ fontSize: 11, color: i === 0 ? 'rgba(255,255,255,0.85)' : T.inkMuted, marginTop: 4 }}>{ev.rsvp_count} going</div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>No upcoming events yet.</div>
+        )}
+      </div>
+    </>
+  )
+
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 80px' }}>
+    <div style={{ paddingBottom: 60 }}>
       {referralPeer && (
         <ReferralAskModal peer={referralPeer} onClose={() => setReferralPeer(null)} />
       )}
@@ -338,21 +451,16 @@ export function RelationshipHomePage() {
         />
       )}
 
-      {/* ── Page header ─────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginBottom: 4 }}>
-          Home · {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </div>
-        <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(26px, 3vw, 34px)', fontWeight: 400, color: 'var(--ink)', margin: 0, letterSpacing: '-0.03em', lineHeight: 1.05 }}>
-          <span style={{ fontStyle: 'italic' }}>Welcome back{firstName ? `, ${firstName}` : ''}.</span>
-        </h1>
-      </div>
+      <DeskHeader
+        kicker={`Home · ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`}
+        title={<span style={{ fontStyle: 'italic' }}>Welcome back{firstName ? `, ${firstName}` : ''}.</span>}
+        right={<KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>}
+      />
 
-      {/* ── Pending connection requests banner ──────────────────────────────── */}
       {pendingForMe.length > 0 && (
-        <div style={{ marginBottom: 20, padding: '13px 18px', borderRadius: 12, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.2)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ marginBottom: 20, padding: '13px 18px', borderRadius: 12, background: T.signalSoft, border: '0.5px solid rgba(216,68,43,0.2)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--signal-deep)', fontFamily: "'IBM Plex Sans'" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: T.signalDeep, fontFamily: T.text }}>
               {pendingForMe.length === 1
                 ? `${pendingForMe[0].peer.full_name} wants to connect`
                 : `${pendingForMe.length} people want to connect with you`}
@@ -362,110 +470,15 @@ export function RelationshipHomePage() {
         </div>
       )}
 
-      {/* ── Network maintenance — Keep your knot warm ───────────────────────── */}
-      {ranked.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 11, color: 'var(--ink-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12, fontWeight: 600, fontFamily: "'IBM Plex Sans'", display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Keep your knot warm</span>
-            <span style={{ fontSize: 11, color: coldCount > 0 ? 'var(--signal)' : coolingCount > 0 ? 'var(--ochre)' : 'var(--verd)', fontWeight: 700, textTransform: 'none', letterSpacing: 0 }}>
-              {allWarm ? 'All warm' : coldCount > 0 ? `${coldCount} going cold` : coolingCount > 0 ? `${coolingCount} cooling` : ''}
-            </span>
-          </div>
-
-          {allWarm ? (
-            <div style={{ padding: '18px 20px', borderRadius: 14, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', fontSize: 13.5, color: 'var(--ink-muted)', fontFamily: "'Fraunces', serif", fontStyle: 'italic' }}>
-              Nothing overdue. Your relationships are warm.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {ranked.slice(0, 5).map((entry) => {
-                const sc = STATE_COLOR[entry.state]
-                const isNew = entry.state === 'new'
-                return (
-                  <div key={entry.connectionId} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 16px', borderRadius: 14, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)', borderLeft: `3px solid ${sc}` }}>
-                    <button type="button" onClick={() => navigate(`/profile/${entry.peer.id}`)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
-                      <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={40} />
-                    </button>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'" }}>{entry.peer.full_name}</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: sc }}>{STATE_LABEL[entry.state]}</span>
-                      </div>
-                      <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", marginTop: 2, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                        {entry.reason}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <button
-                        type="button"
-                        onClick={() => { logAndAct(entry, 'acted'); openMessage(entry.peer.id, entry.draftOpener) }}
-                        disabled={messagingPeer === entry.peer.id}
-                        style={{ padding: '8px 15px', borderRadius: 999, border: 'none', background: 'var(--ink)', color: '#fff', fontSize: 12.5, fontFamily: "'IBM Plex Sans'", fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'opacity 0.15s' }}
-                      >
-                        {messagingPeer === entry.peer.id ? 'Opening...' : CTA_LABEL[entry.suggestedAction]}
-                      </button>
-                      {!isNew && (
-                        <button
-                          type="button"
-                          onClick={() => setAskMenuPeer(entry.peer)}
-                          style={{ padding: '8px 12px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'none', fontSize: 12.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", cursor: 'pointer' }}
-                        >
-                          Ask
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Milestones + new connections compact feed */}
-          {(milestones.length > 0 || ranked.filter(r => r.state === 'new').length > 0) && (
-            <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: 8 }}>
-              {ranked.filter(r => r.state === 'new').slice(0, 3).map(r => (
-                <div key={r.connectionId} onClick={() => navigate(`/profile/${r.peer.id}`)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 13px', borderRadius: 12, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)', cursor: 'pointer' }}>
-                  <KAvatar name={r.peer.full_name} src={r.peer.avatar_url} size={30} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.peer.full_name}</div>
-                    <div style={{ fontSize: 11, color: '#4caf7d', fontFamily: "'IBM Plex Sans'", fontWeight: 600 }}>New connection</div>
-                  </div>
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4caf7d', flexShrink: 0 }} />
-                </div>
-              ))}
-              {milestones.slice(0, 2).map(m => (
-                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 13px', borderRadius: 12, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
-                  {m.user && <button type="button" onClick={() => navigate(`/profile/${m.user!.id}`)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}><KAvatar name={m.user.full_name} src={m.user.avatar_url} size={30} /></button>}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {m.user && <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', fontFamily: "'IBM Plex Sans'" }}>{m.user.full_name}</div>}
-                    <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.content}</div>
-                  </div>
-                  {m.user && <button type="button" onClick={() => openMessage(m.user!.id)} style={{ padding: '6px 10px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'none', fontSize: 11, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'", cursor: 'pointer', flexShrink: 0 }}>Say congrats</button>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Empty state ─────────────────────────────────────────────────────── */}
-      {ranked.length === 0 && (
-        <div style={{ padding: '40px 32px', textAlign: 'center', borderRadius: 18, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', marginBottom: 24 }}>
-          <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 22, color: 'var(--ink)', margin: '0 0 10px' }}>
-            Your knot is empty.
-          </p>
-          <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: '0 auto 20px', maxWidth: 380, lineHeight: 1.55, fontFamily: "'IBM Plex Sans'" }}>
-            Connect with people and knotify will tell you who to reach out to, when, and why.
-          </p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-            <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
-            <KBtn variant="ghost" size="sm" onClick={() => navigate('/map')}>View your knot</KBtn>
-          </div>
-        </div>
-      )}
-
-      {/* ── Hub: quests · events · gigs ─────────────────────────────────────── */}
-      <HomeHub />
+      <DeskPage rail={rail}>
+        <HomeHub maintenance={maintenanceNode} />
+      </DeskPage>
     </div>
   )
+}
+
+// short event time for rail
+function shortWhen(iso: string) {
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }

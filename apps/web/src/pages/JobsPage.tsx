@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
+import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
 
 type JobListItem = {
   id: string
@@ -445,30 +446,28 @@ export function JobsPage() {
   }
 
   // ─── Knotify-styled render ─────────────────────────────────────────────────
-  return (
-    <div style={{ maxWidth: 960, margin: '0 auto' }}>
-
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 5, fontFamily: "'IBM Plex Sans'" }}>
-          knotify · referrals
+  const jobsRail = (
+    <>
+      <div style={{ padding: 16, borderRadius: 14, background: T.ink, color: T.paperSoft }}>
+        <DeskSectionLabel>Your referral standing</DeskSectionLabel>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[['Requests for you', pendingReferrals.length] as const, ['In progress', inProgressReferrals.length] as const, ['Referrals you sent', sentReferrals.length] as const, ['Your requests', myReferrals.length] as const].map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><span style={{ color: T.inkFaint }}>{k}</span><span style={{ fontWeight: 600, color: T.paperSoft }}>{v}</span></div>
+          ))}
         </div>
-        <h1
-          style={{
-            fontFamily: "'Fraunces', Georgia, serif",
-            fontSize: 'clamp(24px, 3vw, 36px)',
-            fontWeight: 400,
-            letterSpacing: '-0.03em',
-            lineHeight: 1.1,
-            margin: '0 0 5px',
-          }}
-        >
-          Jobs through <span style={{ fontStyle: 'italic', color: 'var(--ochre)' }}>people</span>, not portals.
-        </h1>
-        <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0 }}>
-          Warm referrals only. Your knot opens doors faster than any application portal.
-        </p>
       </div>
+      <div style={{ padding: 16, borderRadius: 14, background: T.ochreSoft, border: `0.5px solid ${T.ochre}`, color: '#6A4E12' }}>
+        <div style={{ fontSize: 12.5, lineHeight: 1.45 }}>Every warm role here has someone in your knot who can introduce you. A referral beats a cold application.</div>
+      </div>
+    </>
+  )
+
+  return (
+    <div>
+      <DeskHeader
+        kicker="Jobs & Gigs · peer to peer"
+        title={<><span style={{ fontStyle: 'italic' }}>Through people,</span> not job boards.</>}
+      />
 
       {/* ── Global error / success ──────────────────────────────────────────── */}
       {(error || requestError) && (
@@ -481,6 +480,8 @@ export function JobsPage() {
           {requestMessage}
         </div>
       )}
+
+      <DeskPage rail={jobsRail}>
 
       {/* ── Referral Inbox ─────────────────────────────────────────────────── */}
       <KCard style={{ padding: '18px 20px', marginBottom: 14 }}>
@@ -932,6 +933,8 @@ export function JobsPage() {
           </div>
         </KCard>
       )}
+
+      </DeskPage>
 
       {/* ── Job detail panel ────────────────────────────────────────────────── */}
       {selectedJob && (
