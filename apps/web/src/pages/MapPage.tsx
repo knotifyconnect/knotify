@@ -1226,49 +1226,15 @@ function KnotStage({
         marginTop: 5,
         padding: 0,
         overflow: 'hidden',
-        minHeight: 'calc(100vh - 78px)',
         border: 'none',
         background: 'transparent',
         boxShadow: 'none',
         borderRadius: 0,
       }}
     >
-      <div
-        style={{
-          position: 'relative',
-          minHeight: 'calc(100vh - 78px)',
-        }}
-        className="your-knot-stage"
-      >
-        <div
-          style={{
-            position: 'relative',
-            overflow: 'hidden',
-            minHeight: 'calc(100vh - 78px)',
-            borderRadius: 0,
-            background:
-              'linear-gradient(180deg, rgba(244,239,230,0.88), rgba(244,239,230,0.58)), radial-gradient(rgba(84,72,58,0.10) 1px, transparent 1px)',
-            backgroundSize: '100% 100%, 18px 18px',
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              left: 12,
-              top: 12,
-              zIndex: 8,
-              width: 'min(390px, calc(100% - 380px))',
-              padding: '7px 10px',
-              borderRadius: 14,
-              border: '0.5px solid var(--rule)',
-              background: 'rgba(244,239,230,0.84)',
-              backdropFilter: 'blur(12px)',
-              boxShadow: '0 12px 36px rgba(26,24,21,0.06)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-            }}
-          >
+      <div className="k-knot-stage your-knot-stage">
+        <div className="k-knot-bg">
+          <div className="k-knot-search-box">
             <span style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', whiteSpace: 'nowrap' }}>
               Find
             </span>
@@ -1344,55 +1310,16 @@ function KnotStage({
               />
 
 
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 14,
-                  bottom: 14,
-                  zIndex: 5,
-                  padding: '8px 11px',
-                  borderRadius: 999,
-                  background: 'rgba(244,239,230,0.86)',
-                  border: '0.5px solid var(--rule)',
-                  color: 'var(--ink-muted)',
-                  fontSize: 12,
-                  backdropFilter: 'blur(10px)',
-                }}
-              >
+              <div className="k-knot-stats-bar">
                 {connected.length} connected · {visiblePeerEdges.length} inner ties · {expandedSecondDegreeNodes.length} expanded · {incoming.length} decisions · {sent.length} waiting
               </div>
 
-              <div
-                style={{
-                  position: 'absolute',
-                  right: 12,
-                  top: 12,
-                  zIndex: 6,
-                  padding: '6px 8px',
-                  borderRadius: 999,
-                  border: '0.5px solid var(--rule)',
-                  background: 'rgba(244,239,230,0.84)',
-                  backdropFilter: 'blur(12px)',
-                  boxShadow: '0 12px 36px rgba(26,24,21,0.06)',
-                }}
-              >
+              <div className="k-knot-legend-box">
                 <WebLegendRow />
               </div>
 
               {(selectedConnection || selectedSecondDegreeUser) && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: 18,
-                    top: 78,
-                    zIndex: 7,
-                    width: 336,
-                    maxHeight: 'calc(100% - 100px)',
-                    overflowY: 'auto',
-                    borderRadius: 22,
-                    boxShadow: '0 28px 80px rgba(26,24,21,0.16)',
-                  }}
-                >
+                <div className="k-knot-detail-panel">
                   {selectedConnection ? (
                     <SelectedRelationshipPanel
                       connection={selectedConnection}

@@ -319,19 +319,11 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
 
   return (
     <nav
+      className="k-landing-nav"
       style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 40px',
-        height: 64,
         background: scrolled ? 'rgba(244,239,230,0.92)' : 'transparent',
         backdropFilter: scrolled ? 'blur(12px)' : 'none',
         borderBottom: scrolled ? '0.5px solid var(--rule-soft)' : '0.5px solid transparent',
-        transition: 'all 0.2s ease',
       }}
     >
       <div
@@ -341,27 +333,11 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
         <KnotifyLogoImg variant="wordmark" height={26} />
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 28,
-          fontSize: 13.5,
-          color: 'var(--ink-muted)',
-        }}
-      >
-        <a href="#how-it-works" style={{ color: 'inherit', textDecoration: 'none' }}>
-          How it works
-        </a>
-        <a href="#cafes" style={{ color: 'inherit', textDecoration: 'none' }}>
-          Cafés
-        </a>
-        <a href="#manifesto" style={{ color: 'inherit', textDecoration: 'none' }}>
-          Manifesto
-        </a>
-        <a href="/employers" style={{ color: 'inherit', textDecoration: 'none' }}>
-          For employers
-        </a>
+      <div className="k-landing-nav-links">
+        <a href="#how-it-works" style={{ color: 'inherit', textDecoration: 'none' }}>How it works</a>
+        <a href="#cafes" style={{ color: 'inherit', textDecoration: 'none' }}>Cafés</a>
+        <a href="#manifesto" style={{ color: 'inherit', textDecoration: 'none' }}>Manifesto</a>
+        <a href="/employers" style={{ color: 'inherit', textDecoration: 'none' }}>For employers</a>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -369,7 +345,7 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
           Beta login
         </KBtn>
         <KBtn variant="signal" size="sm" onClick={() => document.getElementById('beta-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
-          Join waiting list
+          Join list
         </KBtn>
       </div>
     </nav>
@@ -397,17 +373,7 @@ export function LandingPage() {
       <LandingNav onSignIn={goToSignIn} />
 
       {/* ── Hero ── */}
-      <section
-        style={{
-          padding: '72px 40px 80px',
-          display: 'grid',
-          gridTemplateColumns: '1.1fr 1fr',
-          gap: 56,
-          alignItems: 'center',
-          maxWidth: 1160,
-          margin: '0 auto',
-        }}
-      >
+      <section className="k-landing-hero">
         <div>
           <div
             style={{
@@ -484,7 +450,7 @@ export function LandingPage() {
         </div>
 
         {/* Hero visual */}
-        <div style={{ position: 'relative', height: 480, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="k-landing-hero-graphic">
           <div
             style={{
               position: 'absolute',
@@ -540,7 +506,7 @@ export function LandingPage() {
           background: 'var(--paper-soft)',
           borderTop: '0.5px solid var(--rule-soft)',
           borderBottom: '0.5px solid var(--rule-soft)',
-          padding: '64px 40px',
+          padding: 'clamp(40px, 6vw, 64px) clamp(16px, 4vw, 40px)',
         }}
       >
         <div style={{ maxWidth: 1160, margin: '0 auto' }}>
@@ -555,7 +521,7 @@ export function LandingPage() {
           >
             Three things, well
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 40 }}>
+          <div className="k-landing-3col">
             {[
               {
                 n: '01',
@@ -616,7 +582,7 @@ export function LandingPage() {
       {/* ── How it works ── */}
       <section
         id="how-it-works"
-        style={{ padding: '80px 40px', maxWidth: 1160, margin: '0 auto' }}
+        style={{ padding: 'clamp(40px, 6vw, 80px) clamp(16px, 4vw, 40px)', maxWidth: 1160, margin: '0 auto' }}
       >
         <div
           style={{
@@ -644,7 +610,7 @@ export function LandingPage() {
           </span>
         </h2>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
+        <div className="k-landing-how-grid">
           {[
             {
               step: 1,
@@ -715,20 +681,12 @@ export function LandingPage() {
       <section
         id="manifesto"
         style={{
-          padding: '80px 40px',
+          padding: 'clamp(40px, 6vw, 80px) clamp(16px, 4vw, 40px)',
           background: 'var(--paper-soft)',
           borderTop: '0.5px solid var(--rule-soft)',
         }}
       >
-        <div
-          style={{
-            maxWidth: 1160,
-            margin: '0 auto',
-            display: 'grid',
-            gridTemplateColumns: '1fr 1.4fr',
-            gap: 60,
-          }}
-        >
+        <div className="k-landing-manifesto">
           <div>
             <div
               style={{
@@ -779,7 +737,7 @@ export function LandingPage() {
       </section>
 
       {/* ── Footer CTA ── */}
-      <section style={{ padding: '80px 40px' }}>
+      <section style={{ padding: 'clamp(40px, 6vw, 80px) clamp(16px, 4vw, 40px)' }}>
         <div
           style={{
             maxWidth: 560,
@@ -807,19 +765,7 @@ export function LandingPage() {
       </section>
 
       {/* ── Footer ── */}
-      <footer
-        style={{
-          borderTop: '0.5px solid var(--rule-soft)',
-          padding: '40px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 20,
-          fontSize: 11,
-          color: 'var(--ink-faint)',
-        }}
-      >
+      <footer className="k-landing-footer">
         <KnotifyLogoImg variant="full" height={48} />
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {([

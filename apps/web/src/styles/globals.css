@@ -172,6 +172,111 @@ body::before {
   scroll-snap-align: start;
 }
 
+/* ── Landing page responsive ───────────────────────────────────────────────── */
+.k-landing-nav {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 clamp(16px, 4vw, 40px); height: 64px;
+  transition: all 0.2s ease;
+}
+.k-landing-nav-links {
+  display: flex; align-items: center; gap: 28px;
+  font-size: 13.5px; color: var(--ink-muted);
+}
+@media (max-width: 639px) { .k-landing-nav-links { display: none; } }
+
+.k-landing-hero {
+  display: grid; grid-template-columns: 1.1fr 1fr;
+  gap: 56px; align-items: center;
+  max-width: 1160px; margin: 0 auto;
+  padding: 72px clamp(16px, 4vw, 40px) 80px;
+}
+@media (max-width: 767px) {
+  .k-landing-hero { grid-template-columns: 1fr; gap: 0; padding-top: 40px; padding-bottom: 48px; }
+}
+.k-landing-hero-graphic {
+  position: relative; height: 480px; display: flex;
+  align-items: center; justify-content: center;
+}
+@media (max-width: 767px) { .k-landing-hero-graphic { display: none; } }
+
+.k-landing-section-pad {
+  padding: 64px clamp(16px, 4vw, 40px);
+}
+.k-landing-3col {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px;
+}
+@media (max-width: 767px) { .k-landing-3col { grid-template-columns: 1fr; gap: 24px; } }
+.k-landing-how-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+}
+@media (max-width: 767px) { .k-landing-how-grid { grid-template-columns: 1fr; gap: 16px; } }
+.k-landing-manifesto {
+  max-width: 1160px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1.4fr; gap: 60px;
+}
+@media (max-width: 767px) { .k-landing-manifesto { grid-template-columns: 1fr; gap: 32px; } }
+.k-landing-footer {
+  border-top: 0.5px solid var(--rule-soft);
+  padding: 40px clamp(16px, 4vw, 40px);
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 20px; font-size: 11px; color: var(--ink-faint);
+}
+
+/* ── MapPage (Your Knot) responsive ─────────────────────────────────────────── */
+.k-knot-stage {
+  position: relative; min-height: calc(100vh - 78px);
+}
+@media (max-width: 767px) { .k-knot-stage { min-height: 320px; } }
+.k-knot-bg {
+  position: relative; overflow: hidden; min-height: calc(100vh - 78px);
+  border-radius: 0;
+  background: linear-gradient(180deg, rgba(244,239,230,0.88), rgba(244,239,230,0.58)),
+              radial-gradient(rgba(84,72,58,0.10) 1px, transparent 1px);
+  background-size: 100% 100%, 18px 18px;
+}
+@media (max-width: 767px) { .k-knot-bg { min-height: 320px; } }
+.k-knot-search-box {
+  position: absolute; left: 12px; top: 12px; z-index: 8;
+  width: min(390px, calc(100% - 24px));
+  padding: 7px 10px; border-radius: 14px;
+  border: 0.5px solid var(--rule);
+  background: rgba(244,239,230,0.84); backdrop-filter: blur(12px);
+  box-shadow: 0 12px 36px rgba(26,24,21,0.06);
+  display: flex; align-items: center; gap: 9px;
+}
+.k-knot-legend-box {
+  position: absolute; right: 12px; top: 12px; z-index: 6;
+  padding: 6px 8px; border-radius: 999px;
+  border: 0.5px solid var(--rule);
+  background: rgba(244,239,230,0.84); backdrop-filter: blur(12px);
+  box-shadow: 0 12px 36px rgba(26,24,21,0.06);
+}
+@media (max-width: 479px) { .k-knot-legend-box { display: none; } }
+.k-knot-stats-bar {
+  position: absolute; left: 14px; bottom: 14px; z-index: 5;
+  padding: 8px 11px; border-radius: 999px;
+  background: rgba(244,239,230,0.86); border: 0.5px solid var(--rule);
+  color: var(--ink-muted); font-size: 12px; backdrop-filter: blur(10px);
+  max-width: calc(100% - 28px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@media (max-width: 479px) { .k-knot-stats-bar { font-size: 10px; } }
+.k-knot-detail-panel {
+  position: absolute; right: 18px; top: 78px; z-index: 7;
+  width: 336px; max-height: calc(100% - 100px);
+  overflow-y: auto; border-radius: 22px;
+  box-shadow: 0 28px 80px rgba(26,24,21,0.16);
+}
+@media (max-width: 767px) {
+  .k-knot-detail-panel {
+    position: fixed; bottom: 88px; left: 0; right: 0;
+    top: auto; width: 100%; max-height: 55vh;
+    border-radius: 22px 22px 0 0; z-index: 9999;
+    box-shadow: 0 -12px 40px rgba(26,24,21,0.18);
+  }
+}
+
 /* Gradient text — signal red to verd */
 .gradient-text {
   background: linear-gradient(130deg, #D8442B, #1F6B5E);

@@ -1116,14 +1116,33 @@ export function MessagesPage() {
                   <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {selectedConv.peer.full_name}
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>@{selectedConv.peer.username}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{selectedConv.peer.username}</div>
                 </div>
-                {/* Plan coffee button */}
-                <KBtn variant="signal" size="sm" onClick={() => setCoffeeOpen(true)}>
-                  ☕ Plan coffee
-                </KBtn>
-                {/* IRL context strip */}
+                {/* Plan coffee button — icon-only on mobile */}
+                <button
+                  type="button"
+                  onClick={() => setCoffeeOpen(true)}
+                  className="hidden sm:none"
+                  style={{
+                    flexShrink: 0,
+                    padding: '6px 12px',
+                    borderRadius: 999,
+                    border: '0.5px solid var(--signal)',
+                    background: 'var(--signal)',
+                    color: '#fff',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: "'IBM Plex Sans', sans-serif",
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span className="hidden sm:inline">☕ Plan coffee</span>
+                  <span className="sm:hidden">☕</span>
+                </button>
+                {/* IRL context strip — hidden on very small screens */}
                 <div
+                  className="hidden sm:block"
                   style={{
                     padding: '4px 10px',
                     borderRadius: 999,
