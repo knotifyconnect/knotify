@@ -27,12 +27,12 @@ export type ChipColor = 'paper' | 'signal' | 'verd' | 'ochre' | 'plum'
 export function DeskPage({ children, rail, maxWidth = 1100 }: { children: ReactNode; rail?: ReactNode; maxWidth?: number }) {
   return (
     <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', width: '100%' }}>
-      <div style={{ flex: 1, minWidth: 0, maxWidth: rail ? '100%' : maxWidth, margin: rail ? 0 : '0 auto' }}>
+      <div className="k-page-content" style={{ flex: 1, minWidth: 0, maxWidth: rail ? '100%' : maxWidth, margin: rail ? 0 : '0 auto' }}>
         {children}
       </div>
       {rail && (
         <aside
-          className="hidden lg:flex"
+          className="hidden lg:flex k-rail"
           style={{ width: 320, flexShrink: 0, flexDirection: 'column', gap: 18, position: 'sticky', top: 16 }}
         >
           {rail}

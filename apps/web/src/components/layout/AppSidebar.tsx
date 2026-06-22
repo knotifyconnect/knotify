@@ -297,15 +297,15 @@ export function AppSidebar() {
 
       {/* ── Mobile bottom tab bar ─────────────────────────────────── */}
       <nav
-        className="flex md:hidden"
+        className="flex md:hidden k-tab-bar"
         style={{
           position: 'fixed',
           bottom: 0,
           left: 0,
           right: 0,
-          height: 64,
           background: 'rgba(244,239,230,0.94)',
           backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
           borderTop: '0.5px solid var(--rule-soft)',
           zIndex: 50,
           alignItems: 'center',

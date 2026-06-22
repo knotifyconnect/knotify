@@ -168,8 +168,7 @@ function Overlay({ onClose, children }: { onClose: () => void; children: React.R
     }
   }, [onClose])
   return (
-    <div onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(26,24,21,0.6)', backdropFilter: 'blur(6px)', overflowY: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '40px 20px 40px 240px' }}>
+    <div onClick={(e) => { if (e.target === e.currentTarget) onClose() }} className="k-overlay">
       <motion.div initial={{ y: 16, opacity: 0, scale: 0.97 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 16, opacity: 0, scale: 0.97 }} transition={{ duration: 0.18 }}
         onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 560, background: T.paper, borderRadius: 20, padding: '28px 24px 40px', position: 'relative', boxShadow: '0 32px 80px rgba(26,24,21,0.35)', flexShrink: 0 }}>
@@ -498,7 +497,8 @@ function EventsCarousel({ events, interests, onRsvp, onOpen, onSeeAll }: {
           return (
             <motion.div key={e.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
               onClick={() => onOpen(e)}
-              style={{ flexShrink: 0, width: 240, borderRadius: 14, overflow: 'hidden', background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', flexDirection: 'column', cursor: 'pointer', scrollSnapAlign: 'start' }}>
+              className="k-event-card"
+              style={{ borderRadius: 14, overflow: 'hidden', background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', flexDirection: 'column', cursor: 'pointer' }}>
               <div style={{ height: 100, position: 'relative', background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : EVENT_GRAD[color] }}>
                 <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 6 }}>
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(0,0,0,0.28)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text }}>Event</span>
@@ -791,7 +791,7 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
 
         {/* ── Top row: maintenance + credibility + side quests mini ─────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: maintenance ? 'minmax(0,1.6fr) minmax(0,1fr)' : 'minmax(0,1fr) minmax(0,1fr)', gap: 16, marginBottom: 28 }}>
+        <div className={maintenance ? 'k-hub-top-grid' : 'k-hub-top-grid-simple'} style={{ marginBottom: 28 }}>
           {maintenance}
           <div style={{ display: maintenance ? 'flex' : 'contents', flexDirection: 'column', gap: 16 }}>
 
