@@ -162,16 +162,22 @@ function CredRing({ score, max }: { score: number; max: number }) {
 // ── Overlay wrapper ────────────────────────────────────────────────────────────
 function Overlay({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
+    // Lock background scroll
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', fn)
-    return () => document.removeEventListener('keydown', fn)
+    return () => {
+      document.body.style.overflow = prev
+      document.removeEventListener('keydown', fn)
+    }
   }, [onClose])
   return (
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(26,24,21,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-      <motion.div initial={{ y: 20, opacity: 0, scale: 0.97 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 20, opacity: 0, scale: 0.97 }} transition={{ duration: 0.2 }}
+      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(26,24,21,0.6)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <motion.div initial={{ y: 16, opacity: 0, scale: 0.97 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 16, opacity: 0, scale: 0.97 }} transition={{ duration: 0.18 }}
         onClick={(e) => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: 540, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', background: T.paper, borderRadius: 20, padding: '28px 24px 40px', position: 'relative', boxShadow: '0 24px 64px rgba(26,24,21,0.3)' }}>
+        style={{ width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', background: T.paper, borderRadius: 20, padding: '28px 24px 40px', position: 'relative', boxShadow: '0 32px 80px rgba(26,24,21,0.35)' }}>
         {children}
       </motion.div>
     </div>
@@ -258,53 +264,76 @@ function QuestDetailModal({ quest: q, onClose, onClaimed }: { quest: Quest; onCl
       )}
 
       {q.status === 'completed' ? (
-        <div style={{ padding: '14px 18px', borderRadius: 12, background: T.verdSoft, border: `0.5px solid ${T.verd}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 18 }}>✓</span>
-          <span style={{ fontSize: 13.5, color: T.verd, fontWeight: 600, fontFamily: T.text }}>Quest completed. +{q.points} credibility earned.</span>
+        <div style={{ padding: '16px 18px', borderRadius: 14, background: T.verdSoft, border: `0.5px solid ${T.verd}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 20 }}>✓</span>
+          <div>
+            <div style={{ fontSize: 13.5, color: T.verd, fontWeight: 700, fontFamily: T.text }}>Quest completed. +{q.points} credibility earned.</div>
+            <div style={{ fontSize: 12, color: T.verd, opacity: 0.75, marginTop: 2, fontFamily: T.text }}>This appears on your profile under Quest completions.</div>
+          </div>
         </div>
       ) : q.type === 'self' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ fontSize: 12.5, color: T.inkMuted, fontFamily: T.text, lineHeight: 1.5 }}>
-            Upload a photo as proof you completed this quest. It is your word and your photo.
+
+          {/* Where the photo goes — shown upfront */}
+          <div style={{ padding: '14px 16px', borderRadius: 14, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', fontFamily: T.text }}>Photo evidence</div>
+            <div style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.55, fontFamily: T.text }}>
+              Take a real photo to prove you did this. It goes to your knotify profile under "Quest completions" and, if you choose, appears in your connections' activity feed.
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+              <Chip color="verd"><Users size={10} style={{ marginRight: 3 }} />Shown on your profile</Chip>
+              <Chip color="ochre"><Share2 size={10} style={{ marginRight: 3 }} />Optional: share to feed</Chip>
+            </div>
           </div>
-          <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: preview ? 180 : 100, borderRadius: 14, border: `1.5px dashed ${T.rule}`, background: preview ? `center/cover no-repeat url(${preview})` : T.paperSoft, cursor: 'pointer', overflow: 'hidden', color: T.inkMuted, fontSize: 13, fontFamily: T.text, position: 'relative' }}>
-            {!preview && <><Camera size={20} color={T.inkFaint} /><span>Tap to add photo evidence</span></>}
-            {preview && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: '#fff', fontSize: 12, fontFamily: T.text }}>Tap to change</span>
+
+          <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, minHeight: preview ? 200 : 110, borderRadius: 16, border: `2px dashed ${photo ? T.verd : T.rule}`, background: preview ? `center/cover no-repeat url(${preview})` : T.paperSoft, cursor: 'pointer', overflow: 'hidden', color: T.inkMuted, fontSize: 13, fontFamily: T.text, position: 'relative', transition: 'border-color 0.15s' }}>
+            {!preview && <>
+              <Camera size={24} color={T.inkFaint} />
+              <span style={{ fontWeight: 600, color: T.inkSoft }}>Upload your photo</span>
+              <span style={{ fontSize: 11.5, color: T.inkFaint }}>JPG, PNG or WebP · max 8 MB</span>
+            </>}
+            {preview && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: T.text, background: 'rgba(0,0,0,0.4)', padding: '6px 14px', borderRadius: 999 }}>Tap to change photo</span>
             </div>}
             <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => pickPhoto(e.target.files?.[0] ?? null)} />
           </label>
 
           <button onClick={() => setShareToFeed(s => !s)}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, border: `0.5px solid ${shareToFeed ? T.verd : T.rule}`, background: shareToFeed ? T.verdSoft : 'transparent', cursor: 'pointer', textAlign: 'left' }}>
-            <Share2 size={15} color={shareToFeed ? T.verd : T.inkFaint} />
+            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 14, border: `1.5px solid ${shareToFeed ? T.verd : T.rule}`, background: shareToFeed ? T.verdSoft : T.paperSoft, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: shareToFeed ? T.verd : T.ruleSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'background 0.15s' }}>
+              <Share2 size={16} color={shareToFeed ? '#fff' : T.inkFaint} />
+            </div>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: shareToFeed ? T.verd : T.ink, fontFamily: T.text }}>Share to your knot</div>
-              <div style={{ fontSize: 11.5, color: T.inkMuted, fontFamily: T.text, marginTop: 1 }}>Your photo and quest completion will appear in your connections' feed</div>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: shareToFeed ? T.verd : T.ink, fontFamily: T.text }}>Share to your connections' feed</div>
+              <div style={{ fontSize: 12, color: T.inkMuted, fontFamily: T.text, marginTop: 2 }}>{shareToFeed ? 'Photo will appear in your knot\'s activity feed' : 'Only visible on your own profile'}</div>
+            </div>
+            <div style={{ marginLeft: 'auto', width: 20, height: 20, borderRadius: 999, background: shareToFeed ? T.verd : T.rule, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {shareToFeed && <span style={{ color: '#fff', fontSize: 13 }}>✓</span>}
             </div>
           </button>
 
           {err && <div style={{ fontSize: 12.5, color: T.signal, fontFamily: T.text }}>{err}</div>}
           <button onClick={claim} disabled={busy || !photo}
-            style={{ padding: '13px', borderRadius: 999, border: 'none', background: photo ? T.ochre : T.ruleSoft, color: photo ? '#fff' : T.inkFaint, fontSize: 14, fontWeight: 700, cursor: photo ? 'pointer' : 'not-allowed', fontFamily: T.text, transition: 'all 0.15s' }}>
-            {busy ? 'Claiming...' : `Claim +${q.points} credibility`}
+            style={{ padding: '14px', borderRadius: 999, border: 'none', background: photo ? T.ochre : T.ruleSoft, color: photo ? '#fff' : T.inkFaint, fontSize: 14, fontWeight: 700, cursor: photo ? 'pointer' : 'not-allowed', fontFamily: T.text, transition: 'all 0.15s' }}>
+            {busy ? 'Claiming...' : photo ? `Claim +${q.points} credibility` : 'Upload photo to claim'}
           </button>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {q.status === 'locked' && q.progress != null && q.target != null && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: T.inkMuted, marginBottom: 6, fontFamily: T.text }}>
-                <span>Progress</span><span>{q.progress} / {q.target}</span>
+            <div style={{ padding: '14px 16px', borderRadius: 14, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: T.inkMuted, marginBottom: 8, fontFamily: T.text }}>
+                <span>Progress</span><span style={{ fontWeight: 600 }}>{q.progress} / {q.target}</span>
               </div>
-              <div style={{ height: 6, borderRadius: 999, background: T.ruleSoft }}>
-                <div style={{ width: `${Math.round(((q.progress ?? 0) / (q.target || 1)) * 100)}%`, height: '100%', borderRadius: 999, background: T.ochre }} />
+              <div style={{ height: 8, borderRadius: 999, background: T.ruleSoft }}>
+                <div style={{ width: `${Math.round(((q.progress ?? 0) / (q.target || 1)) * 100)}%`, height: '100%', borderRadius: 999, background: T.ochre, transition: 'width 0.4s ease' }} />
               </div>
+              <div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, fontFamily: T.text }}>{(q.target ?? 0) - (q.progress ?? 0)} more to go</div>
             </div>
           )}
           {err && <div style={{ fontSize: 12.5, color: T.signal, fontFamily: T.text }}>{err}</div>}
           <button onClick={claim} disabled={busy || q.status === 'locked'}
-            style={{ padding: '13px', borderRadius: 999, border: 'none', background: q.status === 'claimable' ? T.ochre : T.ruleSoft, color: q.status === 'claimable' ? '#fff' : T.inkFaint, fontSize: 14, fontWeight: 700, cursor: q.status === 'claimable' ? 'pointer' : 'not-allowed', fontFamily: T.text }}>
+            style={{ padding: '14px', borderRadius: 999, border: 'none', background: q.status === 'claimable' ? T.ochre : T.ruleSoft, color: q.status === 'claimable' ? '#fff' : T.inkFaint, fontSize: 14, fontWeight: 700, cursor: q.status === 'claimable' ? 'pointer' : 'not-allowed', fontFamily: T.text }}>
             {busy ? 'Claiming...' : q.status === 'claimable' ? `Claim +${q.points} credibility` : 'Not ready yet'}
           </button>
         </div>
@@ -316,45 +345,86 @@ function QuestDetailModal({ quest: q, onClose, onClaimed }: { quest: Quest; onCl
 // ── Event detail modal ─────────────────────────────────────────────────────────
 function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onClose: () => void; onRsvp: (id: string) => void }) {
   const color = accentFor(e.id)
+  const [rsvped, setRsvped] = useState(e.rsvped)
+  const [count, setCount] = useState(e.rsvp_count)
+
+  function handleRsvp() {
+    if (e.is_host) return
+    const next = !rsvped
+    setRsvped(next)
+    setCount(c => c + (next ? 1 : -1))
+    onRsvp(e.id)
+  }
+
   return (
     <Overlay onClose={onClose}>
-      <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 20, background: 'rgba(26,24,21,0.5)', border: 'none', borderRadius: 999, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', zIndex: 10 }}><X size={15} /></button>
-
-      {/* Hero image */}
-      <div style={{ margin: '-28px -24px 24px', height: 200, background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : EVENT_GRAD[color], borderRadius: '20px 20px 0 0', position: 'relative' }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(26,24,21,0.6) 0%, transparent 50%)', borderRadius: '20px 20px 0 0' }} />
-        <div style={{ position: 'absolute', bottom: 16, left: 20, right: 60 }}>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', fontFamily: T.text, marginBottom: 4 }}>{whenLabel(e.starts_at)}</div>
-          <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 24, fontWeight: 500, color: '#fff', lineHeight: 1.1 }}>{e.title}</div>
+      {/* Hero */}
+      <div style={{ margin: '-28px -24px 0', height: 220, background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : EVENT_GRAD[color], borderRadius: '20px 20px 0 0', position: 'relative', flexShrink: 0 }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(26,24,21,0.75) 0%, transparent 55%)', borderRadius: '20px 20px 0 0' }} />
+        <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: 'rgba(26,24,21,0.45)', border: 'none', borderRadius: 999, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', backdropFilter: 'blur(4px)' }}><X size={15} /></button>
+        {e.source === 'curated' && <div style={{ position: 'absolute', top: 14, left: 14, background: T.verd, color: '#fff', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '4px 10px', borderRadius: 999, fontFamily: T.text }}>Curated</div>}
+        <div style={{ position: 'absolute', bottom: 18, left: 20, right: 20 }}>
+          <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.8)', fontFamily: T.text, marginBottom: 5, fontWeight: 500 }}>{whenLabel(e.starts_at)}</div>
+          <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 26, fontWeight: 500, color: '#fff', lineHeight: 1.1 }}>{e.title}</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 18 }}>
-        {e.location && <Chip><MapPin size={11} style={{ marginRight: 3 }} />{e.location}</Chip>}
-        <Chip><Users size={11} style={{ marginRight: 3 }} />{e.rsvp_count} going</Chip>
-        {(e.host_name || e.host_label) && <Chip>By {e.host_name || e.host_label}</Chip>}
-        {e.source === 'curated' && <Chip color="verd">Curated</Chip>}
+      {/* Key info row */}
+      <div style={{ display: 'grid', gridTemplateColumns: e.location ? '1fr 1fr' : '1fr', gap: 10, margin: '20px 0 18px' }}>
+        {e.location && (
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}` }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 4, fontFamily: T.text }}>Location</div>
+            <div style={{ fontSize: 13, color: T.ink, fontFamily: T.text, display: 'flex', alignItems: 'flex-start', gap: 5 }}>
+              <MapPin size={13} color={T.signal} style={{ marginTop: 1, flexShrink: 0 }} />{e.location}
+            </div>
+          </div>
+        )}
+        <div style={{ padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}` }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 4, fontFamily: T.text }}>Attendees</div>
+          <div style={{ fontSize: 13, color: T.ink, fontFamily: T.text, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Users size={13} color={T.verd} />{count} {count === 1 ? 'person' : 'people'} going
+          </div>
+        </div>
       </div>
 
-      {e.description && (
-        <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.65, fontFamily: T.text, margin: '0 0 22px' }}>{e.description}</p>
+      {/* Host */}
+      {(e.host_name || e.host_label) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}`, marginBottom: 18 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 999, background: T.plumSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14 }}>
+            {(e.host_name || e.host_label || '?')[0]}
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', fontFamily: T.text }}>Organised by</div>
+            <div style={{ fontSize: 13, color: T.ink, fontWeight: 600, fontFamily: T.text }}>{e.host_name || e.host_label}</div>
+          </div>
+          {e.is_host && <span style={{ marginLeft: 'auto', fontSize: 11, color: T.verd, fontWeight: 600, fontFamily: T.text }}>You</span>}
+        </div>
       )}
 
-      {e.interests && e.interests.length > 0 && (
+      {/* Description */}
+      {e.description ? (
+        <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.7, fontFamily: T.text, margin: '0 0 18px' }}>{e.description}</p>
+      ) : (
+        <p style={{ fontSize: 13.5, color: T.inkFaint, lineHeight: 1.6, fontStyle: 'italic', fontFamily: T.display, margin: '0 0 18px' }}>No description added yet.</p>
+      )}
+
+      {/* Interest tags */}
+      {(e.interests ?? []).length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 22 }}>
-          {e.interests.map(i => <Chip key={i}>{i}</Chip>)}
+          {e.interests!.map(i => <Chip key={i}>{i}</Chip>)}
         </div>
       )}
 
+      {/* Actions */}
       <div style={{ display: 'flex', gap: 10 }}>
-        <button onClick={() => { onRsvp(e.id); onClose() }} disabled={e.is_host}
-          style={{ flex: 1, padding: '13px', borderRadius: 999, border: 'none', background: e.is_host ? T.rule : e.rsvped ? T.verd : T.signal, color: e.is_host ? T.inkFaint : '#fff', fontSize: 14, fontWeight: 700, cursor: e.is_host ? 'default' : 'pointer', fontFamily: T.text }}>
-          {e.is_host ? 'You are hosting' : e.rsvped ? 'Going (tap to cancel)' : 'RSVP'}
+        <button onClick={handleRsvp} disabled={e.is_host}
+          style={{ flex: 1, padding: '14px', borderRadius: 999, border: 'none', background: e.is_host ? T.rule : rsvped ? T.verd : T.signal, color: e.is_host ? T.inkFaint : '#fff', fontSize: 14, fontWeight: 700, cursor: e.is_host ? 'default' : 'pointer', fontFamily: T.text, transition: 'background 0.15s' }}>
+          {e.is_host ? 'You are hosting' : rsvped ? 'Going — tap to cancel' : 'RSVP · I will be there'}
         </button>
         {e.url && (
           <a href={e.url} target="_blank" rel="noopener noreferrer"
-            style={{ padding: '13px 16px', borderRadius: 999, border: `0.5px solid ${T.rule}`, background: 'transparent', color: T.inkMuted, fontSize: 13, cursor: 'pointer', fontFamily: T.text, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
-            <ExternalLink size={14} />More info
+            style={{ padding: '14px 16px', borderRadius: 999, border: `0.5px solid ${T.rule}`, background: 'transparent', color: T.inkMuted, fontSize: 13, cursor: 'pointer', fontFamily: T.text, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            <ExternalLink size={14} />Details
           </a>
         )}
       </div>
@@ -363,11 +433,12 @@ function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onC
 }
 
 // ── Events Carousel ────────────────────────────────────────────────────────────
-function EventsCarousel({ events, interests, onRsvp, onOpen }: {
+function EventsCarousel({ events, interests, onRsvp, onOpen, onSeeAll }: {
   events: EventItem[]
   interests: string[]
   onRsvp: (id: string) => void
   onOpen: (e: EventItem) => void
+  onSeeAll: () => void
 }) {
   const rail = useRef<HTMLDivElement>(null)
   const [canLeft, setCanLeft] = useState(false)
@@ -393,7 +464,11 @@ function EventsCarousel({ events, interests, onRsvp, onOpen }: {
   return (
     <div style={{ marginBottom: 32 }}>
       <SectionLabel right={
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={onSeeAll} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>
+            See all <ChevronRight size={11} />
+          </button>
+          <div style={{ width: 1, height: 12, background: T.rule }} />
           <button onClick={() => scroll('left')} disabled={!canLeft}
             style={{ width: 28, height: 28, borderRadius: 999, border: `0.5px solid ${T.rule}`, background: canLeft ? T.paperDeep : 'transparent', color: canLeft ? T.ink : T.inkFaint, cursor: canLeft ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ChevronLeft size={14} />
@@ -788,7 +863,7 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
         </div>
 
         {/* ── Events carousel ───────────────────────────────────────────── */}
-        <EventsCarousel events={rankedEvents} interests={interests} onRsvp={toggleRsvp} onOpen={setSelectedEvent} />
+        <EventsCarousel events={rankedEvents} interests={interests} onRsvp={toggleRsvp} onOpen={setSelectedEvent} onSeeAll={() => navigate('/events')} />
 
         {/* ── Side quests grid ──────────────────────────────────────────── */}
         <SideQuestsSection quests={allQuests} onOpen={setSelectedQuest} />
