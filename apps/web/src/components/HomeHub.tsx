@@ -168,9 +168,10 @@ function Overlay({ onClose, children }: { onClose: () => void; children: React.R
   }, [onClose])
   return (
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-      style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(26,24,21,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0' }}>
-      <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ duration: 0.22 }}
-        style={{ width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', background: T.paper, borderRadius: '20px 20px 0 0', padding: '28px 24px 40px' }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(26,24,21,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <motion.div initial={{ y: 20, opacity: 0, scale: 0.97 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 20, opacity: 0, scale: 0.97 }} transition={{ duration: 0.2 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: '100%', maxWidth: 540, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', background: T.paper, borderRadius: 20, padding: '28px 24px 40px', position: 'relative', boxShadow: '0 24px 64px rgba(26,24,21,0.3)' }}>
         {children}
       </motion.div>
     </div>
@@ -461,10 +462,9 @@ function SideQuestsSection({ quests, onOpen }: { quests: Quest[]; onOpen: (q: Qu
           const isClaimable = q.status === 'claimable'
           return (
             <motion.div key={q.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+              whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}
               onClick={() => onOpen(q)}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 14, background: isClaimable ? T.ochreSoft : T.paperSoft, border: `0.5px solid ${isClaimable ? T.ochre : T.ruleSoft}`, cursor: 'pointer', transition: 'all 0.12s' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = ''}>
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 14, background: isClaimable ? T.ochreSoft : T.paperSoft, border: `0.5px solid ${isClaimable ? T.ochre : T.ruleSoft}`, cursor: 'pointer' }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, background: `${cc}18`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: cc, border: `1px solid ${cc}30` }}>
                 <QuestIcon name={q.icon} size={17} />
               </div>
