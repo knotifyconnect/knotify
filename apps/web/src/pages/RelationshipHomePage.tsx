@@ -14,7 +14,7 @@ import { HomeHub } from '../components/HomeHub'
 import { KAvatar, KBtn } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel, RailCard } from '../lib/desk'
-import { MessageSquare, Coffee, CalendarDays } from 'lucide-react'
+import { MessageSquare, Coffee, CalendarDays, X } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -432,31 +432,44 @@ export function RelationshipHomePage() {
             const sc = STATE_COLOR[entry.state]
             const isNew = entry.state === 'new'
             return (
-              <div key={entry.connectionId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, borderLeft: `3px solid ${sc}` }}>
-                <button type="button" onClick={() => navigate(`/profile/${entry.peer.id}`)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
-                  <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={42} />
-                </button>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>{entry.peer.full_name}</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: sc }}>{STATE_LABEL[entry.state]}</span>
+              <div key={entry.connectionId} style={{ borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, borderLeft: `3px solid ${sc}`, overflow: 'hidden' }}>
+                {/* Top row: avatar + name/state + dismiss */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px 0' }}>
+                  <button type="button" onClick={() => navigate(`/profile/${entry.peer.id}`)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
+                    <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={38} />
+                  </button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>{entry.peer.full_name}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: sc }}>{STATE_LABEL[entry.state]}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11.5, color: T.signalDeep, marginTop: 3, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {entry.reason}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => logAndAct(entry, 'dismissed')}
+                    aria-label="Dismiss"
+                    style={{ flexShrink: 0, background: 'none', border: 'none', padding: '4px 6px', cursor: 'pointer', color: T.inkFaint, display: 'flex', alignItems: 'center' }}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                {/* Reason text — full width, not truncated */}
+                <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, padding: '6px 12px 10px', fontFamily: T.text }}>
+                  {entry.reason}
+                </div>
+                {/* Action buttons row */}
+                <div style={{ display: 'flex', gap: 6, padding: '0 10px 10px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     onClick={() => { logAndAct(entry, 'acted'); openMessage(entry.peer.id, entry.draftOpener) }}
                     disabled={messagingPeer === entry.peer.id}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 999, border: 'none', background: T.ink, color: T.paperSoft, fontSize: 12.5, fontFamily: T.text, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 12px', borderRadius: 999, border: 'none', background: T.ink, color: T.paperSoft, fontSize: 12.5, fontFamily: T.text, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', minWidth: 0 }}
                   >
                     <MessageSquare size={13} />{messagingPeer === entry.peer.id ? 'Opening...' : CTA_LABEL[entry.suggestedAction]}
                   </button>
                   {!isNew && (
-                    <button type="button" onClick={() => setAskMenuPeer(entry.peer)} style={{ padding: '8px 10px', borderRadius: 999, border: 'none', background: T.paperDeep, color: T.ink, fontSize: 12.5, fontFamily: T.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }} aria-label="Suggest meeting">
-                      <Coffee size={13} />
+                    <button type="button" onClick={() => setAskMenuPeer(entry.peer)} style={{ padding: '8px 12px', borderRadius: 999, border: 'none', background: T.paperDeep, color: T.ink, fontSize: 12.5, fontFamily: T.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }} aria-label="Suggest meeting">
+                      <Coffee size={13} /><span style={{ fontSize: 12 }}>Coffee</span>
                     </button>
                   )}
                 </div>
