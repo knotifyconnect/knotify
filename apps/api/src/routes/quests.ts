@@ -255,11 +255,13 @@ questsRouter.post('/:key/claim', requireAuth, upload.single('photo'), async (req
 
   // Post to updates feed if photo + shareToFeed
   if (photoUrl && shareToFeed) {
-    await supabase.from('updates').insert({
-      user_id: req.appUserId,
-      content: `Completed the "${questTitle}" quest.`,
-      image_url: photoUrl,
-    }).catch(() => {})
+    try {
+      await supabase.from('updates').insert({
+        user_id: req.appUserId,
+        content: `Completed the "${questTitle}" quest.`,
+        image_url: photoUrl,
+      })
+    } catch { /* non-critical */ }
   }
 
   return res.json({ ok: true, credibility_score: score, awarded: points, photo_url: photoUrl })
