@@ -157,21 +157,36 @@ function CredRing({ score, max }: { score: number; max: number }) {
 // ── Overlay wrapper ────────────────────────────────────────────────────────────
 function Overlay({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
-    // Lock background scroll
-    const prev = document.body.style.overflow
+    // Lock background scroll (iOS Safari needs position:fixed trick)
+    const scrollY = window.scrollY
+    const prevOverflow = document.body.style.overflow
+    const prevPosition = document.body.style.position
+    const prevTop = document.body.style.top
+    const prevWidth = document.body.style.width
     document.body.style.overflow = 'hidden'
+    document.body.style.position = 'fixed'
+    document.body.style.top = `-${scrollY}px`
+    document.body.style.width = '100%'
     const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', fn)
     return () => {
-      document.body.style.overflow = prev
+      document.body.style.overflow = prevOverflow
+      document.body.style.position = prevPosition
+      document.body.style.top = prevTop
+      document.body.style.width = prevWidth
+      window.scrollTo(0, scrollY)
       document.removeEventListener('keydown', fn)
     }
   }, [onClose])
   return (
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose() }} className="k-overlay">
-      <motion.div initial={{ y: 16, opacity: 0, scale: 0.97 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 16, opacity: 0, scale: 0.97 }} transition={{ duration: 0.18 }}
+      <motion.div
+        initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
+        transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
         onClick={(e) => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: 560, background: T.paper, borderRadius: 20, padding: '28px 24px 40px', position: 'relative', boxShadow: '0 32px 80px rgba(26,24,21,0.35)', flexShrink: 0 }}>
+        className="k-modal-card"
+        style={{ background: T.paper, position: 'relative', boxShadow: '0 -8px 40px rgba(26,24,21,0.18)' }}
+      >
         {children}
       </motion.div>
     </div>
