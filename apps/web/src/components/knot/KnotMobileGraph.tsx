@@ -41,24 +41,30 @@ function curvedPath(x1: number, y1: number, x2: number, y2: number) {
 
 // ── Generic draggable bottom sheet (portal) ────────────────────────────────
 export function MobileBottomSheet({
-  open,
-  onClose,
-  peekHeight = 56,
-  defaultHeight = 320,
+  title,
+  subtitle,
+  peekHeight = 64,
+  defaultHeight = 360,
   children,
 }: {
-  open: boolean
-  onClose?: () => void
+  title?: string
+  subtitle?: string
   peekHeight?: number
   defaultHeight?: number
   children: React.ReactNode
 }) {
-  const MAX_H = Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.82)
-  // Start collapsed — only the handle is visible; user drags to open
+  const MAX_H = Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.84)
+  // Start collapsed — only the labelled handle is visible; user drags to open
   const [height, setHeight] = useState(peekHeight)
-  const dragRef = useRef<{ startY: number; startH: number } | null>(null)
+  const dragRef = useRef<{ startY: number; startH: number; moved: boolean } | null>(null)
 
-  const currentH = open ? height : peekHeight
+  const isOpen = height > peekHeight + 24
+
+  // Snap to the nearest of three rest positions on release
+  function snap(h: number) {
+    const points = [peekHeight, defaultHeight, MAX_H]
+    return points.reduce((a, b) => (Math.abs(b - h) < Math.abs(a - h) ? b : a))
+  }
 
   return createPortal(
     <div
@@ -67,7 +73,7 @@ export function MobileBottomSheet({
         bottom: 88,
         left: 0,
         right: 0,
-        height: currentH,
+        height,
         background: 'var(--paper)',
         borderRadius: '20px 20px 0 0',
         boxShadow: '0 -6px 32px rgba(26,24,21,0.16)',
@@ -75,48 +81,53 @@ export function MobileBottomSheet({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        transition: dragRef.current ? 'none' : 'height 0.24s cubic-bezier(0.32,0.72,0,1)',
+        transition: dragRef.current ? 'none' : 'height 0.26s cubic-bezier(0.32,0.72,0,1)',
       }}
     >
-      {/* Drag handle — always on top, never scrolls */}
+      {/* Drag handle + label — always on top, never scrolls, tap to toggle */}
       <div
         onPointerDown={(e) => {
-          dragRef.current = { startY: e.clientY, startH: currentH }
+          dragRef.current = { startY: e.clientY, startH: height, moved: false }
           e.currentTarget.setPointerCapture(e.pointerId)
         }}
         onPointerMove={(e) => {
           if (!dragRef.current) return
-          const newH = Math.max(peekHeight, Math.min(MAX_H, dragRef.current.startH - (e.clientY - dragRef.current.startY)))
+          const delta = e.clientY - dragRef.current.startY
+          if (Math.abs(delta) > 4) dragRef.current.moved = true
+          const newH = Math.max(peekHeight, Math.min(MAX_H, dragRef.current.startH - delta))
           setHeight(newH)
         }}
-        onPointerUp={(e) => {
+        onPointerUp={() => {
           if (!dragRef.current) return
-          const dy = dragRef.current.startY - e.clientY
-          if (dy < -60 && onClose) {
-            onClose()
-          } else if (height > defaultHeight * 1.3) {
-            setHeight(MAX_H)
-          } else if (height < defaultHeight * 0.6) {
-            setHeight(defaultHeight)
+          // A tap (no drag) toggles between peek and default
+          if (!dragRef.current.moved) {
+            setHeight(isOpen ? peekHeight : defaultHeight)
           } else {
-            setHeight(defaultHeight)
+            setHeight(snap(height))
           }
           dragRef.current = null
         }}
         onPointerCancel={() => { dragRef.current = null }}
         style={{
           flexShrink: 0,
-          height: 40,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
           cursor: 'ns-resize',
           touchAction: 'none',
           userSelect: 'none',
           borderBottom: '0.5px solid var(--rule)',
+          paddingBottom: 10,
         }}
       >
-        <div style={{ width: 36, height: 4, borderRadius: 999, background: 'rgba(26,24,21,0.22)' }} />
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8, paddingBottom: 8 }}>
+          <div style={{ width: 38, height: 4, borderRadius: 999, background: 'rgba(26,24,21,0.22)' }} />
+        </div>
+        {title && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px' }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{title}</span>
+            <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+              {isOpen ? 'Tap to close' : subtitle ?? 'Tap to open'}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Scrollable content */}
@@ -162,10 +173,10 @@ export function MobileNodeOverlay({
           borderRadius: 24,
           width: '100%',
           maxWidth: 360,
-          maxHeight: '80vh',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
+          maxHeight: '82vh',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          WebkitOverflowScrolling: 'touch' as any,
           boxShadow: '0 24px 64px rgba(26,24,21,0.28)',
         }}
       >

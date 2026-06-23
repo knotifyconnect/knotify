@@ -843,7 +843,12 @@ export function MapPage() {
 
         {/* Network list — bottom sheet on mobile, inline section on desktop */}
         {isMobileTop ? (
-          <MobileBottomSheet open={true} defaultHeight={320} peekHeight={56}>
+          <MobileBottomSheet
+            title={`Your network · ${connected.length}`}
+            subtitle="Tap to open"
+            peekHeight={64}
+            defaultHeight={Math.round(window.innerHeight * 0.5)}
+          >
             <NetworkSectionContent />
           </MobileBottomSheet>
         ) : (
@@ -1011,6 +1016,15 @@ function KnotStage({
   const normalizedGraphQuery = query.trim().toLowerCase()
   const hasGraphQuery = normalizedGraphQuery.length > 0
 
+  // Mobile detection — used to keep the mobile graph clean (direct ties only)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
   const nodes = useMemo(() => {
     const candidates: Array<{ connection: Connection; tab: RelationshipTab; priority: number; index: number }> = [
       ...connected.map((connection, index) => ({ connection, tab: 'Connected' as const, priority: 0, index })),
@@ -1055,7 +1069,9 @@ function KnotStage({
 
     const directUserIds = new Set(directNodes.map((node) => node.userId))
 
-    const secondDegreeNodes = expandedSecondDegreeNodes
+    // On mobile, second-degree people are shown as a list inside the node overlay
+    // (see SelectedRelationshipPanel) rather than crammed into the tiny SVG graph.
+    const secondDegreeNodes = isMobile ? [] : expandedSecondDegreeNodes
       .filter((user) => user.id !== meId && !directUserIds.has(user.id))
       .map((user) => {
         const name = clean(user.full_name) || clean(user.username) || 'Unknown person'
@@ -1092,7 +1108,7 @@ function KnotStage({
       })
 
     return [...directNodes, ...secondDegreeNodes]
-  }, [connected, expandedRootUserId, expandedSecondDegreeNodes, healthByUserId, incoming, meId, normalizedGraphQuery, sent])
+  }, [connected, expandedRootUserId, expandedSecondDegreeNodes, healthByUserId, incoming, isMobile, meId, normalizedGraphQuery, sent])
 
   const selectedNode =
     selectedConnection
@@ -1139,16 +1155,6 @@ function KnotStage({
   }, [selectedNode, visiblePeerEdges])
 
   const hasRelationships = nodes.length > 0
-
-  // Mobile compact bubbles + drag-to-expand panel
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-
 
   return (
     <KCard
@@ -1246,12 +1252,16 @@ function KnotStage({
                     expandedCount={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandedSecondDegreeNodes.length : 0}
                     expandError={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandError : null}
                     onClear={onClear}
-                    onToggleExpand={selectedTab === 'Connected' ? () => { onToggleExpand(selectedConnection); onClear() } : undefined}
+                    onToggleExpand={selectedTab === 'Connected' ? () => onToggleExpand(selectedConnection) : undefined}
                     onAccept={() => onAccept(selectedConnection)}
                     onRemove={() => onRemove(selectedConnection)}
                     onMessage={() => onMessage(otherUserId(selectedConnection, meId))}
                     onInviteCoffee={() => onInviteCoffee(otherUserId(selectedConnection, meId))}
                     onViewProfile={() => onViewProfile(otherUserId(selectedConnection, meId))}
+                    expandLabel={{ open: 'See mutual connections', close: 'Hide connections' }}
+                    secondDegreePeople={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandedSecondDegreeNodes : undefined}
+                    onRequestPerson={onRequestSecondDegree}
+                    requestingPersonId={requestingUserId}
                   />
                 ) : selectedSecondDegreeUser ? (
                   <SecondDegreeProfilePanel
@@ -1498,6 +1508,10 @@ function SelectedRelationshipPanel({
   onMessage,
   onInviteCoffee,
   onViewProfile,
+  expandLabel,
+  secondDegreePeople,
+  onRequestPerson,
+  requestingPersonId,
 }: {
   connection: Connection
   tab: RelationshipTab
@@ -1515,6 +1529,11 @@ function SelectedRelationshipPanel({
   onMessage: () => void
   onInviteCoffee: () => void
   onViewProfile: () => void
+  // When provided, "Expand" reveals these people inline (mobile) instead of on the graph
+  expandLabel?: { open: string; close: string }
+  secondDegreePeople?: ExpandedKnotNode[]
+  onRequestPerson?: (user: ExpandedKnotNode) => void
+  requestingPersonId?: string | null
 }) {
   const user = connection.user
   const name = clean(user?.full_name) || 'Unknown person'
@@ -1619,7 +1638,68 @@ function SelectedRelationshipPanel({
         </div>
       )}
 
-      {expanded && (
+      {/* Inline second-degree list (mobile): mutual connections shown as people */}
+      {expanded && secondDegreePeople && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 12,
+            borderRadius: 14,
+            border: '0.5px dashed rgba(84,72,58,0.26)',
+            background: 'rgba(255,252,246,0.56)',
+          }}
+        >
+          <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>
+            Mutual connections via {firstName(name)}
+          </div>
+          {secondDegreePeople.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', lineHeight: 1.45 }}>
+              No second-degree connections to show here.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {secondDegreePeople.map((person) => {
+                const pName = clean(person.full_name) || clean(person.username) || 'Unknown person'
+                const detail =
+                  clean(person.headline) ||
+                  clean(person.current_company) ||
+                  clean(person.university) ||
+                  clean(person.location_city) ||
+                  'Warm path'
+                const busy = requestingPersonId === person.id
+                return (
+                  <div
+                    key={person.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: 9, borderRadius: 12,
+                      border: '0.5px solid var(--rule)', background: 'var(--paper)',
+                    }}
+                  >
+                    <KAvatar name={pName} src={person.avatar_url ?? null} size={34} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {pName}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {detail}
+                      </div>
+                    </div>
+                    {onRequestPerson && (
+                      <KBtn variant="ink" size="sm" disabled={busy} onClick={() => onRequestPerson(person)}>
+                        {busy ? '...' : 'Connect'}
+                      </KBtn>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Desktop summary (graph shows the actual nodes) */}
+      {expanded && !secondDegreePeople && (
         <div
           style={{
             marginTop: 12,
@@ -1686,7 +1766,11 @@ function SelectedRelationshipPanel({
 
         {tab === 'Connected' && onToggleExpand && (
           <KBtn variant={expanded ? 'ghost' : 'ink'} size="sm" disabled={expanding} onClick={onToggleExpand}>
-            {expanding ? 'Expanding...' : expanded ? 'Collapse knot' : 'Expand knot'}
+            {expanding
+              ? 'Loading...'
+              : expanded
+                ? expandLabel?.close ?? 'Collapse knot'
+                : expandLabel?.open ?? 'Expand knot'}
           </KBtn>
         )}
       </div>
