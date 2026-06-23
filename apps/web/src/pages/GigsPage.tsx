@@ -104,7 +104,7 @@ const ghost: React.CSSProperties = {
   color: 'var(--ink-muted)', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
 }
 
-export function GigsPage() {
+export function GigsPage({ embedded }: { embedded?: boolean }) {
   const navigate = useNavigate()
   const [tab, setTab] = useState<'browse' | 'requests' | 'mine'>('browse')
 
@@ -216,7 +216,7 @@ export function GigsPage() {
   ]
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: 'clamp(16px,4vw,40px) clamp(14px,4vw,40px) 96px', fontFamily: "'IBM Plex Sans', sans-serif", color: 'var(--ink)' }}>
+    <div style={{ maxWidth: 800, margin: '0 auto', padding: embedded ? '24px 0 96px' : 'clamp(16px,4vw,40px) clamp(14px,4vw,40px) 96px', fontFamily: "'IBM Plex Sans', sans-serif", color: 'var(--ink)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Gigs</div>
@@ -461,8 +461,8 @@ function MyGigsTab({ gigs, busyId, onAccept, onDecline, onComplete, onChat, onCl
 // ── Modals ──────────────────────────────────────────────────────────────────
 function ModalShell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(26,24,21,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--paper,#fff)', width: '100%', maxWidth: 460, borderRadius: '20px 20px 0 0', padding: '22px 20px max(28px, env(safe-area-inset-bottom))', boxShadow: '0 -10px 40px rgba(0,0,0,0.2)' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(26,24,21,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--paper,#fff)', width: '100%', maxWidth: 460, borderRadius: 20, padding: '24px 22px', boxShadow: '0 8px 48px rgba(0,0,0,0.18)', maxHeight: '90vh', overflowY: 'auto' }}>
         {children}
       </div>
     </div>

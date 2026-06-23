@@ -449,27 +449,6 @@ export function JobsPage() {
   // ─── Section toggle state ─────────────────────────────────────────────────
   const [section, setSection] = useState<'jobs' | 'gigs'>('jobs')
 
-  if (section === 'gigs') {
-    return (
-      <div>
-        <div style={{ display: 'flex', gap: 0, borderBottom: '0.5px solid var(--rule)', marginBottom: 0, padding: '0 clamp(16px,4vw,40px)' }}>
-          {(['jobs', 'gigs'] as const).map(s => (
-            <button key={s} onClick={() => setSection(s)} style={{
-              padding: '14px 20px', border: 'none', background: 'transparent', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif",
-              color: section === s ? 'var(--ink)' : 'var(--ink-faint)',
-              borderBottom: section === s ? '2px solid var(--ink)' : '2px solid transparent',
-              marginBottom: -1,
-            }}>
-              {s === 'jobs' ? 'Jobs' : 'Gigs'}
-            </button>
-          ))}
-        </div>
-        <GigsPage />
-      </div>
-    )
-  }
-
   // ─── Knotify-styled render ─────────────────────────────────────────────────
   const jobsRail = (
     <>
@@ -487,25 +466,39 @@ export function JobsPage() {
     </>
   )
 
+  const SectionToggle = () => (
+    <div style={{ display: 'inline-flex', background: 'var(--paper-soft,#ede8df)', borderRadius: 999, padding: 3, gap: 2 }}>
+      {(['jobs', 'gigs'] as const).map(s => (
+        <button key={s} onClick={() => setSection(s)} style={{
+          padding: '6px 18px', borderRadius: 999, border: 'none', cursor: 'pointer',
+          fontSize: 13, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif",
+          background: section === s ? 'var(--paper,#fff)' : 'transparent',
+          color: section === s ? 'var(--ink)' : 'var(--ink-faint)',
+          boxShadow: section === s ? '0 1px 4px rgba(26,24,21,0.10)' : 'none',
+          transition: 'background 0.15s, color 0.15s',
+        }}>
+          {s === 'jobs' ? 'Jobs' : 'Gigs'}
+        </button>
+      ))}
+    </div>
+  )
+
+  if (section === 'gigs') {
+    return (
+      <div style={{ maxWidth: 800, margin: '0 auto', padding: 'clamp(16px,4vw,40px) clamp(14px,4vw,40px) 96px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        <SectionToggle />
+        <GigsPage embedded />
+      </div>
+    )
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 0, borderBottom: '0.5px solid var(--rule)', padding: '0 clamp(16px,4vw,40px)' }}>
-        {(['jobs', 'gigs'] as const).map(s => (
-          <button key={s} onClick={() => setSection(s)} style={{
-            padding: '14px 20px', border: 'none', background: 'transparent', cursor: 'pointer',
-            fontSize: 13, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif",
-            color: section === s ? 'var(--ink)' : 'var(--ink-faint)',
-            borderBottom: section === s ? '2px solid var(--ink)' : '2px solid transparent',
-            marginBottom: -1,
-          }}>
-            {s === 'jobs' ? 'Jobs' : 'Gigs'}
-          </button>
-        ))}
-      </div>
       <DeskHeader
         kicker="Jobs & Gigs · peer to peer"
         title={<><span style={{ fontStyle: 'italic' }}>Through people,</span> not job boards.</>}
       />
+      <div style={{ padding: '0 clamp(16px,4vw,40px)', marginBottom: 20 }}><SectionToggle /></div>
 
       {/* ── Global error / success ──────────────────────────────────────────── */}
       {(error || requestError) && (
