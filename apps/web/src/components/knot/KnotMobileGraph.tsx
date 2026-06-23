@@ -40,21 +40,17 @@ function curvedPath(x1: number, y1: number, x2: number, y2: number) {
 }
 
 // ── Generic draggable bottom sheet (portal) ────────────────────────────────
+// Fully hidden when collapsed — only a small grab handle peeks above the tab bar.
 export function MobileBottomSheet({
-  title,
-  subtitle,
-  peekHeight = 64,
+  peekHeight = 26,
   defaultHeight = 360,
   children,
 }: {
-  title?: string
-  subtitle?: string
   peekHeight?: number
   defaultHeight?: number
   children: React.ReactNode
 }) {
   const MAX_H = Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.84)
-  // Start collapsed — only the labelled handle is visible; user drags to open
   const [height, setHeight] = useState(peekHeight)
   const dragRef = useRef<{ startY: number; startH: number; moved: boolean } | null>(null)
 
@@ -76,7 +72,7 @@ export function MobileBottomSheet({
         height,
         background: 'var(--paper)',
         borderRadius: '20px 20px 0 0',
-        boxShadow: '0 -6px 32px rgba(26,24,21,0.16)',
+        boxShadow: isOpen ? '0 -6px 32px rgba(26,24,21,0.16)' : '0 -3px 14px rgba(26,24,21,0.08)',
         zIndex: 9900,
         display: 'flex',
         flexDirection: 'column',
@@ -84,7 +80,7 @@ export function MobileBottomSheet({
         transition: dragRef.current ? 'none' : 'height 0.26s cubic-bezier(0.32,0.72,0,1)',
       }}
     >
-      {/* Drag handle + label — always on top, never scrolls, tap to toggle */}
+      {/* Small grab handle — never scrolls, tap or drag to open */}
       <div
         onPointerDown={(e) => {
           dragRef.current = { startY: e.clientY, startH: height, moved: false }
@@ -99,7 +95,6 @@ export function MobileBottomSheet({
         }}
         onPointerUp={() => {
           if (!dragRef.current) return
-          // A tap (no drag) toggles between peek and default
           if (!dragRef.current.moved) {
             setHeight(isOpen ? peekHeight : defaultHeight)
           } else {
@@ -110,24 +105,16 @@ export function MobileBottomSheet({
         onPointerCancel={() => { dragRef.current = null }}
         style={{
           flexShrink: 0,
+          height: 26,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           cursor: 'ns-resize',
           touchAction: 'none',
           userSelect: 'none',
-          borderBottom: '0.5px solid var(--rule)',
-          paddingBottom: 10,
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8, paddingBottom: 8 }}>
-          <div style={{ width: 38, height: 4, borderRadius: 999, background: 'rgba(26,24,21,0.22)' }} />
-        </div>
-        {title && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px' }}>
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{title}</span>
-            <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
-              {isOpen ? 'Tap to close' : subtitle ?? 'Tap to open'}
-            </span>
-          </div>
-        )}
+        <div style={{ width: 40, height: 4, borderRadius: 999, background: 'rgba(26,24,21,0.24)' }} />
       </div>
 
       {/* Scrollable content */}
@@ -199,12 +186,14 @@ export function KnotMobileGraph({
   selectedNodeId,
   onSelectNode,
   onClearSelection,
+  expandedRootId = null,
 }: {
   me: MeNode
   nodes: KnotGraphNode[]
   selectedNodeId: string | null
   onSelectNode: (node: KnotGraphNode) => void
   onClearSelection: () => void
+  expandedRootId?: string | null
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const panRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null)
@@ -213,6 +202,11 @@ export function KnotMobileGraph({
 
   const direct = nodes.filter(n => n.degree !== 'second')
   const second = nodes.filter(n => n.degree === 'second')
+  // When second-degree nodes are present we are in "expanded" mode: gray out the
+  // first-degree knot (except the expanded root) and let the new path stand out.
+  const expandedMode = second.length > 0
+  // A direct node is dimmed in expanded mode unless it's the root we expanded from
+  const isDimmed = (n: KnotGraphNode) => expandedMode && n.degree !== 'second' && n.id !== expandedRootId
   const r1Nodes = direct.slice(0, 10)
   const r2Nodes = [...direct.slice(10), ...second]
   const r1Pos = ring(r1Nodes.length, 132, CX, CY)
@@ -271,6 +265,7 @@ export function KnotMobileGraph({
             strokeWidth={n.id === selectedNodeId ? 1.6 : 0.8}
             strokeDasharray={n.degree === 'second' ? '5 5' : undefined}
             strokeLinecap="round"
+            opacity={isDimmed(n) ? 0.2 : 1}
           />
         ))}
 
@@ -297,7 +292,7 @@ export function KnotMobileGraph({
               data-node={n.id}
               transform={`translate(${x},${y}) scale(${scale})`}
               onClick={(e) => { e.stopPropagation(); sel ? onClearSelection() : onSelectNode(n) }}
-              style={{ cursor: 'pointer', transformOrigin: `${x}px ${y}px` }}
+              style={{ cursor: 'pointer', transformOrigin: `${x}px ${y}px`, opacity: isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
             >
               {/* Outer selection / health ring */}
               {sel && <circle cx={0} cy={0} r={r + 5} fill="rgba(216,68,43,0.12)" stroke="#D8442B" strokeWidth={1.5} />}
