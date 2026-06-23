@@ -814,7 +814,8 @@ export function KnotForceGraph({
         position: 'absolute',
         inset: 0,
         overflow: 'hidden',
-        overscrollBehavior: 'auto',
+        overscrollBehavior: 'none',
+        touchAction: 'none',
         cursor: panRef.current ? 'grabbing' : 'grab',
       }}
     >
