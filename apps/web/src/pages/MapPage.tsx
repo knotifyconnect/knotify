@@ -559,6 +559,36 @@ export function MapPage() {
   function NetworkSectionContent() {
     return (
       <div style={{ padding: isMobileTop ? '0 12px 16px' : undefined }}>
+        {maintenanceItems.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 10, paddingTop: isMobileTop ? 4 : 0 }}>
+              Network maintenance
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
+              {maintenanceItems.map((item) => {
+                const user = item.connection.user
+                const name = clean(user?.full_name) || 'Unknown person'
+                return (
+                  <KCard
+                    key={`maintenance-${item.label}-${item.connection.id}`}
+                    style={{ padding: 11, display: 'flex', gap: 9, alignItems: 'center', cursor: 'pointer' }}
+                    onClick={() => focusConnection(item.connection, 'Connected')}
+                  >
+                    <KAvatar name={name} src={user?.avatar_url ?? null} size={32} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.label}: {name}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2 }}>
+                        {item.body}
+                      </div>
+                    </div>
+                  </KCard>
+                )
+              })}
+            </div>
+          </div>
+        )}
         <KCard style={{ padding: 10, marginBottom: 10 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -822,36 +852,6 @@ export function MapPage() {
           </section>
         )}
 
-        {maintenanceItems.length > 0 && (
-          <section style={{ marginTop: 18 }}>
-            <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 10 }}>
-              Network maintenance
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
-              {maintenanceItems.map((item) => {
-                const user = item.connection.user
-                const name = clean(user?.full_name) || 'Unknown person'
-                return (
-                  <KCard
-                    key={`maintenance-${item.label}-${item.connection.id}`}
-                    style={{ padding: 13, display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}
-                    onClick={() => focusConnection(item.connection, 'Connected')}
-                  >
-                    <KAvatar name={name} src={user?.avatar_url ?? null} size={34} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.label}: {name}
-                      </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 2 }}>
-                        {item.body}
-                      </div>
-                    </div>
-                  </KCard>
-                )
-              })}
-            </div>
-          </section>
-        )}
       </div>
     </div>
   )
@@ -1246,7 +1246,7 @@ function KnotStage({
                     expandedCount={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandedSecondDegreeNodes.length : 0}
                     expandError={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandError : null}
                     onClear={onClear}
-                    onToggleExpand={selectedTab === 'Connected' ? () => onToggleExpand(selectedConnection) : undefined}
+                    onToggleExpand={selectedTab === 'Connected' ? () => { onToggleExpand(selectedConnection); onClear() } : undefined}
                     onAccept={() => onAccept(selectedConnection)}
                     onRemove={() => onRemove(selectedConnection)}
                     onMessage={() => onMessage(otherUserId(selectedConnection, meId))}

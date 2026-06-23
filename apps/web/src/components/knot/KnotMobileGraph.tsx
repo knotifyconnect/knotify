@@ -54,9 +54,9 @@ export function MobileBottomSheet({
   children: React.ReactNode
 }) {
   const MAX_H = Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.82)
-  const [height, setHeight] = useState(defaultHeight)
+  // Start collapsed — only the handle is visible; user drags to open
+  const [height, setHeight] = useState(peekHeight)
   const dragRef = useRef<{ startY: number; startH: number } | null>(null)
-  const isExpanded = height > defaultHeight * 1.2
 
   const currentH = open ? height : peekHeight
 
