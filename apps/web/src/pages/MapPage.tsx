@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { KnotForceGraph, type KnotGraphNode, type KnotGraphPeerEdge, type KnotHealthState } from '../components/knot/KnotForceGraph'
+import { KnotMobileGraph, MobileBottomSheet } from '../components/knot/KnotMobileGraph'
 
 type UserStatus = 'studying' | 'open_to_work' | 'employed' | string
 type ConnectionStatus = 'pending' | 'accepted' | 'declined'
@@ -1221,31 +1222,6 @@ function KnotStage({
     return () => mq.removeEventListener('change', handler)
   }, [])
 
-  // Panel drag state — tracks translated Y offset (negative = expanded upward)
-  const [panelExpandY, setPanelExpandY] = useState(0)
-  const panelDragRef = useRef<{ startY: number; startOffset: number } | null>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  function onPanelPointerDown(e: React.PointerEvent) {
-    panelDragRef.current = { startY: e.clientY, startOffset: panelExpandY }
-    e.currentTarget.setPointerCapture(e.pointerId)
-  }
-  function onPanelPointerMove(e: React.PointerEvent) {
-    if (!panelDragRef.current) return
-    const dy = panelDragRef.current.startY - e.clientY
-    const newY = Math.max(0, Math.min(window.innerHeight * 0.55, panelDragRef.current.startOffset + dy))
-    setPanelExpandY(newY)
-  }
-  function onPanelPointerUp() {
-    if (!panelDragRef.current) return
-    // Snap: if dragged more than 30% of max, snap to fully expanded; else snap to peek
-    const maxY = window.innerHeight * 0.55
-    setPanelExpandY(panelExpandY > maxY * 0.3 ? maxY : 0)
-    panelDragRef.current = null
-  }
-
-  // Reset panel position when selection changes
-  useEffect(() => { setPanelExpandY(0) }, [selectedConnection, selectedSecondDegreeUser])
 
   return (
     <KCard
@@ -1312,7 +1288,59 @@ function KnotStage({
             >
               Start from Discover. Once relationships exist, the knot becomes visible here.
             </div>
+          ) : isMobile ? (
+            /* ── Mobile: clean SVG graph + portal bottom sheet ── */
+            <>
+              <KnotMobileGraph
+                me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
+                nodes={nodes}
+                selectedNodeId={selectedNode?.id ?? null}
+                onSelectNode={(node: KnotGraphNode) => {
+                  const match = nodes.find((item) => item.id === node.id)
+                  if (!match) return
+                  if (match.degree === 'second') { onSelectSecondDegreeUser(match.userId); return }
+                  onSelect(match.connection, match.tab)
+                }}
+                onClearSelection={onClear}
+              />
+              <MobileBottomSheet
+                open={!!(selectedConnection || selectedSecondDegreeUser)}
+                onClose={onClear}
+              >
+                {selectedConnection ? (
+                  <SelectedRelationshipPanel
+                    connection={selectedConnection}
+                    tab={selectedTab}
+                    mutualNames={selectedPeerNames}
+                    accepting={Boolean(accepting[selectedConnection.id])}
+                    removing={Boolean(removing[selectedConnection.id])}
+                    expanding={expandingUserId === otherUserId(selectedConnection, meId)}
+                    expanded={expandedRootUserId === otherUserId(selectedConnection, meId)}
+                    expandedCount={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandedSecondDegreeNodes.length : 0}
+                    expandError={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandError : null}
+                    onClear={onClear}
+                    onToggleExpand={selectedTab === 'Connected' ? () => onToggleExpand(selectedConnection) : undefined}
+                    onAccept={() => onAccept(selectedConnection)}
+                    onRemove={() => onRemove(selectedConnection)}
+                    onMessage={() => onMessage(otherUserId(selectedConnection, meId))}
+                    onInviteCoffee={() => onInviteCoffee(otherUserId(selectedConnection, meId))}
+                    onViewProfile={() => onViewProfile(otherUserId(selectedConnection, meId))}
+                  />
+                ) : selectedSecondDegreeUser ? (
+                  <SecondDegreeProfilePanel
+                    user={selectedSecondDegreeUser}
+                    rootName={expandedRootName}
+                    requesting={requestingUserId === selectedSecondDegreeUser.id}
+                    feedback={requestFeedback}
+                    onClear={onClear}
+                    onRequest={() => onRequestSecondDegree(selectedSecondDegreeUser)}
+                    onViewProfile={() => onViewProfile(selectedSecondDegreeUser.id)}
+                  />
+                ) : null}
+              </MobileBottomSheet>
+            </>
           ) : (
+            /* ── Desktop: original force graph ── */
             <>
               <KnotForceGraph
                 me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
@@ -1320,62 +1348,24 @@ function KnotStage({
                 peerEdges={graphPeerEdges}
                 selectedNodeId={selectedNode?.id ?? null}
                 query={query}
-                compact={isMobile}
                 onClearQuery={() => onQueryChange('')}
                 onResetGraph={onResetGraphState}
                 onSelectNode={(node: KnotGraphNode) => {
                   const match = nodes.find((item) => item.id === node.id)
                   if (!match) return
-
-                  if (match.degree === 'second') {
-                    onSelectSecondDegreeUser(match.userId)
-                    return
-                  }
-
+                  if (match.degree === 'second') { onSelectSecondDegreeUser(match.userId); return }
                   onSelect(match.connection, match.tab)
                 }}
                 onClearSelection={onClear}
               />
-
-
               <div className="k-knot-stats-bar">
                 {connected.length} connected · {visiblePeerEdges.length} inner ties · {expandedSecondDegreeNodes.length} expanded · {incoming.length} decisions · {sent.length} waiting
               </div>
-
               <div className="k-knot-legend-box">
                 <WebLegendRow />
               </div>
-
               {(selectedConnection || selectedSecondDegreeUser) && (
-                <div
-                  ref={panelRef}
-                  className="k-knot-detail-panel"
-                  style={isMobile ? { transform: `translateY(${-panelExpandY}px)`, transition: panelDragRef.current ? 'none' : 'transform 0.25s cubic-bezier(0.32,0.72,0,1)', display: 'flex', flexDirection: 'column' } : undefined}
-                >
-                  {isMobile && (
-                    /* Handle sits OUTSIDE the scroll area — flex sibling above the scroll div */
-                    <div
-                      onPointerDown={onPanelPointerDown}
-                      onPointerMove={onPanelPointerMove}
-                      onPointerUp={onPanelPointerUp}
-                      onPointerCancel={onPanelPointerUp}
-                      style={{
-                        flexShrink: 0,
-                        background: 'var(--paper)',
-                        borderRadius: '22px 22px 0 0',
-                        padding: '14px 0 10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        touchAction: 'none',
-                        cursor: 'grab',
-                        userSelect: 'none',
-                      }}
-                    >
-                      <div style={{ width: 40, height: 5, borderRadius: 999, background: 'rgba(26,24,21,0.25)' }} />
-                    </div>
-                  )}
-                  <div style={isMobile ? { flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' as any } : undefined}>
+                <div className="k-knot-detail-panel">
                   {selectedConnection ? (
                     <SelectedRelationshipPanel
                       connection={selectedConnection}
@@ -1406,7 +1396,6 @@ function KnotStage({
                       onViewProfile={() => onViewProfile(selectedSecondDegreeUser.id)}
                     />
                   ) : null}
-                  </div>
                 </div>
               )}
             </>

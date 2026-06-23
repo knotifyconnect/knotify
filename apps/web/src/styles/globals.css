@@ -292,16 +292,7 @@ body::before {
   overflow-y: auto; border-radius: 22px;
   box-shadow: 0 28px 80px rgba(26,24,21,0.16);
 }
-@media (max-width: 767px) {
-  .k-knot-detail-panel {
-    position: fixed; bottom: 88px; left: 0; right: 0;
-    top: auto; width: 100%; max-height: 60vh;
-    border-radius: 22px 22px 0 0; z-index: 9999;
-    box-shadow: 0 -12px 48px rgba(26,24,21,0.22);
-    background: var(--paper);
-    overflow: hidden;
-  }
-}
+/* Mobile detail panel is now handled by MobileBottomSheet portal in KnotMobileGraph.tsx */
 
 /* Gradient text — signal red to verd */
 .gradient-text {
