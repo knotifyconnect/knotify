@@ -251,7 +251,7 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
       {elig && !elig.can_offer && tab === 'browse' && (
         <div style={{ marginBottom: 18, background: 'var(--paper-soft,#ede8df)', border: '0.5px solid var(--rule)', borderRadius: 12, padding: '14px 16px', fontSize: 13.5, color: 'var(--ink-muted)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <Lock size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-          <span>You can request gigs now. To <strong>offer</strong> gigs, reach <strong>{elig.unlock_at} credibility</strong> (Trusted) — you're at {elig.credibility_score}. Complete quests to get there.</span>
+          <span>You can request gigs now. To <strong>offer</strong> gigs, reach <strong>{elig.unlock_at} credibility</strong> (Trusted). You're at {elig.credibility_score}. Complete quests to get there.</span>
         </div>
       )}
 
@@ -263,7 +263,7 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
             {GIG_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
           <input required placeholder="Title (e.g. I'll review your CV for a tech role)" value={title} onChange={e => setTitle(e.target.value)} style={field} />
-          <textarea placeholder="Details — what you offer, who it's for" value={description} onChange={e => setDescription(e.target.value)} rows={3} style={{ ...field, resize: 'vertical' }} />
+          <textarea placeholder="Details: what you offer, who it's for" value={description} onChange={e => setDescription(e.target.value)} rows={3} style={{ ...field, resize: 'vertical' }} />
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <select value={rewardType} onChange={e => setRewardType(e.target.value as RewardType)} style={{ ...field, flex: 1, minWidth: 160 }}>
               <option value="coffee">For a coffee</option>
@@ -477,7 +477,7 @@ function RequestModal({ gig, busy, onClose, onSubmit }: { gig: Gig; busy: boolea
       <div style={{ fontSize: 13, color: 'var(--ink-muted)', marginBottom: 14 }}>
         {gig.title} · {gig.provider_name} · {rewardLabel(gig.reward_type, gig.price_eur)}
       </div>
-      <textarea autoFocus placeholder="Add a short note — what you need and when (optional)" value={msg} onChange={e => setMsg(e.target.value)} rows={4} style={{ ...field, resize: 'vertical' }} />
+      <textarea autoFocus placeholder="Add a short note: what you need and when (optional)" value={msg} onChange={e => setMsg(e.target.value)} rows={4} style={{ ...field, resize: 'vertical' }} />
       <div style={{ fontSize: 12, color: 'var(--ink-faint)', margin: '8px 0 14px' }}>This opens a chat with {gig.provider_name} so you can coordinate.</div>
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
         <button style={ghost} onClick={onClose}>Cancel</button>

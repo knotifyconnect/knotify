@@ -2,6 +2,27 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KnotifyLogoImg, KBtn, VerifiedBadge } from '@/lib/knotify'
 import { WAITLIST_ROLES as ROLE_OPTIONS } from '@/lib/taxonomy'
+import { useSeo } from '@/lib/seo'
+
+// ─── FAQ content (mirrored by FAQPage JSON-LD in index.html) ──────────────────
+const FAQS = [
+  {
+    q: 'What is knotify?',
+    a: 'knotify is a professional network built for international students and professionals in Munich. Instead of a feed to scroll, you get a living map of the people you know, nudges before connections go cold, and warm introductions over coffee at partner cafés.',
+  },
+  {
+    q: 'Who is knotify for?',
+    a: 'International students and newcomers to Munich, students at TUM, LMU and other Munich universities, and professionals who want meaningful connections rather than another social feed.',
+  },
+  {
+    q: 'How do I network in Munich as an international student or newcomer?',
+    a: 'Join knotify, add the people you already know, and get matched to the people, groups and events that fit you. knotify tells you who to reach out to and helps you meet in person at partner cafés across Munich.',
+  },
+  {
+    q: 'Is knotify free?',
+    a: "knotify is currently a free private beta for Munich's international community. Join the waiting list to request access.",
+  },
+]
 
 // ─── Animated Network Graphic ────────────────────────────────────────────────
 function NetworkGraphic() {
@@ -337,6 +358,7 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
         <a href="#how-it-works" style={{ color: 'inherit', textDecoration: 'none' }}>How it works</a>
         <a href="#cafes" style={{ color: 'inherit', textDecoration: 'none' }}>Cafés</a>
         <a href="#manifesto" style={{ color: 'inherit', textDecoration: 'none' }}>Manifesto</a>
+        <a href="#faq" style={{ color: 'inherit', textDecoration: 'none' }}>FAQ</a>
         <a href="/employers" style={{ color: 'inherit', textDecoration: 'none' }}>For employers</a>
       </div>
 
@@ -355,6 +377,13 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
 // ─── Main LandingPage ─────────────────────────────────────────────────────────
 export function LandingPage() {
   const navigate = useNavigate()
+
+  useSeo({
+    title: 'knotify · Professional Network for Munich Internationals & Students',
+    description:
+      'knotify is the professional network for international students and professionals in Munich. Map your real connections, verify skills, and meet for coffee at partner cafés. Join the private beta.',
+    path: '/',
+  })
 
   function goToSignIn() {
     navigate('/login')
@@ -429,6 +458,7 @@ export function LandingPage() {
               maxWidth: 460,
             }}
           >
+            The professional network for internationals and students in Munich.
             knotify tells you who is going cold, who just hit a milestone, and
             who you can actually help, so the people who matter don't slip away.
           </p>
@@ -733,6 +763,68 @@ export function LandingPage() {
               If that sounds slow, yes. That's the point.
             </p>
           </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section
+        id="faq"
+        style={{
+          padding: 'clamp(40px, 6vw, 80px) clamp(16px, 4vw, 40px)',
+          maxWidth: 820,
+          margin: '0 auto',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10.5,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: 'var(--ink-faint)',
+            marginBottom: 16,
+          }}
+        >
+          Questions
+        </div>
+        <h2
+          style={{
+            fontFamily: "'Fraunces', serif",
+            fontSize: 42,
+            fontWeight: 400,
+            letterSpacing: '-0.03em',
+            margin: '0 0 40px',
+          }}
+        >
+          Networking in Munich,{' '}
+          <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>answered.</span>
+        </h2>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {FAQS.map((f) => (
+            <details
+              key={f.q}
+              style={{
+                borderBottom: '0.5px solid var(--rule)',
+                padding: '18px 0',
+              }}
+            >
+              <summary
+                style={{
+                  fontFamily: "'Fraunces', serif",
+                  fontSize: 19,
+                  fontWeight: 500,
+                  letterSpacing: '-0.01em',
+                  cursor: 'pointer',
+                  listStyle: 'none',
+                }}
+              >
+                {f.q}
+              </summary>
+              <p style={{ fontSize: 15, color: 'var(--ink-muted)', lineHeight: 1.6, margin: '12px 0 0' }}>
+                {f.a}
+              </p>
+            </details>
+          ))}
         </div>
       </section>
 

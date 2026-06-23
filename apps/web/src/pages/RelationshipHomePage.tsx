@@ -400,7 +400,7 @@ export function RelationshipHomePage() {
               </div>
               <button
                 type="button"
-                onClick={() => ev.peer && openMessage(ev.peer.id, `Hey! Saw we're both going to ${ev.title} — want to meet there?`)}
+                onClick={() => ev.peer && openMessage(ev.peer.id, `Hey! Saw we're both going to ${ev.title}. Want to meet there?`)}
                 style={{ flexShrink: 0, padding: '7px 13px', borderRadius: 999, border: 'none', background: T.verd, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.text, whiteSpace: 'nowrap' }}
               >
                 Say hi

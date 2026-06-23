@@ -5,56 +5,141 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/mark.png" />
-    <link rel="canonical" href="https://knotify.pro" />
-    <title>knotify. Networks worth keeping.</title>
-    <meta name="description" content="A quieter professional network for Munich students and internationals. See your connections as a living map, verify real skills, and get warm intros over coffee." />
-    <meta name="keywords" content="professional network Munich, networking Munich students, expat network Munich, international professionals Munich, knotify" />
+    <link rel="canonical" href="https://knotify.pro/" />
+    <link rel="alternate" href="https://knotify.pro/" hreflang="en" />
+    <link rel="alternate" href="https://knotify.pro/" hreflang="x-default" />
+
+    <title>knotify · Professional Network for Munich Internationals & Students</title>
+    <meta
+      name="description"
+      content="knotify is the professional network for international students and professionals in Munich. Map your real connections, verify skills, and meet for coffee at partner cafés. Join the private beta."
+    />
+    <meta
+      name="keywords"
+      content="professional network Munich, networking Munich, networking for international students Munich, expat network Munich, network for internationals Munich, TUM LMU student network, networking app Munich, meet people Munich, professional connections Munich, knotify"
+    />
     <meta name="author" content="knotify" />
-    <meta name="robots" content="index, follow" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="theme-color" content="#F4EFE6" />
 
+    <!-- Geo targeting: Munich, Bavaria, Germany -->
+    <meta name="geo.region" content="DE-BY" />
+    <meta name="geo.placename" content="Munich" />
+    <meta name="geo.position" content="48.1351;11.5820" />
+    <meta name="ICBM" content="48.1351, 11.5820" />
+
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://knotify.pro" />
+    <meta property="og:url" content="https://knotify.pro/" />
     <meta property="og:site_name" content="knotify" />
-    <meta property="og:title" content="knotify. Networks worth keeping." />
-    <meta property="og:description" content="A quieter professional network for Munich students and internationals. See your connections as a living map, verify real skills, and get warm intros over coffee." />
+    <meta property="og:title" content="knotify · Professional Network for Munich Internationals & Students" />
+    <meta
+      property="og:description"
+      content="The professional network for international students and professionals in Munich. Map your connections, keep them warm, and meet for coffee at partner cafés."
+    />
     <meta property="og:image" content="https://knotify.pro/og-image.png" />
+    <meta property="og:image:alt" content="knotify · Networks worth keeping" />
     <meta property="og:locale" content="en_US" />
-    <meta property="og:locale:alternate" content="de_DE" />
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="knotify. Networks worth keeping." />
-    <meta name="twitter:description" content="A quieter professional network for Munich students and internationals. See your connections as a living map, verify real skills, and get warm intros over coffee." />
+    <meta name="twitter:title" content="knotify · Professional Network for Munich Internationals & Students" />
+    <meta
+      name="twitter:description"
+      content="The professional network for international students and professionals in Munich. Map your connections, keep them warm, and meet for coffee at partner cafés."
+    />
     <meta name="twitter:image" content="https://knotify.pro/og-image.png" />
 
-    <!-- Structured data -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "knotify",
-      "url": "https://knotify.pro",
-      "description": "A quieter professional network for Munich students and internationals.",
-      "potentialAction": {
-        "@type": "SearchAction",
-        "target": "https://knotify.pro/search?q={search_term_string}",
-        "query-input": "required name=search_term_string"
-      }
-    }
-    </script>
+    <!-- Structured data: Organization -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "Organization",
       "name": "knotify",
-      "url": "https://knotify.pro",
-      "logo": "https://knotify.pro/favicon.png",
+      "url": "https://knotify.pro/",
+      "logo": "https://knotify.pro/logo.png",
+      "description": "The professional network for international students and professionals in Munich.",
+      "email": "hello@knotify.pro",
+      "areaServed": { "@type": "City", "name": "Munich" },
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "Munich",
+        "addressRegion": "Bavaria",
+        "addressCountry": "DE"
+      },
       "sameAs": []
     }
     </script>
+
+    <!-- Structured data: WebSite -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "knotify",
+      "url": "https://knotify.pro/",
+      "description": "The professional network for international students and professionals in Munich."
+    }
+    </script>
+
+    <!-- Structured data: the product -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "knotify",
+      "url": "https://knotify.pro/",
+      "applicationCategory": "SocialNetworkingApplication",
+      "operatingSystem": "Web, iOS, Android",
+      "description": "knotify helps international students and professionals in Munich build, keep and activate a real professional network.",
+      "areaServed": { "@type": "City", "name": "Munich" },
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" }
+    }
+    </script>
+
+    <!-- Structured data: FAQ (mirrors the visible FAQ on the page) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is knotify?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "knotify is a professional network built for international students and professionals in Munich. Instead of a feed to scroll, you get a living map of the people you know, nudges before connections go cold, and warm introductions over coffee at partner cafés."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Who is knotify for?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "knotify is for international students and newcomers to Munich, students at TUM, LMU and other Munich universities, and professionals who want meaningful connections rather than another social feed."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I network in Munich as an international student or newcomer?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Join knotify, add the people you already know, and get matched to the people, groups and events that fit you. knotify tells you who to reach out to and helps you meet in person at partner cafés across Munich."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is knotify free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "knotify is currently in a free private beta for Munich's international community. Join the waiting list to request access."
+          }
+        }
+      ]
+    }
+    </script>
+
     <!-- Fraunces (display serif italic) + IBM Plex Sans (text) + IBM Plex Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -75,31 +160,40 @@
         ul { font-size: 15px; line-height: 1.7; max-width: 640px; color: #54483A; }
         a  { color: #C0392B; }
       </style>
-      <h1>knotify. Networks worth keeping.</h1>
+      <h1>knotify · the professional network for Munich's internationals</h1>
       <p>
-        A quieter professional network for Munich students and international newcomers.
-        See your connections as a living map, verify real skills, and get warm intros
-        over coffee at partner cafes across Munich.
+        knotify is a quieter professional network for international students and professionals
+        in Munich. See your connections as a living, navigable map, verify real skills, and get
+        warm introductions over coffee at partner cafés across the city. New to Munich? This is
+        how you build a network worth keeping.
       </p>
 
-      <h2>Who it's for</h2>
+      <h2>Who knotify is for</h2>
       <ul>
-        <li>International students at TUM, LMU, and other Munich universities</li>
-        <li>Expats and newcomers building a professional network in Munich</li>
-        <li>Professionals who want meaningful connections, not a feed to scroll</li>
+        <li>International students and newcomers building a network in Munich</li>
+        <li>Students at TUM, LMU and other Munich universities</li>
+        <li>Expats and internationals who want real professional connections in Munich</li>
+        <li>Professionals who want meaningful introductions, not a feed to scroll</li>
       </ul>
 
-      <h2>How it works</h2>
+      <h2>How knotify works</h2>
       <ul>
         <li>Add the people you know. Your network becomes a living, navigable map.</li>
-        <li>knotify tells you who is going cold and who just hit a milestone.</li>
-        <li>Meet in person at partner cafes across Munich. Real coffee, real connection.</li>
+        <li>knotify surfaces who is going cold, who hit a milestone, and who you can help.</li>
+        <li>Meet in person at partner cafés across Munich. Real coffee, real connection.</li>
       </ul>
+
+      <h2>Frequently asked questions</h2>
+      <p><strong>How do I network in Munich as an international student?</strong> Join knotify,
+        add the people you already know, and get matched to the people, groups and events that
+        fit who you are. knotify tells you who to reach out to and helps you meet in person.</p>
+      <p><strong>Is knotify free?</strong> knotify is in a free private beta for Munich's
+        international community. Join the waiting list to request access.</p>
 
       <h2>For employers</h2>
       <p>
         Hire from a verified, skills-attested talent pool of Munich students and internationals.
-        <a href="/employers">Learn more about employer access.</a>
+        <a href="/employers">Learn more about employer access in Munich.</a>
       </p>
 
       <p>

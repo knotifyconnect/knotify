@@ -1,8 +1,16 @@
 import { useNavigate } from 'react-router-dom'
 import { KnotifyLogoImg, KBtn } from '@/lib/knotify'
+import { useSeo } from '@/lib/seo'
 
 export function EmployersPage() {
   const navigate = useNavigate()
+
+  useSeo({
+    title: 'Hire Munich Talent · For Employers · knotify',
+    description:
+      'Reach Munich students, internationals and professionals through real relationships, not cold job boards. Build a warm hiring pipeline with knotify. Partner with us in Munich.',
+    path: '/employers',
+  })
 
   return (
     <div

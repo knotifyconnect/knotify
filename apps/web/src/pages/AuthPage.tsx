@@ -4,6 +4,7 @@ import { useLocation, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { apiPost } from '../lib/api'
 import { SignInCard2 } from '../components/ui/sign-in-card-2'
+import { useSeo } from '../lib/seo'
 
 type AuthMode = 'login' | 'signup' | 'forgot'
 type MessageTone = 'error' | 'success'
@@ -19,6 +20,13 @@ function isEmailConfirmed(user: SupabaseAuthUserLike | null | undefined) {
 }
 
 export function AuthPage() {
+  useSeo({
+    title: 'Sign in · knotify',
+    description: 'Sign in to knotify, the professional network for Munich students and internationals.',
+    path: '/login',
+    noindex: true,
+  })
+
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const [mode, setMode] = useState<AuthMode>('login')

@@ -1,8 +1,15 @@
 import { useNavigate } from 'react-router-dom'
 import { KnotifyLogoImg, KBtn } from '@/lib/knotify'
+import { useSeo } from '@/lib/seo'
 
 export function ImpressumPage() {
   const navigate = useNavigate()
+
+  useSeo({
+    title: 'Impressum · knotify',
+    description: 'Legal disclosure (Impressum) for knotify, the professional network for Munich students and internationals.',
+    path: '/impressum',
+  })
 
   return (
     <div

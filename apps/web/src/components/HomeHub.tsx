@@ -442,7 +442,7 @@ function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onC
       <div style={{ display: 'flex', gap: 10 }}>
         <button onClick={handleRsvp} disabled={e.is_host}
           style={{ flex: 1, padding: '14px', borderRadius: 999, border: 'none', background: e.is_host ? T.rule : rsvped ? T.verd : T.signal, color: e.is_host ? T.inkFaint : '#fff', fontSize: 14, fontWeight: 700, cursor: e.is_host ? 'default' : 'pointer', fontFamily: T.text, transition: 'background 0.15s' }}>
-          {e.is_host ? 'You are hosting' : rsvped ? 'Going — tap to cancel' : 'RSVP · I will be there'}
+          {e.is_host ? 'You are hosting' : rsvped ? 'Going · tap to cancel' : 'RSVP · I will be there'}
         </button>
         {e.url && (
           <a href={e.url} target="_blank" rel="noopener noreferrer"

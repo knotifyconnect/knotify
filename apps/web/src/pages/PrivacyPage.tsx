@@ -1,8 +1,16 @@
 import { useNavigate } from 'react-router-dom'
 import { KnotifyLogoImg, KBtn } from '@/lib/knotify'
+import { useSeo } from '@/lib/seo'
 
 export function PrivacyPage() {
   const navigate = useNavigate()
+
+  useSeo({
+    title: 'Privacy Policy · knotify',
+    description:
+      'How knotify collects, uses and protects your data. GDPR-compliant privacy policy for our Munich professional network.',
+    path: '/privacy',
+  })
 
   return (
     <div
