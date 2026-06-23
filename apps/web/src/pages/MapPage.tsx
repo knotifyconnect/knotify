@@ -1367,11 +1367,15 @@ function KnotStage({
                       onPointerUp={onPanelPointerUp}
                       onPointerCancel={onPanelPointerUp}
                       style={{
-                        padding: '12px 0 8px',
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 10,
+                        background: 'var(--paper)',
+                        borderRadius: '22px 22px 0 0',
+                        padding: '12px 0 10px',
                         display: 'flex',
-                        flexDirection: 'column',
                         alignItems: 'center',
-                        gap: 6,
+                        justifyContent: 'center',
                         touchAction: 'none',
                         cursor: 'grab',
                         userSelect: 'none',

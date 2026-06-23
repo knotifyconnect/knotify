@@ -125,8 +125,20 @@ function cardSize(total: number, selected: boolean, searchHit: boolean, related:
   return 'card'
 }
 
-function layoutPosition(index: number, total: number, tab: KnotGraphTab) {
+function layoutPosition(index: number, total: number, tab: KnotGraphTab, compact?: boolean) {
   if (total <= 0) return { x: BASE_CENTER_X, y: BASE_CENTER_Y }
+
+  // Compact (mobile) mode: uniform circular ring, no wave noise.
+  // y-scale 0.34 compensates for portrait viewport (stage is taller than wide)
+  // so the ring looks circular rather than a tall ellipse.
+  if (compact) {
+    const angle = (index / total) * Math.PI * 2 - Math.PI / 2
+    const radius = tab === 'Connected' ? 190 : 240
+    return {
+      x: BASE_CENTER_X + Math.cos(angle) * radius,
+      y: BASE_CENTER_Y + Math.sin(angle) * radius * 0.34,
+    }
+  }
 
   if (total <= 20) {
     const angle = (index / total) * Math.PI * 2 - Math.PI / 2
@@ -569,7 +581,7 @@ export function KnotForceGraph({
     const directPositions = new Map<string, { x: number; y: number }>()
 
     directNodes.forEach((node, index) => {
-      directPositions.set(node.id, dragPositions[node.id] ?? layoutPosition(index, directNodes.length, node.tab))
+      directPositions.set(node.id, dragPositions[node.id] ?? layoutPosition(index, directNodes.length, node.tab, compact))
     })
 
     const secondNodesByRoot = new Map<string, KnotGraphNode[]>()
@@ -603,7 +615,7 @@ export function KnotForceGraph({
       }
 
       if (!position) {
-        position = directPositions.get(node.id) ?? layoutPosition(0, 1, node.tab)
+        position = directPositions.get(node.id) ?? layoutPosition(0, 1, node.tab, compact)
       }
 
       return {
