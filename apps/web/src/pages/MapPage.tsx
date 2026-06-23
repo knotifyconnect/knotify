@@ -1366,9 +1366,19 @@ function KnotStage({
                       onPointerMove={onPanelPointerMove}
                       onPointerUp={onPanelPointerUp}
                       onPointerCancel={onPanelPointerUp}
-                      style={{ padding: '10px 0 6px', display: 'flex', justifyContent: 'center', touchAction: 'none', cursor: 'grab' }}
+                      style={{
+                        padding: '12px 0 8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 6,
+                        touchAction: 'none',
+                        cursor: 'grab',
+                        userSelect: 'none',
+                        flexShrink: 0,
+                      }}
                     >
-                      <div style={{ width: 36, height: 4, borderRadius: 999, background: 'rgba(26,24,21,0.20)' }} />
+                      <div style={{ width: 40, height: 5, borderRadius: 999, background: 'rgba(26,24,21,0.22)' }} />
                     </div>
                   )}
                   {selectedConnection ? (

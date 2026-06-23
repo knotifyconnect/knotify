@@ -274,10 +274,11 @@ function StageCard({
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
   compact?: boolean
 }) {
-  // Compact mode: round avatar bubble — selected node still shows full card
+  // Compact mode: round avatar bubble with name label — selected node still shows full card
   if (compact && !selected && !searchHit) {
-    const sz = related ? 34 : secondDegree ? 24 : 30
+    const sz = secondDegree ? 28 : related ? 40 : 36
     const hc = healthColor(node.healthState)
+    const firstName = node.name.split(' ')[0]
     return (
       <button
         type="button"
@@ -290,21 +291,52 @@ function StageCard({
           left: `${node.x / 10}%`,
           top: `${node.y / 5.9}%`,
           transform: 'translate(-50%, -50%)',
-          width: sz,
-          height: sz,
-          borderRadius: 999,
+          width: sz + 24,
           padding: 0,
-          border: hc ? `2px solid ${hc}` : secondDegree ? '1px dashed rgba(84,72,58,0.34)' : '1.5px solid rgba(84,72,58,0.22)',
+          border: 'none',
           background: 'transparent',
           cursor: 'grab',
           touchAction: 'none',
           zIndex: related ? 3 : 2,
           opacity: muted || searchMuted ? 0.18 : 1,
-          overflow: 'hidden',
-          boxShadow: related ? '0 0 0 3px rgba(84,72,58,0.10)' : undefined,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 4,
         }}
       >
-        <Avatar name={node.name} src={node.avatarUrl} size={sz} rounded={999} />
+        <div style={{
+          width: sz,
+          height: sz,
+          borderRadius: 999,
+          overflow: 'hidden',
+          border: hc
+            ? `2px solid ${hc}`
+            : secondDegree
+              ? '1.5px dashed rgba(84,72,58,0.30)'
+              : '2px solid rgba(244,239,230,0.92)',
+          boxShadow: secondDegree
+            ? 'none'
+            : related
+              ? '0 4px 14px rgba(26,24,21,0.14), 0 0 0 3px rgba(84,72,58,0.08)'
+              : '0 3px 10px rgba(26,24,21,0.12)',
+          flexShrink: 0,
+        }}>
+          <Avatar name={node.name} src={node.avatarUrl} size={sz} rounded={999} />
+        </div>
+        <span style={{
+          fontSize: 9.5,
+          fontWeight: secondDegree ? 500 : 600,
+          color: secondDegree ? 'var(--ink-muted)' : 'var(--ink)',
+          whiteSpace: 'nowrap',
+          maxWidth: sz + 20,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          lineHeight: 1,
+          fontFamily: "'IBM Plex Sans', sans-serif",
+        }}>
+          {firstName}
+        </span>
       </button>
     )
   }
@@ -952,10 +984,10 @@ export function KnotForceGraph({
               )
             })}
 
-            <circle cx={center.x} cy={center.y} r="76" fill="rgba(244,239,230,0.16)" />
-            <circle cx={center.x} cy={center.y} r="58" fill="rgba(255,252,246,0.18)" />
-            <circle cx={center.x} cy={center.y} r="58" fill="none" stroke="rgba(84,72,58,0.075)" strokeWidth="0.9" />
-            <circle cx={center.x} cy={center.y} r="44" fill="rgba(255,252,246,0.24)" />
+            <circle cx={center.x} cy={center.y} r={compact ? 40 : 76} fill="rgba(244,239,230,0.16)" />
+            <circle cx={center.x} cy={center.y} r={compact ? 30 : 58} fill="rgba(255,252,246,0.18)" />
+            <circle cx={center.x} cy={center.y} r={compact ? 30 : 58} fill="none" stroke="rgba(84,72,58,0.075)" strokeWidth="0.9" />
+            <circle cx={center.x} cy={center.y} r={compact ? 22 : 44} fill="rgba(255,252,246,0.24)" />
           </svg>
 
           <button
@@ -970,8 +1002,8 @@ export function KnotForceGraph({
               left: `${center.x / 10}%`,
               top: `${center.y / 5.9}%`,
               transform: 'translate(-50%, -50%)',
-              width: 104,
-              height: 104,
+              width: compact ? 56 : 104,
+              height: compact ? 56 : 104,
               borderRadius: 999,
               border: 'none',
               background: 'transparent',
@@ -980,8 +1012,10 @@ export function KnotForceGraph({
               boxShadow: 'none',
               zIndex: 4,
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
+              gap: compact ? 3 : 0,
               padding: 0,
               touchAction: 'none',
             }}
@@ -991,19 +1025,37 @@ export function KnotForceGraph({
             <Avatar
               name={me.name}
               src={me.avatarUrl}
-              size={me.avatarUrl ? 88 : 78}
+              size={compact ? (me.avatarUrl ? 46 : 40) : (me.avatarUrl ? 88 : 78)}
               rounded={999}
               style={{
-                border: me.avatarUrl ? '3px solid rgba(255,252,246,0.96)' : '0.5px solid rgba(84,72,58,0.18)',
+                border: me.avatarUrl
+                  ? compact ? '2px solid rgba(255,252,246,0.96)' : '3px solid rgba(255,252,246,0.96)'
+                  : '0.5px solid rgba(84,72,58,0.18)',
                 background: me.avatarUrl
                   ? 'var(--paper)'
                   : 'linear-gradient(135deg, rgba(238,242,255,0.96), rgba(255,252,246,0.98))',
                 color: 'var(--indigo, #4455c7)',
                 boxShadow: me.avatarUrl
-                  ? '0 18px 48px rgba(26,24,21,0.18), 0 0 0 9px rgba(255,252,246,0.42)'
-                  : '0 16px 42px rgba(26,24,21,0.10), 0 0 0 9px rgba(255,252,246,0.42)',
+                  ? compact
+                    ? '0 4px 16px rgba(26,24,21,0.18), 0 0 0 4px rgba(255,252,246,0.60)'
+                    : '0 18px 48px rgba(26,24,21,0.18), 0 0 0 9px rgba(255,252,246,0.42)'
+                  : compact
+                    ? '0 4px 12px rgba(26,24,21,0.10), 0 0 0 4px rgba(255,252,246,0.60)'
+                    : '0 16px 42px rgba(26,24,21,0.10), 0 0 0 9px rgba(255,252,246,0.42)',
               }}
             />
+            {compact && (
+              <span style={{
+                fontSize: 9,
+                fontWeight: 700,
+                color: 'var(--signal, #D8442B)',
+                fontFamily: "'IBM Plex Sans', sans-serif",
+                letterSpacing: '0.04em',
+                lineHeight: 1,
+              }}>
+                You
+              </span>
+            )}
           </button>
 
           {layoutNodes.map((node) => {
