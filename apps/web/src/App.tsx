@@ -136,7 +136,7 @@ function ProtectedAppRoutes() {
         <Route path="/messages" element={<MessagesPage />} />
         <Route path="/quests" element={<QuestsPage />} />
         <Route path="/events" element={<EventsPage />} />
-        <Route path="/gigs" element={<GigsPage />} />
+        <Route path="/gigs" element={<Navigate to="/jobs" replace />} />
         <Route path="/cafes" element={<CafesPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/auth" element={<Navigate to="/home" replace />} />

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
+import { GigsPage } from './GigsPage'
 
 type JobListItem = {
   id: string
@@ -445,6 +446,30 @@ export function JobsPage() {
     }
   }
 
+  // ─── Section toggle state ─────────────────────────────────────────────────
+  const [section, setSection] = useState<'jobs' | 'gigs'>('jobs')
+
+  if (section === 'gigs') {
+    return (
+      <div>
+        <div style={{ display: 'flex', gap: 0, borderBottom: '0.5px solid var(--rule)', marginBottom: 0, padding: '0 clamp(16px,4vw,40px)' }}>
+          {(['jobs', 'gigs'] as const).map(s => (
+            <button key={s} onClick={() => setSection(s)} style={{
+              padding: '14px 20px', border: 'none', background: 'transparent', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif",
+              color: section === s ? 'var(--ink)' : 'var(--ink-faint)',
+              borderBottom: section === s ? '2px solid var(--ink)' : '2px solid transparent',
+              marginBottom: -1,
+            }}>
+              {s === 'jobs' ? 'Jobs' : 'Gigs'}
+            </button>
+          ))}
+        </div>
+        <GigsPage />
+      </div>
+    )
+  }
+
   // ─── Knotify-styled render ─────────────────────────────────────────────────
   const jobsRail = (
     <>
@@ -464,6 +489,19 @@ export function JobsPage() {
 
   return (
     <div>
+      <div style={{ display: 'flex', gap: 0, borderBottom: '0.5px solid var(--rule)', padding: '0 clamp(16px,4vw,40px)' }}>
+        {(['jobs', 'gigs'] as const).map(s => (
+          <button key={s} onClick={() => setSection(s)} style={{
+            padding: '14px 20px', border: 'none', background: 'transparent', cursor: 'pointer',
+            fontSize: 13, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif",
+            color: section === s ? 'var(--ink)' : 'var(--ink-faint)',
+            borderBottom: section === s ? '2px solid var(--ink)' : '2px solid transparent',
+            marginBottom: -1,
+          }}>
+            {s === 'jobs' ? 'Jobs' : 'Gigs'}
+          </button>
+        ))}
+      </div>
       <DeskHeader
         kicker="Jobs & Gigs · peer to peer"
         title={<><span style={{ fontStyle: 'italic' }}>Through people,</span> not job boards.</>}
