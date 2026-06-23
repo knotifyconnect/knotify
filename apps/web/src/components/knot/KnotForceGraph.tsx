@@ -337,17 +337,19 @@ function StageCard({
           <Avatar name={node.name} src={node.avatarUrl} size={sz} rounded={999} />
         </button>
         <span style={{
-          fontSize: 9,
-          fontWeight: secondDegree ? 500 : 600,
+          fontSize: 8.5,
+          fontWeight: 600,
           color: secondDegree ? 'var(--ink-muted)' : 'var(--ink)',
           whiteSpace: 'nowrap',
-          maxWidth: sz + 16,
+          maxWidth: 44,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           lineHeight: 1,
           fontFamily: "'IBM Plex Sans', sans-serif",
           pointerEvents: 'none',
-          textShadow: '0 1px 4px rgba(244,239,230,0.9), 0 0 8px rgba(244,239,230,0.8)',
+          background: 'rgba(244,239,230,0.88)',
+          borderRadius: 4,
+          padding: '1px 3px',
         }}>
           {firstName}
         </span>

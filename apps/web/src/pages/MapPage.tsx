@@ -961,8 +961,8 @@ function TopCommandBar({
         <div style={{ fontSize: 10, color: 'var(--ink-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           Your Knot
         </div>
-        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(22px, 3vw, 28px)', fontWeight: 400, letterSpacing: '-0.02em', marginTop: 4, lineHeight: 1.05, color: 'var(--ink)' }}>
-          Maintain the relationships worth keeping.
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(22px, 3vw, 28px)', fontWeight: 400, fontStyle: 'italic', letterSpacing: '-0.02em', marginTop: 4, lineHeight: 1.05, color: 'var(--ink)' }}>
+          Keep your <span style={{ color: 'var(--signal, #D8442B)' }}>knot</span> warm.
         </div>
       </div>
 
@@ -1375,7 +1375,7 @@ function KnotStage({
                       <div style={{ width: 40, height: 5, borderRadius: 999, background: 'rgba(26,24,21,0.25)' }} />
                     </div>
                   )}
-                  <div style={isMobile ? { flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' as any } : undefined}>
+                  <div style={isMobile ? { flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' as any } : undefined}>
                   {selectedConnection ? (
                     <SelectedRelationshipPanel
                       connection={selectedConnection}
