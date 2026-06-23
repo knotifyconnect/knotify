@@ -42,7 +42,7 @@ function curvedPath(x1: number, y1: number, x2: number, y2: number) {
 // ── Generic draggable bottom sheet (portal) ────────────────────────────────
 // Fully hidden when collapsed — only a small grab handle peeks above the tab bar.
 export function MobileBottomSheet({
-  peekHeight = 26,
+  peekHeight = 20,
   defaultHeight = 360,
   children,
 }: {
@@ -66,13 +66,13 @@ export function MobileBottomSheet({
     <div
       style={{
         position: 'fixed',
-        bottom: 88,
+        bottom: 'calc(64px + env(safe-area-inset-bottom))',
         left: 0,
         right: 0,
         height,
         background: 'var(--paper)',
         borderRadius: '20px 20px 0 0',
-        boxShadow: isOpen ? '0 -6px 32px rgba(26,24,21,0.16)' : '0 -3px 14px rgba(26,24,21,0.08)',
+        boxShadow: isOpen ? '0 -6px 32px rgba(26,24,21,0.16)' : '0 -2px 10px rgba(26,24,21,0.06)',
         zIndex: 9900,
         display: 'flex',
         flexDirection: 'column',
@@ -105,7 +105,7 @@ export function MobileBottomSheet({
         onPointerCancel={() => { dragRef.current = null }}
         style={{
           flexShrink: 0,
-          height: 26,
+          height: 20,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -187,6 +187,8 @@ export function KnotMobileGraph({
   onSelectNode,
   onClearSelection,
   expandedRootId = null,
+  expandedRootName = null,
+  onCollapse,
 }: {
   me: MeNode
   nodes: KnotGraphNode[]
@@ -194,6 +196,8 @@ export function KnotMobileGraph({
   onSelectNode: (node: KnotGraphNode) => void
   onClearSelection: () => void
   expandedRootId?: string | null
+  expandedRootName?: string | null
+  onCollapse?: () => void
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const panRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null)
@@ -217,6 +221,11 @@ export function KnotMobileGraph({
     ...r2Nodes.map((n, i) => ({ n, x: r2Pos[i].x, y: r2Pos[i].y, r: 17 })),
   ]
 
+  // In expanded mode, second-degree edges originate from the expanded root node
+  // (not "me"), so it's visually clear they belong to that person's network.
+  const rootEntry = expandedRootId ? positioned.find(p => p.n.id === expandedRootId) : undefined
+  const rootPos = rootEntry ? { x: rootEntry.x, y: rootEntry.y } : { x: CX, y: CY }
+
   function onBgDown(e: React.PointerEvent<SVGSVGElement>) {
     if ((e.target as Element).closest('[data-node]')) return
     panRef.current = { startX: e.clientX, startY: e.clientY, ox: pan.x, oy: pan.y, moved: false }
@@ -235,6 +244,51 @@ export function KnotMobileGraph({
   }
 
   return (
+    <>
+    {/* Expanded-mode banner: makes the state and exit obvious */}
+    {expandedMode && expandedRootName && (
+      <div
+        style={{
+          position: 'absolute',
+          top: 58,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '7px 8px 7px 14px',
+          borderRadius: 999,
+          background: 'rgba(244,239,230,0.92)',
+          border: '0.5px solid rgba(31,107,94,0.35)',
+          boxShadow: '0 10px 30px rgba(26,24,21,0.10)',
+          backdropFilter: 'blur(10px)',
+          maxWidth: 'calc(100% - 24px)',
+        }}
+      >
+        <span style={{ fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          Exploring <b style={{ color: 'var(--verd)' }}>{expandedRootName.split(' ')[0]}</b>'s network
+        </span>
+        <button
+          type="button"
+          onClick={onCollapse}
+          style={{
+            border: 'none',
+            background: 'var(--ink)',
+            color: 'var(--paper)',
+            borderRadius: 999,
+            padding: '5px 12px',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}
+        >
+          Collapse
+        </button>
+      </div>
+    )}
     <svg
       ref={svgRef}
       viewBox={`0 0 ${VW} ${VH}`}
@@ -255,19 +309,24 @@ export function KnotMobileGraph({
           />
         )}
 
-        {/* Curved lines from center to each node */}
-        {positioned.map(({ n, x, y }) => (
-          <path
-            key={`ln-${n.id}`}
-            d={curvedPath(CX, CY, x, y)}
-            fill="none"
-            stroke={n.id === selectedNodeId ? 'rgba(216,68,43,0.35)' : 'rgba(84,72,58,0.16)'}
-            strokeWidth={n.id === selectedNodeId ? 1.6 : 0.8}
-            strokeDasharray={n.degree === 'second' ? '5 5' : undefined}
-            strokeLinecap="round"
-            opacity={isDimmed(n) ? 0.2 : 1}
-          />
-        ))}
+        {/* Curved lines: 1st degree from "me", 2nd degree from the expanded root */}
+        {positioned.map(({ n, x, y }) => {
+          const isSecond = n.degree === 'second'
+          const from = isSecond ? rootPos : { x: CX, y: CY }
+          const sel = n.id === selectedNodeId
+          return (
+            <path
+              key={`ln-${n.id}`}
+              d={curvedPath(from.x, from.y, x, y)}
+              fill="none"
+              stroke={sel ? 'rgba(216,68,43,0.35)' : isSecond ? 'rgba(31,107,94,0.40)' : 'rgba(84,72,58,0.16)'}
+              strokeWidth={sel ? 1.6 : isSecond ? 1.2 : 0.8}
+              strokeDasharray={isSecond ? '5 4' : undefined}
+              strokeLinecap="round"
+              opacity={isDimmed(n) ? 0.18 : 1}
+            />
+          )
+        })}
 
         {/* Center halos */}
         <circle cx={CX} cy={CY} r={56} fill="rgba(244,239,230,0.22)" />
@@ -294,9 +353,12 @@ export function KnotMobileGraph({
               onClick={(e) => { e.stopPropagation(); sel ? onClearSelection() : onSelectNode(n) }}
               style={{ cursor: 'pointer', transformOrigin: `${x}px ${y}px`, opacity: isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
             >
-              {/* Outer selection / health ring */}
+              {/* Outer selection / expanded-root / health ring */}
               {sel && <circle cx={0} cy={0} r={r + 5} fill="rgba(216,68,43,0.12)" stroke="#D8442B" strokeWidth={1.5} />}
-              {hc && !sel && <circle cx={0} cy={0} r={r + 3} fill="none" stroke={hc} strokeWidth={1.5} />}
+              {!sel && n.id === expandedRootId && expandedMode && (
+                <circle cx={0} cy={0} r={r + 5} fill="rgba(31,107,94,0.12)" stroke="#1F6B5E" strokeWidth={2} />
+              )}
+              {hc && !sel && n.id !== expandedRootId && <circle cx={0} cy={0} r={r + 3} fill="none" stroke={hc} strokeWidth={1.5} />}
 
               <defs>
                 <clipPath id={clipId}>
@@ -393,5 +455,6 @@ export function KnotMobileGraph({
         })()}
       </g>
     </svg>
+    </>
   )
 }

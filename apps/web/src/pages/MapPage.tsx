@@ -839,6 +839,7 @@ export function MapPage() {
           requestingUserId={requestingUserId}
           requestFeedback={requestFeedback}
           onResetGraphState={resetGraphState}
+          onCollapseExpanded={clearExpandedKnot}
           healthByUserId={healthByUserId}
         />
 
@@ -1005,6 +1006,7 @@ function KnotStage({
   requestingUserId,
   requestFeedback,
   onResetGraphState,
+  onCollapseExpanded,
 }: {
   meId: string | null
   meName: string
@@ -1040,6 +1042,7 @@ function KnotStage({
   requestingUserId: string | null
   requestFeedback: string | null
   onResetGraphState: () => void
+  onCollapseExpanded: () => void
   healthByUserId: Map<string, KnotHealthState>
 }) {
   const normalizedGraphQuery = query.trim().toLowerCase()
@@ -1263,6 +1266,8 @@ function KnotStage({
                 }}
                 onClearSelection={onClear}
                 expandedRootId={expandedRootUserId ? `person:${expandedRootUserId}` : null}
+                expandedRootName={expandedRootUserId ? expandedRootName : null}
+                onCollapse={onCollapseExpanded}
               />
               <MobileNodeOverlay
                 open={!!(selectedConnection || selectedSecondDegreeUser)}
@@ -1286,7 +1291,6 @@ function KnotStage({
                     onMessage={() => onMessage(otherUserId(selectedConnection, meId))}
                     onInviteCoffee={() => onInviteCoffee(otherUserId(selectedConnection, meId))}
                     onViewProfile={() => onViewProfile(otherUserId(selectedConnection, meId))}
-                    expandLabel={{ open: 'Show 2nd degree', close: 'Hide 2nd degree' }}
                   />
                 ) : selectedSecondDegreeUser ? (
                   <SecondDegreeProfilePanel
