@@ -69,6 +69,7 @@ type Props = {
   onClearSelection: () => void
   onClearQuery?: () => void
   onResetGraph?: () => void
+  compact?: boolean
 }
 
 const VIEW_W = 1000
@@ -258,6 +259,7 @@ function StageCard({
   secondDegree,
   onSelect,
   onPointerDown,
+  compact,
 }: {
   node: LayoutNode
   selected: boolean
@@ -270,7 +272,43 @@ function StageCard({
   secondDegree: boolean
   onSelect: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
+  compact?: boolean
 }) {
+  // Compact mode: round avatar bubble — selected node still shows full card
+  if (compact && !selected && !searchHit) {
+    const sz = related ? 34 : secondDegree ? 24 : 30
+    const hc = healthColor(node.healthState)
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        onPointerDown={onPointerDown}
+        title={node.name}
+        aria-label={node.name}
+        style={{
+          position: 'absolute',
+          left: `${node.x / 10}%`,
+          top: `${node.y / 5.9}%`,
+          transform: 'translate(-50%, -50%)',
+          width: sz,
+          height: sz,
+          borderRadius: 999,
+          padding: 0,
+          border: hc ? `2px solid ${hc}` : secondDegree ? '1px dashed rgba(84,72,58,0.34)' : '1.5px solid rgba(84,72,58,0.22)',
+          background: 'transparent',
+          cursor: 'grab',
+          touchAction: 'none',
+          zIndex: related ? 3 : 2,
+          opacity: muted || searchMuted ? 0.18 : 1,
+          overflow: 'hidden',
+          boxShadow: related ? '0 0 0 3px rgba(84,72,58,0.10)' : undefined,
+        }}
+      >
+        <Avatar name={node.name} src={node.avatarUrl} size={sz} rounded={999} />
+      </button>
+    )
+  }
+
   const mode = cardSize(total, selected, searchHit, related)
 
   if (mode === 'dot') {
@@ -477,6 +515,7 @@ export function KnotForceGraph({
   onClearSelection,
   onClearQuery,
   onResetGraph,
+  compact,
 }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -986,6 +1025,7 @@ export function KnotForceGraph({
                 selectedName={selectedNode?.name}
                 total={layoutNodes.length}
                 secondDegree={node.degree === 'second'}
+                compact={compact}
                 onPointerDown={(event) => beginDrag(node.id, event)}
                 onSelect={() => {
                   if (draggedRef.current) return

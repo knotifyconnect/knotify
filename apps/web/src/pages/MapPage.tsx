@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
@@ -1220,6 +1220,41 @@ function KnotStage({
 
   const hasRelationships = nodes.length > 0
 
+  // Mobile compact bubbles + drag-to-expand panel
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  // Panel drag state — tracks translated Y offset (negative = expanded upward)
+  const [panelExpandY, setPanelExpandY] = useState(0)
+  const panelDragRef = useRef<{ startY: number; startOffset: number } | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  function onPanelPointerDown(e: React.PointerEvent) {
+    panelDragRef.current = { startY: e.clientY, startOffset: panelExpandY }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  function onPanelPointerMove(e: React.PointerEvent) {
+    if (!panelDragRef.current) return
+    const dy = panelDragRef.current.startY - e.clientY
+    const newY = Math.max(0, Math.min(window.innerHeight * 0.55, panelDragRef.current.startOffset + dy))
+    setPanelExpandY(newY)
+  }
+  function onPanelPointerUp() {
+    if (!panelDragRef.current) return
+    // Snap: if dragged more than 30% of max, snap to fully expanded; else snap to peek
+    const maxY = window.innerHeight * 0.55
+    setPanelExpandY(panelExpandY > maxY * 0.3 ? maxY : 0)
+    panelDragRef.current = null
+  }
+
+  // Reset panel position when selection changes
+  useEffect(() => { setPanelExpandY(0) }, [selectedConnection, selectedSecondDegreeUser])
+
   return (
     <KCard
       style={{
@@ -1293,6 +1328,7 @@ function KnotStage({
                 peerEdges={graphPeerEdges}
                 selectedNodeId={selectedNode?.id ?? null}
                 query={query}
+                compact={isMobile}
                 onClearQuery={() => onQueryChange('')}
                 onResetGraph={onResetGraphState}
                 onSelectNode={(node: KnotGraphNode) => {
@@ -1319,7 +1355,22 @@ function KnotStage({
               </div>
 
               {(selectedConnection || selectedSecondDegreeUser) && (
-                <div className="k-knot-detail-panel">
+                <div
+                  ref={panelRef}
+                  className="k-knot-detail-panel"
+                  style={isMobile ? { transform: `translateY(${-panelExpandY}px)`, transition: panelDragRef.current ? 'none' : 'transform 0.25s cubic-bezier(0.32,0.72,0,1)' } : undefined}
+                >
+                  {isMobile && (
+                    <div
+                      onPointerDown={onPanelPointerDown}
+                      onPointerMove={onPanelPointerMove}
+                      onPointerUp={onPanelPointerUp}
+                      onPointerCancel={onPanelPointerUp}
+                      style={{ padding: '10px 0 6px', display: 'flex', justifyContent: 'center', touchAction: 'none', cursor: 'grab' }}
+                    >
+                      <div style={{ width: 36, height: 4, borderRadius: 999, background: 'rgba(26,24,21,0.20)' }} />
+                    </div>
+                  )}
                   {selectedConnection ? (
                     <SelectedRelationshipPanel
                       connection={selectedConnection}
