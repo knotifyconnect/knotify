@@ -1,32 +1,36 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Variants } from 'framer-motion'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppLayout } from './layouts/AppLayout'
-import { AuthPage } from './pages/AuthPage'
+// LandingPage stays eager: it is the public LCP page and must paint fast.
 import { LandingPage } from './pages/LandingPage'
-import { RelationshipHomePage } from './pages/RelationshipHomePage'
-import { MapPage } from './pages/MapPage'
-import { DiscoverPage } from './pages/DiscoverPage'
-import { ProfilePage } from './pages/ProfilePage'
-import { JobsPage } from './pages/JobsPage'
-import { MessagesPage } from './pages/MessagesPage'
-import { QuestsPage } from './pages/QuestsPage'
-import { EventsPage } from './pages/EventsPage'
-import { GigsPage } from './pages/GigsPage'
-import { CafesPage } from './pages/CafesPage'
-import { AdminPage } from './pages/AdminPage'
 import { supabase } from './lib/supabase'
 import { useSessionStore } from './store/session'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { ToastContainer } from './components/ui/Toast'
-import { PrivacyPage } from './pages/PrivacyPage'
-import { ImpressumPage } from './pages/ImpressumPage'
-import { EmployersPage } from './pages/EmployersPage'
-import { ResetPasswordPage } from './pages/ResetPasswordPage'
-import { OnboardingPage } from './pages/OnboardingPage'
 import { apiGet } from './lib/api'
+
+// Everything below is code-split so it does not ship in the landing-page bundle.
+// Logged-out visitors and crawlers only load LandingPage + its deps.
+const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })))
+const RelationshipHomePage = lazy(() => import('./pages/RelationshipHomePage').then((m) => ({ default: m.RelationshipHomePage })))
+const MapPage = lazy(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })))
+const DiscoverPage = lazy(() => import('./pages/DiscoverPage').then((m) => ({ default: m.DiscoverPage })))
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })))
+const JobsPage = lazy(() => import('./pages/JobsPage').then((m) => ({ default: m.JobsPage })))
+const MessagesPage = lazy(() => import('./pages/MessagesPage').then((m) => ({ default: m.MessagesPage })))
+const QuestsPage = lazy(() => import('./pages/QuestsPage').then((m) => ({ default: m.QuestsPage })))
+const EventsPage = lazy(() => import('./pages/EventsPage').then((m) => ({ default: m.EventsPage })))
+const GigsPage = lazy(() => import('./pages/GigsPage').then((m) => ({ default: m.GigsPage })))
+const CafesPage = lazy(() => import('./pages/CafesPage').then((m) => ({ default: m.CafesPage })))
+const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })))
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })))
+const ImpressumPage = lazy(() => import('./pages/ImpressumPage').then((m) => ({ default: m.ImpressumPage })))
+const EmployersPage = lazy(() => import('./pages/EmployersPage').then((m) => ({ default: m.EmployersPage })))
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })))
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage').then((m) => ({ default: m.OnboardingPage })))
 
 const LAST_ACTIVE_AT_KEY = 'knotify:lastActiveAt'
 const INACTIVITY_REENTRY_MS = 2 * 24 * 60 * 60 * 1000
@@ -214,15 +218,17 @@ function AnimatedRoutes({
   return (
     <AnimatePresence mode="wait">
       <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" exit="exit">
-        {token ? (
-          showReentryLanding ? (
-            <ReentryLandingRoutes onContinue={onReentryContinue} />
+        <Suspense fallback={<div className="min-h-screen bg-bg-base" />}>
+          {token ? (
+            showReentryLanding ? (
+              <ReentryLandingRoutes onContinue={onReentryContinue} />
+            ) : (
+              <ProtectedRoutes />
+            )
           ) : (
-            <ProtectedRoutes />
-          )
-        ) : (
-          <PublicRoutes />
-        )}
+            <PublicRoutes />
+          )}
+        </Suspense>
       </motion.div>
     </AnimatePresence>
   )

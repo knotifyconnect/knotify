@@ -19,8 +19,16 @@ const FAQS = [
     a: 'Join knotify, add the people you already know, and get matched to the people, groups and events that fit you. knotify tells you who to reach out to and helps you meet in person at partner cafés across Munich.',
   },
   {
-    q: 'Is knotify free?',
-    a: "knotify is currently a free private beta for Munich's international community. Join the waiting list to request access.",
+    q: 'How is knotify different from LinkedIn?',
+    a: 'LinkedIn is a feed and a resume. knotify is a relationship tool. There is nothing to post and no follower count to chase. You keep a private, living map of the people you actually know, get a nudge before a connection goes cold, and meet in person over coffee. It is built for newcomers to Munich who need a real network, not an audience.',
+  },
+  {
+    q: 'Which universities and students is knotify for?',
+    a: 'knotify is for international and local students across Munich, including TUM (Technical University of Munich), LMU (Ludwig Maximilian University) and Hochschule München, as well as recent graduates and young professionals starting out in the city.',
+  },
+  {
+    q: 'Is knotify free, and when does it launch?',
+    a: "knotify is a free private beta, onboarding Munich's international community first. Join the waiting list and we will reach out as access opens.",
   },
 ]
 
