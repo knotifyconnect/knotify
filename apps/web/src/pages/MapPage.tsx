@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { KnotForceGraph, type KnotGraphNode, type KnotGraphPeerEdge, type KnotHealthState } from '../components/knot/KnotForceGraph'
+import { KnotBubbleGraph } from '../components/knot/KnotBubbleGraph'
 
 type UserStatus = 'studying' | 'open_to_work' | 'employed' | string
 type ConnectionStatus = 'pending' | 'accepted' | 'declined'
@@ -1222,24 +1223,69 @@ function KnotStage({
 
   return (
     <>
-      {/* Mobile: graph is unusable at small sizes — show a simple prompt instead */}
-      <div
-        className="flex md:hidden"
-        style={{
-          marginTop: 5,
-          padding: '20px 16px',
-          borderRadius: 14,
-          background: 'var(--paper-soft)',
-          border: '0.5px solid var(--rule)',
-          textAlign: 'center',
-          color: 'var(--ink-muted)',
-          fontSize: 13,
-          lineHeight: 1.55,
-        }}
-      >
-        <span style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', color: 'var(--ink-faint)' }}>
-          Your knot graph is best on a larger screen. Your connections are listed below.
-        </span>
+      {/* Mobile bubble graph — round avatar nodes, hidden on md+ */}
+      <div className="md:hidden" style={{ marginTop: 5, borderRadius: 14, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', overflow: 'hidden' }}>
+        {/* Search bar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '0.5px solid var(--rule-soft)' }}>
+          <span style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', whiteSpace: 'nowrap' }}>Find</span>
+          <input
+            value={query}
+            onChange={e => onQueryChange(e.target.value)}
+            placeholder="Search your knot..."
+            style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--ink)', fontFamily: "'IBM Plex Sans', sans-serif" }}
+          />
+          {query && (
+            <button type="button" onClick={() => onQueryChange('')} style={{ border: 'none', background: 'transparent', color: 'var(--ink-faint)', cursor: 'pointer', fontSize: 12 }}>Clear</button>
+          )}
+        </div>
+        <KnotBubbleGraph
+          me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
+          nodes={nodes}
+          selectedNodeId={selectedNode?.id ?? null}
+          query={query}
+          onSelectNode={(node: KnotGraphNode) => {
+            const match = nodes.find(n => n.id === node.id)
+            if (!match) return
+            if (match.degree === 'second') { onSelectSecondDegreeUser(match.userId); return }
+            onSelect(match.connection, match.tab)
+          }}
+          onClearSelection={onClear}
+        />
+        {/* Detail panel when a node is selected */}
+        {(selectedConnection || selectedSecondDegreeUser) && (
+          <div style={{ borderTop: '0.5px solid var(--rule-soft)', maxHeight: '50vh', overflowY: 'auto' }}>
+            {selectedConnection ? (
+              <SelectedRelationshipPanel
+                connection={selectedConnection}
+                tab={selectedTab}
+                mutualNames={selectedPeerNames}
+                accepting={Boolean(accepting[selectedConnection.id])}
+                removing={Boolean(removing[selectedConnection.id])}
+                expanding={expandingUserId === otherUserId(selectedConnection, meId)}
+                expanded={expandedRootUserId === otherUserId(selectedConnection, meId)}
+                expandedCount={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandedSecondDegreeNodes.length : 0}
+                expandError={expandedRootUserId === otherUserId(selectedConnection, meId) ? expandError : null}
+                onClear={onClear}
+                onToggleExpand={selectedTab === 'Connected' ? () => onToggleExpand(selectedConnection) : undefined}
+                onAccept={() => onAccept(selectedConnection)}
+                onRemove={() => onRemove(selectedConnection)}
+                onMessage={() => onMessage(otherUserId(selectedConnection, meId))}
+                onInviteCoffee={() => onInviteCoffee(otherUserId(selectedConnection, meId))}
+                onViewProfile={() => onViewProfile(otherUserId(selectedConnection, meId))}
+              />
+            ) : selectedSecondDegreeUser ? (
+              <SecondDegreeProfilePanel
+                user={selectedSecondDegreeUser}
+                rootName={expandedRootName}
+                requesting={requestingUserId === selectedSecondDegreeUser.id}
+                feedback={requestFeedback}
+                onClear={onClear}
+                onRequest={() => onRequestSecondDegree(selectedSecondDegreeUser)}
+                onViewProfile={() => onViewProfile(selectedSecondDegreeUser.id)}
+              />
+            ) : null}
+          </div>
+        )}
       </div>
 
     <KCard
