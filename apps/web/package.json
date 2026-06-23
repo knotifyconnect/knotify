@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm --prefix ../api run build && tsc -p tsconfig.json && vite build",
+    "build": "npm --prefix ../api run build && tsc -p tsconfig.json && vite build && node scripts/build-guides.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'No lint configured for web'"
   },
@@ -43,6 +43,7 @@
     "@types/three": "^0.183.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "marked": "^18.0.5",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",

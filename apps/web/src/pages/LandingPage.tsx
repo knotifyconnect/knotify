@@ -367,6 +367,7 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
         <a href="#cafes" style={{ color: 'inherit', textDecoration: 'none' }}>Cafés</a>
         <a href="#manifesto" style={{ color: 'inherit', textDecoration: 'none' }}>Manifesto</a>
         <a href="#faq" style={{ color: 'inherit', textDecoration: 'none' }}>FAQ</a>
+        <a href="/guides/" style={{ color: 'inherit', textDecoration: 'none' }}>Guides</a>
         <a href="/employers" style={{ color: 'inherit', textDecoration: 'none' }}>For employers</a>
       </div>
 
@@ -871,6 +872,7 @@ export function LandingPage() {
           {([
             ['Manifesto', () => document.getElementById('manifesto')?.scrollIntoView({ behavior: 'smooth' })],
             ['Cafés', () => document.getElementById('cafes')?.scrollIntoView({ behavior: 'smooth' })],
+            ['Guides', () => { window.location.href = '/guides/' }],
             ['For employers', () => navigate('/employers')],
             ['Privacy', () => navigate('/privacy')],
             ['Impressum', () => navigate('/impressum')],
