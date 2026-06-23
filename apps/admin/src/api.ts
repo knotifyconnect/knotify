@@ -53,7 +53,9 @@ export const api = {
   // Gigs
   gigs: () => request('/api/admin-panel/gigs'),
   updateGig: (id: string, status: 'open' | 'closed') => request(`/api/admin-panel/gigs/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  setGigFeatured: (id: string, isFeatured: boolean) => request(`/api/admin-panel/gigs/${id}`, { method: 'PATCH', body: JSON.stringify({ isFeatured }) }),
   deleteGig: (id: string) => request(`/api/admin-panel/gigs/${id}`, { method: 'DELETE' }),
+  gigRequests: (status?: string) => request(`/api/admin-panel/gig-requests${status ? `?status=${status}` : ''}`),
 
   // Quests
   quests: () => request('/api/admin-panel/quests'),

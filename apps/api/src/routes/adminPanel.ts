@@ -127,20 +127,49 @@ adminPanelRouter.delete('/events/:id', async (req, res) => {
 adminPanelRouter.get('/gigs', async (_req, res) => {
   const { data, error } = await supabase
     .from('gigs')
-    .select('id, gig_type, title, description, reward_type, price_eur, status, created_at, users:provider_id(full_name, credibility_score)')
+    .select('id, gig_type, title, description, reward_type, price_eur, status, is_featured, created_at, users:provider_id(full_name, credibility_score)')
+    .order('is_featured', { ascending: false })
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
+
   const gigs = (data ?? []).map((g: any) => {
     const p = Array.isArray(g.users) ? g.users[0] : g.users
     return { ...g, users: undefined, provider_name: p?.full_name ?? 'Someone', provider_credibility: p?.credibility_score ?? 0 }
   })
+
+  // Attach active-request counts so admins see traction at a glance
+  const gigIds = gigs.map((g: any) => g.id)
+  if (gigIds.length) {
+    const reqs = await supabase.from('gig_requests').select('gig_id, status').in('gig_id', gigIds)
+    const counts = new Map<string, { active: number; total: number }>()
+    for (const r of reqs.data ?? []) {
+      const c = counts.get(r.gig_id) ?? { active: 0, total: 0 }
+      c.total += 1
+      if (['pending', 'accepted'].includes(r.status)) c.active += 1
+      counts.set(r.gig_id, c)
+    }
+    for (const g of gigs as any[]) {
+      const c = counts.get(g.id)
+      g.active_request_count = c?.active ?? 0
+      g.total_request_count = c?.total ?? 0
+    }
+  }
+
   return res.json({ gigs })
 })
 
 adminPanelRouter.patch('/gigs/:id', async (req, res) => {
-  const { status } = req.body
-  if (!['open', 'closed'].includes(status)) return res.status(422).json({ error: 'Invalid status.' })
-  const { error } = await supabase.from('gigs').update({ status }).eq('id', req.params.id)
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (req.body.status !== undefined) {
+    if (!['open', 'closed'].includes(req.body.status)) return res.status(422).json({ error: 'Invalid status.' })
+    patch.status = req.body.status
+  }
+  if (req.body.isFeatured !== undefined) patch.is_featured = Boolean(req.body.isFeatured)
+  if (req.body.title !== undefined) patch.title = String(req.body.title).trim()
+  if (req.body.description !== undefined) patch.description = req.body.description ? String(req.body.description).trim() : null
+  if (Object.keys(patch).length === 1) return res.status(400).json({ error: 'No fields provided.' })
+
+  const { error } = await supabase.from('gigs').update(patch).eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   return res.json({ ok: true })
 })
@@ -149,6 +178,38 @@ adminPanelRouter.delete('/gigs/:id', async (req, res) => {
   const { error } = await supabase.from('gigs').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   return res.json({ ok: true })
+})
+
+// All gig requests across the platform — moderation oversight of the pipeline
+adminPanelRouter.get('/gig-requests', async (req, res) => {
+  const status = req.query.status as string | undefined
+  let query = supabase
+    .from('gig_requests')
+    .select('id, gig_id, status, message, price_eur, created_at, gigs:gig_id(title), seeker:seeker_id(full_name), provider:provider_id(full_name)')
+    .order('created_at', { ascending: false })
+    .limit(200)
+  if (status && ['pending', 'accepted', 'declined', 'completed', 'cancelled'].includes(status)) {
+    query = query.eq('status', status)
+  }
+  const { data, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+  const requests = (data ?? []).map((r: any) => {
+    const gig = Array.isArray(r.gigs) ? r.gigs[0] : r.gigs
+    const seeker = Array.isArray(r.seeker) ? r.seeker[0] : r.seeker
+    const provider = Array.isArray(r.provider) ? r.provider[0] : r.provider
+    return {
+      id: r.id,
+      gig_id: r.gig_id,
+      status: r.status,
+      message: r.message,
+      price_eur: r.price_eur,
+      created_at: r.created_at,
+      gig_title: gig?.title ?? 'Gig',
+      seeker_name: seeker?.full_name ?? 'Someone',
+      provider_name: provider?.full_name ?? 'Someone',
+    }
+  })
+  return res.json({ requests })
 })
 
 // ── Quests ────────────────────────────────────────────────────────────────────

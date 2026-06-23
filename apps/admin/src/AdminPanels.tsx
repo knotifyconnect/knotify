@@ -295,30 +295,75 @@ export function EventsAdmin() {
 // ── Gigs ──────────────────────────────────────────────────────────────────────
 export function GigsAdmin() {
   const [gigs, setGigs] = useState<any[]>([])
-  const load = useCallback(async () => { setGigs((await api.gigs()).gigs) }, [])
+  const [requests, setRequests] = useState<any[]>([])
+  const [view, setView] = useState<'gigs' | 'requests'>('gigs')
+  const load = useCallback(async () => {
+    const [g, r] = await Promise.all([api.gigs(), api.gigRequests()])
+    setGigs(g.gigs); setRequests(r.requests)
+  }, [])
   useEffect(() => { void load() }, [load])
 
   async function toggle(g: any) { await api.updateGig(g.id, g.status === 'open' ? 'closed' : 'open'); await load() }
-  async function remove(id: string) { if (!confirm('Delete this gig?')) return; await api.deleteGig(id); await load() }
+  async function feature(g: any) { await api.setGigFeatured(g.id, !g.is_featured); await load() }
+  async function remove(id: string) { if (!confirm('Delete this gig? Its requests will also be removed.')) return; await api.deleteGig(id); await load() }
+
+  const statusColor: Record<string, string> = {
+    pending: C.ochre, accepted: C.verd, completed: C.verd, declined: C.signal, cancelled: C.inkFaint,
+  }
 
   return (
     <div>
-      <h2 style={h2}>Gigs</h2>
-      <div style={{ display: 'grid', gap: 10 }}>
-        {gigs.map(g => (
-          <div key={g.id} style={{ ...rowCard, display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{g.title}</div>
-              <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>
-                {g.provider_name} · {g.provider_credibility} cred · {g.reward_type}{g.price_eur ? ` €${g.price_eur}` : ''} · {g.status}
-              </div>
-            </div>
-            <button style={ghostBtn} onClick={() => toggle(g)}>{g.status === 'open' ? 'Close' : 'Reopen'}</button>
-            <button style={ghostBtn} onClick={() => remove(g.id)}>Delete</button>
-          </div>
-        ))}
-        {gigs.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No gigs yet.</div>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <h2 style={{ ...h2, margin: 0 }}>Gigs</h2>
+        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+          {(['gigs', 'requests'] as const).map(v => (
+            <button key={v} onClick={() => setView(v)} style={{
+              padding: '6px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+              border: `0.5px solid ${view === v ? C.signal : C.rule}`,
+              background: view === v ? C.signal : 'transparent',
+              color: view === v ? '#fff' : C.inkMuted,
+            }}>{v === 'gigs' ? `Offers (${gigs.length})` : `Requests (${requests.length})`}</button>
+          ))}
+        </div>
       </div>
+
+      {view === 'gigs' ? (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {gigs.map(g => (
+            <div key={g.id} style={{ ...rowCard, display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>
+                  {g.is_featured && <span style={{ color: C.ochre, marginRight: 6 }}>★</span>}{g.title}
+                </div>
+                <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>
+                  {g.provider_name} · {g.provider_credibility} cred · {g.reward_type}{g.price_eur ? ` €${g.price_eur}` : ''} · {g.status}
+                  {' · '}{g.active_request_count ?? 0} active / {g.total_request_count ?? 0} total req
+                </div>
+              </div>
+              <button style={ghostBtn} onClick={() => feature(g)}>{g.is_featured ? 'Unfeature' : 'Feature'}</button>
+              <button style={ghostBtn} onClick={() => toggle(g)}>{g.status === 'open' ? 'Close' : 'Reopen'}</button>
+              <button style={ghostBtn} onClick={() => remove(g.id)}>Delete</button>
+            </div>
+          ))}
+          {gigs.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No gigs yet.</div>}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {requests.map(r => (
+            <div key={r.id} style={{ ...rowCard, display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{r.gig_title}</div>
+                <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>
+                  {r.seeker_name} → {r.provider_name}{r.price_eur ? ` · €${r.price_eur}` : ''}
+                  {r.message ? ` · "${r.message}"` : ''}
+                </div>
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: statusColor[r.status] ?? C.inkMuted, textTransform: 'capitalize' }}>{r.status}</span>
+            </div>
+          ))}
+          {requests.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No requests yet.</div>}
+        </div>
+      )}
     </div>
   )
 }
