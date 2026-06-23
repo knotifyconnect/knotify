@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { KnotForceGraph, type KnotGraphNode, type KnotGraphPeerEdge, type KnotHealthState } from '../components/knot/KnotForceGraph'
-import { KnotMobileGraph, MobileBottomSheet } from '../components/knot/KnotMobileGraph'
+import { KnotMobileGraph, MobileBottomSheet, MobileNodeOverlay, type MeNode } from '../components/knot/KnotMobileGraph'
 
 type UserStatus = 'studying' | 'open_to_work' | 'employed' | string
 type ConnectionStatus = 'pending' | 'accepted' | 'declined'
@@ -256,6 +256,14 @@ export function MapPage() {
   const [requestFeedback, setRequestFeedback] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isMobileTop, setIsMobileTop] = useState(() => window.innerWidth < 768)
+  const [networkSheetOpen, setNetworkSheetOpen] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const h = (e: MediaQueryListEvent) => setIsMobileTop(e.matches)
+    mq.addEventListener('change', h)
+    return () => mq.removeEventListener('change', h)
+  }, [])
   const [healthByUserId, setHealthByUserId] = useState<Map<string, KnotHealthState>>(new Map())
   const [accepting, setAccepting] = useState<Record<string, boolean>>({})
   const [removing, setRemoving] = useState<Record<string, boolean>>({})
@@ -547,6 +555,68 @@ export function MapPage() {
     }
   }
 
+  // Shared content rendered in both desktop inline section and mobile bottom sheet
+  function NetworkSectionContent() {
+    return (
+      <div style={{ padding: isMobileTop ? '0 12px 16px' : undefined }}>
+        <KCard style={{ padding: 10, marginBottom: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {RELATIONSHIP_TABS.map((tab) => {
+                  const count = tab === 'Incoming' ? incoming.length : tab === 'Sent' ? sent.length : connected.length
+                  const sel = activeTab === tab
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => { setSelectedConnectionId(null); setActiveTab(tab) }}
+                      style={{
+                        border: sel ? '0.5px solid var(--ink)' : '0.5px solid var(--rule)',
+                        background: sel ? 'var(--ink)' : 'var(--paper)',
+                        color: sel ? 'var(--paper)' : 'var(--ink-muted)',
+                        borderRadius: 999, padding: '7px 11px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >
+                      {tab === 'Connected' ? 'In your knot' : tab} ({count})
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                Showing {activeRows.length} result{activeRows.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            {/* Search + filters — simplified for mobile */}
+            <div style={{
+              padding: '7px 10px', borderRadius: 12, border: '0.5px solid var(--rule)',
+              background: 'var(--paper-soft)', display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>Search</span>
+              <input
+                value={query}
+                onChange={(e) => { setSelectedConnectionId(null); setQuery(e.target.value) }}
+                placeholder="Name, city, university..."
+                style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontFamily: "'IBM Plex Sans', sans-serif" }}
+              />
+            </div>
+          </div>
+        </KCard>
+        {activeRows.length === 0 ? (
+          <KCard style={{ padding: 36, textAlign: 'center', color: 'var(--ink-faint)', fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic' }}>
+            No {activeTab === 'Connected' ? 'connections' : activeTab === 'Incoming' ? 'requests' : 'sent requests'} yet.
+          </KCard>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {activeRows.map((connection) => (
+              <RelationshipCard key={connection.id} connection={connection} tab={activeTab} />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   function RelationshipCard({ connection, tab }: { connection: Connection; tab: RelationshipTab }) {
     const user = connection.user
     const userId = otherUserId(connection, meId)
@@ -741,159 +811,16 @@ export function MapPage() {
           healthByUserId={healthByUserId}
         />
 
-        <section style={{ marginTop: 18 }}>
-          <KCard style={{ padding: 10, marginBottom: 10 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                  {RELATIONSHIP_TABS.map((tab) => {
-                    const count = tab === 'Incoming' ? incoming.length : tab === 'Sent' ? sent.length : connected.length
-                    const selected = activeTab === tab
-
-                    return (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => {
-                          setSelectedConnectionId(null)
-                          setActiveTab(tab)
-                        }}
-                        style={{
-                          border: selected ? '0.5px solid var(--ink)' : '0.5px solid var(--rule)',
-                          background: selected ? 'var(--ink)' : 'var(--paper)',
-                          color: selected ? 'var(--paper)' : 'var(--ink-muted)',
-                          borderRadius: 999,
-                          padding: '7px 11px',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {tab === 'Connected' ? 'In your knot' : tab} ({count})
-                      </button>
-                    )
-                  })}
-                </div>
-
-                <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
-                  Showing {activeRows.length} result{activeRows.length === 1 ? '' : 's'}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <div
-                  style={{
-                    minWidth: 260,
-                    flex: '1 1 360px',
-                    padding: '7px 10px',
-                    borderRadius: 12,
-                    border: '0.5px solid var(--rule)',
-                    background: 'var(--paper-soft)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                >
-                  <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>Search</span>
-                  <input
-                    value={query}
-                    onChange={(event) => {
-                      setSelectedConnectionId(null)
-                      setQuery(event.target.value)
-                    }}
-                    placeholder="Name, city, university, company, status..."
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      border: 'none',
-                      outline: 'none',
-                      background: 'transparent',
-                      color: 'var(--ink)',
-                      fontSize: 13,
-                      fontFamily: "'IBM Plex Sans', sans-serif",
-                    }}
-                  />
-                </div>
-
-                {STATUS_FILTERS.map((filter) => {
-                  const selected = statusFilter === filter.value
-
-                  return (
-                    <button
-                      key={filter.value}
-                      type="button"
-                      onClick={() => {
-                        setSelectedConnectionId(null)
-                        setStatusFilter(filter.value)
-                      }}
-                      style={{
-                        border: selected ? '0.5px solid var(--ink)' : '0.5px solid var(--rule)',
-                        background: selected ? 'var(--ink)' : 'var(--paper)',
-                        color: selected ? 'var(--paper)' : 'var(--ink-muted)',
-                        borderRadius: 999,
-                        padding: '7px 10px',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {filter.label}
-                    </button>
-                  )
-                })}
-
-                {(query || selectedConnectionId || statusFilter !== 'All') && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedConnectionId(null)
-                      setQuery('')
-                      setStatusFilter('All')
-                    }}
-                    style={{
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'var(--ink-faint)',
-                      cursor: 'pointer',
-                      fontSize: 12,
-                    }}
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
-            </div>
-          </KCard>
-
-          {loading ? (
-            <KCard style={{ padding: 38, textAlign: 'center', color: 'var(--ink-faint)', fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic' }}>
-              Loading Your Knot...
-            </KCard>
-          ) : activeRows.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 14, alignItems: 'stretch' }}>
-              {activeRows.map((connection) => (
-                <RelationshipCard key={`${activeTab}-${connection.id}`} connection={connection} tab={activeTab} />
-              ))}
-            </div>
-          ) : (
-            <KCard style={{ padding: 42, textAlign: 'center' }}>
-              <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 24, fontStyle: 'italic', color: 'var(--ink)', marginBottom: 8 }}>
-                {empty.title}
-              </div>
-              <div style={{ fontSize: 14, color: 'var(--ink-muted)', maxWidth: 460, margin: '0 auto', lineHeight: 1.55 }}>
-                {empty.body}
-              </div>
-
-              {!hasAnyRelationship && activeTab === 'Connected' && (
-                <div style={{ marginTop: 18 }}>
-                  <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>
-                    Start from Discover
-                  </KBtn>
-                </div>
-              )}
-            </KCard>
-          )}
-        </section>
+        {/* Network list — bottom sheet on mobile, inline section on desktop */}
+        {isMobileTop ? (
+          <MobileBottomSheet open={true} defaultHeight={320} peekHeight={56}>
+            <NetworkSectionContent />
+          </MobileBottomSheet>
+        ) : (
+          <section style={{ marginTop: 18 }}>
+            <NetworkSectionContent />
+          </section>
+        )}
 
         {maintenanceItems.length > 0 && (
           <section style={{ marginTop: 18 }}>
@@ -1289,7 +1216,7 @@ function KnotStage({
               Start from Discover. Once relationships exist, the knot becomes visible here.
             </div>
           ) : isMobile ? (
-            /* ── Mobile: clean SVG graph + portal bottom sheet ── */
+            /* ── Mobile: SVG graph + node overlay card ── */
             <>
               <KnotMobileGraph
                 me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
@@ -1303,7 +1230,7 @@ function KnotStage({
                 }}
                 onClearSelection={onClear}
               />
-              <MobileBottomSheet
+              <MobileNodeOverlay
                 open={!!(selectedConnection || selectedSecondDegreeUser)}
                 onClose={onClear}
               >
@@ -1337,7 +1264,7 @@ function KnotStage({
                     onViewProfile={() => onViewProfile(selectedSecondDegreeUser.id)}
                   />
                 ) : null}
-              </MobileBottomSheet>
+              </MobileNodeOverlay>
             </>
           ) : (
             /* ── Desktop: original force graph ── */
