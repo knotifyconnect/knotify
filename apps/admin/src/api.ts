@@ -1,16 +1,8 @@
 const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000').replace(/\/$/, '')
 
-export function getSecret() {
-  return sessionStorage.getItem('admin_secret') ?? ''
-}
-
-export function setSecret(s: string) {
-  sessionStorage.setItem('admin_secret', s)
-}
-
-export function clearSecret() {
-  sessionStorage.removeItem('admin_secret')
-}
+export function getSecret() { return sessionStorage.getItem('admin_secret') ?? '' }
+export function setSecret(s: string) { sessionStorage.setItem('admin_secret', s) }
+export function clearSecret() { sessionStorage.removeItem('admin_secret') }
 
 async function request(path: string, options: RequestInit = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -27,21 +19,35 @@ async function request(path: string, options: RequestInit = {}) {
   return data
 }
 
+async function uploadRequest(path: string, file: File) {
+  const fd = new FormData()
+  fd.append('image', file)
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'x-admin-secret': getSecret() },
+    body: fd,
+  })
+  if (res.status === 401) throw new Error('UNAUTHORIZED')
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error ?? 'Upload failed')
+  return data
+}
+
 export const api = {
   stats: () => request('/api/admin-panel/stats'),
 
   betaSignups: (status?: string) =>
     request(`/api/admin-panel/beta-signups${status ? `?status=${status}` : ''}`),
-
   updateSignup: (id: string, status: 'approved' | 'rejected' | 'pending') =>
-    request(`/api/admin-panel/beta-signups/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    }),
+    request(`/api/admin-panel/beta-signups/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+
+  // Image upload
+  uploadImage: (file: File) => uploadRequest('/api/admin-panel/upload', file),
 
   // Events
   events: () => request('/api/admin-panel/events'),
   createEvent: (body: unknown) => request('/api/admin-panel/events', { method: 'POST', body: JSON.stringify(body) }),
+  updateEvent: (id: string, body: unknown) => request(`/api/admin-panel/events/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteEvent: (id: string) => request(`/api/admin-panel/events/${id}`, { method: 'DELETE' }),
 
   // Gigs

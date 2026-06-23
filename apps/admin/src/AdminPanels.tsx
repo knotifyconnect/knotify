@@ -1,14 +1,15 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from './api'
 
 const C = {
   signal: '#D8442B', ink: '#1a1410', inkMuted: '#6b5f55', inkFaint: '#a09287',
-  paper: '#f5f0e8', paperSoft: '#ede8df', rule: 'rgba(84,72,58,0.14)', white: '#fff', verd: '#2d7d46',
+  paper: '#f5f0e8', paperSoft: '#ede8df', rule: 'rgba(84,72,58,0.14)',
+  white: '#fff', verd: '#2d7d46', ochre: '#b8820f',
 }
 
-const input: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 8, border: `0.5px solid ${C.rule}`,
-  background: C.paper, fontSize: 14, color: C.ink, outline: 'none', boxSizing: 'border-box',
+const inp: React.CSSProperties = {
+  width: '100%', padding: '9px 11px', borderRadius: 8, border: `0.5px solid ${C.rule}`,
+  background: C.paper, fontSize: 13.5, color: C.ink, outline: 'none', boxSizing: 'border-box',
   fontFamily: 'IBM Plex Sans, sans-serif',
 }
 const primaryBtn: React.CSSProperties = {
@@ -16,28 +17,126 @@ const primaryBtn: React.CSSProperties = {
   fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif',
 }
 const ghostBtn: React.CSSProperties = {
-  padding: '6px 12px', borderRadius: 6, border: `0.5px solid ${C.rule}`, background: 'transparent',
+  padding: '6px 11px', borderRadius: 6, border: `0.5px solid ${C.rule}`, background: 'transparent',
   color: C.inkMuted, fontSize: 12, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif',
 }
+const editBtn: React.CSSProperties = { ...ghostBtn, color: C.ochre, borderColor: C.ochre }
 const cardWrap: React.CSSProperties = {
   background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 14, padding: 18, marginBottom: 16,
 }
 const rowCard: React.CSSProperties = {
   background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 12, padding: '14px 16px',
-  display: 'flex', alignItems: 'center', gap: 14,
 }
 const h2: React.CSSProperties = {
   fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 400, letterSpacing: '-0.02em', margin: '0 0 14px',
 }
+const fieldLabel: React.CSSProperties = {
+  fontSize: 11, color: C.inkMuted, textTransform: 'uppercase', letterSpacing: '0.06em',
+  fontWeight: 600, marginBottom: 4, display: 'block', fontFamily: 'IBM Plex Sans, sans-serif',
+}
+const fieldGroup: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3 }
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function toLocal(iso: string | null | undefined) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-// ── Events ──────────────────────────────────────────────────────────────────
+// ── Image upload widget ───────────────────────────────────────────────────────
+function ImageUploader({ value, onChange }: { value: string; onChange: (url: string) => void }) {
+  const [uploading, setUploading] = useState(false)
+  const [err, setErr] = useState('')
+  const ref = useRef<HTMLInputElement>(null)
+
+  async function pick(file: File) {
+    setUploading(true); setErr('')
+    try {
+      const { url } = await api.uploadImage(file)
+      onChange(url)
+    } catch (e: any) { setErr(e.message) }
+    finally { setUploading(false) }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          style={{ ...inp, flex: 1 }}
+          placeholder="https://… paste image URL or upload below"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+        />
+        <button type="button" onClick={() => ref.current?.click()}
+          style={{ ...ghostBtn, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {uploading ? 'Uploading…' : 'Upload file'}
+        </button>
+        <input ref={ref} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; if (f) pick(f); e.target.value = '' }} />
+      </div>
+      {err && <div style={{ fontSize: 12, color: C.signal }}>{err}</div>}
+      {value && (
+        <img src={value} alt="preview"
+          style={{ height: 80, width: 'auto', borderRadius: 8, objectFit: 'cover', border: `0.5px solid ${C.rule}` }}
+          onError={() => {}} />
+      )}
+    </div>
+  )
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+const EVENT_TYPES = ['networking', 'social', 'sports', 'music', 'career', 'workshop', 'outdoor', 'party']
+
+type EventForm = {
+  title: string; description: string; location: string; startsAt: string; endsAt: string
+  url: string; hostLabel: string; imageUrl: string; eventType: string
+  capacity: string; priceEur: string
+}
+
+const emptyEvent: EventForm = {
+  title: '', description: '', location: '', startsAt: '', endsAt: '',
+  url: '', hostLabel: '', imageUrl: '', eventType: '', capacity: '', priceEur: '',
+}
+
+function eventToForm(ev: any): EventForm {
+  return {
+    title: ev.title ?? '',
+    description: ev.description ?? '',
+    location: ev.location ?? '',
+    startsAt: toLocal(ev.starts_at),
+    endsAt: toLocal(ev.ends_at),
+    url: ev.url ?? '',
+    hostLabel: ev.host_label ?? '',
+    imageUrl: ev.image_url ?? '',
+    eventType: ev.event_type ?? '',
+    capacity: ev.capacity != null ? String(ev.capacity) : '',
+    priceEur: ev.price_eur != null ? String(ev.price_eur) : '',
+  }
+}
+
+function formToEventPayload(f: EventForm) {
+  return {
+    title: f.title,
+    description: f.description || undefined,
+    location: f.location || undefined,
+    startsAt: f.startsAt,
+    endsAt: f.endsAt || undefined,
+    url: f.url || undefined,
+    hostLabel: f.hostLabel || undefined,
+    imageUrl: f.imageUrl || undefined,
+    eventType: f.eventType || undefined,
+    capacity: f.capacity ? Number(f.capacity) : undefined,
+    priceEur: f.priceEur !== '' ? Number(f.priceEur) : undefined,
+  }
+}
+
 export function EventsAdmin() {
   const [events, setEvents] = useState<any[]>([])
-  const [form, setForm] = useState({ title: '', startsAt: '', location: '', url: '', hostLabel: '', description: '' })
+  const [form, setForm] = useState<EventForm>(emptyEvent)
+  const [editId, setEditId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
@@ -46,50 +145,145 @@ export function EventsAdmin() {
   }, [])
   useEffect(() => { void load() }, [load])
 
-  async function create(e: React.FormEvent) {
+  function startEdit(ev: any) {
+    setEditId(ev.id)
+    setForm(eventToForm(ev))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  function cancelEdit() { setEditId(null); setForm(emptyEvent) }
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setErr('')
     try {
-      await api.createEvent(form)
-      setForm({ title: '', startsAt: '', location: '', url: '', hostLabel: '', description: '' })
+      if (editId) {
+        await api.updateEvent(editId, formToEventPayload(form))
+        setEditId(null)
+      } else {
+        await api.createEvent(formToEventPayload(form))
+      }
+      setForm(emptyEvent)
       await load()
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
+
   async function remove(id: string) {
     if (!confirm('Delete this event?')) return
     await api.deleteEvent(id); await load()
   }
 
+  const f = form
+  const set = (k: keyof EventForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm(prev => ({ ...prev, [k]: e.target.value }))
+
   return (
     <div>
-      <h2 style={h2}>Curate a Munich event</h2>
-      <form onSubmit={create} style={{ ...cardWrap, display: 'grid', gap: 10 }}>
-        <input required placeholder="Title" style={input} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <input required type="datetime-local" style={{ ...input, flex: 1, minWidth: 180 }} value={form.startsAt} onChange={e => setForm({ ...form, startsAt: e.target.value })} />
-          <input placeholder="Location" style={{ ...input, flex: 1, minWidth: 180 }} value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} />
+      <h2 style={h2}>{editId ? 'Edit event' : 'Create event'}</h2>
+
+      <form onSubmit={submit} style={{ ...cardWrap, display: 'grid', gap: 12 }}>
+        {editId && (
+          <div style={{ padding: '6px 10px', borderRadius: 6, background: '#fff3cd', border: '0.5px solid #d4a700', fontSize: 12, color: '#7a5500' }}>
+            Editing existing event — save to apply changes.
+            <button type="button" onClick={cancelEdit} style={{ marginLeft: 12, background: 'none', border: 'none', color: C.signal, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Cancel</button>
+          </div>
+        )}
+
+        {/* Row 1: title */}
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Title *</label>
+          <input required style={inp} placeholder="TUM x Industry Night" value={f.title} onChange={set('title')} />
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <input placeholder="Source / host label (e.g. Stadt München)" style={{ ...input, flex: 1, minWidth: 180 }} value={form.hostLabel} onChange={e => setForm({ ...form, hostLabel: e.target.value })} />
-          <input placeholder="Link (optional)" style={{ ...input, flex: 1, minWidth: 180 }} value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} />
+
+        {/* Row 2: starts / ends */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Starts *</label>
+            <input required type="datetime-local" style={inp} value={f.startsAt} onChange={set('startsAt')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Ends</label>
+            <input type="datetime-local" style={inp} value={f.endsAt} onChange={set('endsAt')} />
+          </div>
         </div>
-        <textarea placeholder="Description" rows={2} style={{ ...input, resize: 'vertical' }} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+
+        {/* Row 3: location / type */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Location</label>
+            <input style={inp} placeholder="Audimax, TUM Garching" value={f.location} onChange={set('location')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Event type</label>
+            <select style={inp} value={f.eventType} onChange={set('eventType')}>
+              <option value="">— select —</option>
+              {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Row 4: host label / URL */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Host / organiser</label>
+            <input style={inp} placeholder="Stadt München, TU München…" value={f.hostLabel} onChange={set('hostLabel')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Link</label>
+            <input style={inp} placeholder="https://eventbrite.com/…" value={f.url} onChange={set('url')} />
+          </div>
+        </div>
+
+        {/* Row 5: capacity / price */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Capacity</label>
+            <input type="number" min={0} style={inp} placeholder="e.g. 50" value={f.capacity} onChange={set('capacity')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Price (€) — 0 for free</label>
+            <input type="number" min={0} style={inp} placeholder="0" value={f.priceEur} onChange={set('priceEur')} />
+          </div>
+        </div>
+
+        {/* Row 6: description */}
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Description</label>
+          <textarea rows={3} style={{ ...inp, resize: 'vertical' }} placeholder="What is this event about?" value={f.description} onChange={set('description')} />
+        </div>
+
+        {/* Row 7: image */}
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Cover image</label>
+          <ImageUploader value={f.imageUrl} onChange={url => setForm(prev => ({ ...prev, imageUrl: url }))} />
+        </div>
+
         {err && <div style={{ color: C.signal, fontSize: 13 }}>{err}</div>}
-        <button type="submit" disabled={busy} style={{ ...primaryBtn, justifySelf: 'start' }}>{busy ? 'Adding…' : 'Add event'}</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Saving…' : editId ? 'Save changes' : 'Add event'}</button>
+          {editId && <button type="button" onClick={cancelEdit} style={ghostBtn}>Cancel</button>}
+        </div>
       </form>
 
       <div style={{ display: 'grid', gap: 10 }}>
         {events.map(ev => (
           <div key={ev.id} style={rowCard}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{ev.title}</div>
-              <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>
-                {fmtDate(ev.starts_at)}{ev.location ? ` · ${ev.location}` : ''}
-                <span style={{ marginLeft: 8, padding: '1px 7px', borderRadius: 999, background: ev.source === 'curated' ? 'rgba(216,68,43,0.1)' : C.paperSoft, color: ev.source === 'curated' ? C.signal : C.inkMuted, fontSize: 10.5 }}>
-                  {ev.source === 'curated' ? 'Curated' : 'Peer'}
-                </span>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              {ev.image_url && (
+                <img src={ev.image_url} alt="" style={{ width: 60, height: 60, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{ev.title}</div>
+                <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>
+                  {fmtDate(ev.starts_at)}{ev.location ? ` · ${ev.location}` : ''}
+                  {ev.event_type && <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: C.paperSoft, fontSize: 10.5 }}>{ev.event_type}</span>}
+                  {ev.price_eur != null && <span style={{ marginLeft: 6 }}>{ev.price_eur === 0 ? 'Free' : `€${ev.price_eur}`}</span>}
+                </div>
+                {ev.description && <div style={{ fontSize: 12, color: C.inkFaint, marginTop: 4, lineHeight: 1.4 }}>{ev.description.slice(0, 120)}{ev.description.length > 120 ? '…' : ''}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button style={editBtn} onClick={() => startEdit(ev)}>Edit</button>
+                <button style={ghostBtn} onClick={() => remove(ev.id)}>Delete</button>
               </div>
             </div>
-            <button style={ghostBtn} onClick={() => remove(ev.id)}>Delete</button>
           </div>
         ))}
         {events.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No events yet.</div>}
@@ -98,7 +292,7 @@ export function EventsAdmin() {
   )
 }
 
-// ── Gigs ────────────────────────────────────────────────────────────────────
+// ── Gigs ──────────────────────────────────────────────────────────────────────
 export function GigsAdmin() {
   const [gigs, setGigs] = useState<any[]>([])
   const load = useCallback(async () => { setGigs((await api.gigs()).gigs) }, [])
@@ -112,7 +306,7 @@ export function GigsAdmin() {
       <h2 style={h2}>Gigs</h2>
       <div style={{ display: 'grid', gap: 10 }}>
         {gigs.map(g => (
-          <div key={g.id} style={rowCard}>
+          <div key={g.id} style={{ ...rowCard, display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{g.title}</div>
               <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>
@@ -129,62 +323,238 @@ export function GigsAdmin() {
   )
 }
 
-// ── Quests ──────────────────────────────────────────────────────────────────
+// ── Quests ────────────────────────────────────────────────────────────────────
 const ICON_OPTIONS = ['sparkles', 'coffee', 'heart-handshake', 'party', 'map', 'languages', 'croissant', 'gift', 'target', 'camera', 'palette', 'globe', 'handshake', 'users']
-const CAT_OPTIONS = ['social', 'explore', 'give', 'profile', 'network']
+const CAT_OPTIONS  = ['social', 'explore', 'give', 'profile', 'network']
+const DIFF_OPTIONS = ['easy', 'medium', 'hard']
+
+type QuestForm = {
+  title: string; description: string; points: string; category: string; icon: string
+  startsAt: string; endsAt: string; howTo: string; whereToGo: string
+  difficulty: string; estimatedMinutes: string; partnerRequired: boolean
+  type: string; active: boolean
+}
+
+const emptyQuest: QuestForm = {
+  title: '', description: '', points: '20', category: 'social', icon: 'sparkles',
+  startsAt: '', endsAt: '', howTo: '', whereToGo: '',
+  difficulty: '', estimatedMinutes: '', partnerRequired: false,
+  type: 'self', active: true,
+}
+
+function questToForm(q: any): QuestForm {
+  return {
+    title: q.title ?? '',
+    description: q.description ?? '',
+    points: String(q.points ?? 20),
+    category: q.category ?? 'social',
+    icon: q.icon ?? 'sparkles',
+    startsAt: toLocal(q.starts_at),
+    endsAt: toLocal(q.ends_at),
+    howTo: q.how_to ?? '',
+    whereToGo: q.where_to_go ?? '',
+    difficulty: q.difficulty ?? '',
+    estimatedMinutes: q.estimated_minutes != null ? String(q.estimated_minutes) : '',
+    partnerRequired: !!q.partner_required,
+    type: q.type ?? 'self',
+    active: q.active !== false,
+  }
+}
+
+function formToQuestPayload(f: QuestForm) {
+  return {
+    title: f.title,
+    description: f.description || undefined,
+    points: Number(f.points) || 10,
+    category: f.category,
+    icon: f.icon,
+    startsAt: f.startsAt || undefined,
+    endsAt: f.endsAt || undefined,
+    howTo: f.howTo || undefined,
+    whereToGo: f.whereToGo || undefined,
+    difficulty: f.difficulty || undefined,
+    estimatedMinutes: f.estimatedMinutes ? Number(f.estimatedMinutes) : undefined,
+    partnerRequired: f.partnerRequired,
+    type: f.type,
+    active: f.active,
+  }
+}
 
 export function QuestsAdmin() {
   const [quests, setQuests] = useState<any[]>([])
-  const [form, setForm] = useState({ title: '', description: '', points: 20, category: 'social', icon: 'sparkles', startsAt: '', endsAt: '' })
+  const [form, setForm] = useState<QuestForm>(emptyQuest)
+  const [editId, setEditId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   const load = useCallback(async () => { setQuests((await api.quests()).quests) }, [])
   useEffect(() => { void load() }, [load])
 
-  async function create(e: React.FormEvent) {
+  function startEdit(q: any) {
+    setEditId(q.id)
+    setForm(questToForm(q))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  function cancelEdit() { setEditId(null); setForm(emptyQuest) }
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setErr('')
     try {
-      await api.createQuest(form)
-      setForm({ title: '', description: '', points: 20, category: 'social', icon: 'sparkles', startsAt: '', endsAt: '' })
+      if (editId) {
+        await api.updateQuest(editId, formToQuestPayload(form))
+        setEditId(null)
+      } else {
+        await api.createQuest(formToQuestPayload(form))
+      }
+      setForm(emptyQuest)
       await load()
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
+
   async function toggle(q: any) { await api.updateQuest(q.id, { active: !q.active }); await load() }
   async function remove(id: string) { if (!confirm('Delete this quest?')) return; await api.deleteQuest(id); await load() }
 
+  const f = form
+  const set = (k: keyof QuestForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm(prev => ({ ...prev, [k]: e.target.value }))
+  const setBool = (k: keyof QuestForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(prev => ({ ...prev, [k]: e.target.checked }))
+
   return (
     <div>
-      <h2 style={h2}>Create a side quest</h2>
-      <form onSubmit={create} style={{ ...cardWrap, display: 'grid', gap: 10 }}>
-        <input required placeholder="Title (e.g. Try a new biergarten)" style={input} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
-        <textarea placeholder="Description" rows={2} style={{ ...input, resize: 'vertical' }} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <input type="number" min={0} placeholder="Points" style={{ ...input, width: 100 }} value={form.points} onChange={e => setForm({ ...form, points: Number(e.target.value) })} />
-          <select style={{ ...input, flex: 1, minWidth: 120 }} value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-            {CAT_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select style={{ ...input, flex: 1, minWidth: 120 }} value={form.icon} onChange={e => setForm({ ...form, icon: e.target.value })}>
-            {ICON_OPTIONS.map(i => <option key={i} value={i}>{i}</option>)}
-          </select>
+      <h2 style={h2}>{editId ? 'Edit quest' : 'Create quest'}</h2>
+
+      <form onSubmit={submit} style={{ ...cardWrap, display: 'grid', gap: 12 }}>
+        {editId && (
+          <div style={{ padding: '6px 10px', borderRadius: 6, background: '#fff3cd', border: '0.5px solid #d4a700', fontSize: 12, color: '#7a5500' }}>
+            Editing existing quest — save to apply changes.
+            <button type="button" onClick={cancelEdit} style={{ marginLeft: 12, background: 'none', border: 'none', color: C.signal, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Cancel</button>
+          </div>
+        )}
+
+        {/* Title */}
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Title *</label>
+          <input required style={inp} placeholder="Try a new biergarten" value={f.title} onChange={set('title')} />
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <label style={{ fontSize: 12, color: C.inkMuted }}>Starts (optional) <input type="datetime-local" style={{ ...input, width: 'auto' }} value={form.startsAt} onChange={e => setForm({ ...form, startsAt: e.target.value })} /></label>
-          <label style={{ fontSize: 12, color: C.inkMuted }}>Ends (optional) <input type="datetime-local" style={{ ...input, width: 'auto' }} value={form.endsAt} onChange={e => setForm({ ...form, endsAt: e.target.value })} /></label>
+
+        {/* Description */}
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Description</label>
+          <textarea rows={2} style={{ ...inp, resize: 'vertical' }} placeholder="Short description shown on the quest card" value={f.description} onChange={set('description')} />
         </div>
+
+        {/* Points / category / icon / type */}
+        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Points</label>
+            <input type="number" min={0} style={inp} value={f.points} onChange={set('points')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Category</label>
+            <select style={inp} value={f.category} onChange={set('category')}>
+              {CAT_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Icon</label>
+            <select style={inp} value={f.icon} onChange={set('icon')}>
+              {ICON_OPTIONS.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Type</label>
+            <select style={inp} value={f.type} onChange={set('type')}>
+              <option value="self">Self (photo proof)</option>
+              <option value="verified">Verified (auto)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Difficulty / time / partner */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Difficulty</label>
+            <select style={inp} value={f.difficulty} onChange={set('difficulty')}>
+              <option value="">— none —</option>
+              {DIFF_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Est. time (min)</label>
+            <input type="number" min={0} style={inp} placeholder="e.g. 30" value={f.estimatedMinutes} onChange={set('estimatedMinutes')} />
+          </div>
+          <div style={{ ...fieldGroup, justifyContent: 'flex-end' }}>
+            <label style={fieldLabel}>Options</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.ink, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+              <input type="checkbox" checked={f.partnerRequired} onChange={setBool('partnerRequired')} />
+              Partner required
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.ink, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif', marginTop: 6 }}>
+              <input type="checkbox" checked={f.active} onChange={setBool('active')} />
+              Active
+            </label>
+          </div>
+        </div>
+
+        {/* How to complete */}
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>How to complete</label>
+          <textarea rows={3} style={{ ...inp, resize: 'vertical' }} placeholder="Step-by-step instructions shown in the quest detail modal" value={f.howTo} onChange={set('howTo')} />
+        </div>
+
+        {/* Where to go */}
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Where to go</label>
+          <textarea rows={2} style={{ ...inp, resize: 'vertical' }} placeholder="Location guidance or note (e.g. any knotify partner cafe)" value={f.whereToGo} onChange={set('whereToGo')} />
+        </div>
+
+        {/* Date window */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Starts (optional)</label>
+            <input type="datetime-local" style={inp} value={f.startsAt} onChange={set('startsAt')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Ends (optional)</label>
+            <input type="datetime-local" style={inp} value={f.endsAt} onChange={set('endsAt')} />
+          </div>
+        </div>
+
         {err && <div style={{ color: C.signal, fontSize: 13 }}>{err}</div>}
-        <button type="submit" disabled={busy} style={{ ...primaryBtn, justifySelf: 'start' }}>{busy ? 'Creating…' : 'Create quest'}</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Saving…' : editId ? 'Save changes' : 'Create quest'}</button>
+          {editId && <button type="button" onClick={cancelEdit} style={ghostBtn}>Cancel</button>}
+        </div>
       </form>
 
       <div style={{ display: 'grid', gap: 10 }}>
         {quests.map(q => (
           <div key={q.id} style={{ ...rowCard, opacity: q.active ? 1 : 0.55 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{q.title} <span style={{ color: C.signal, fontWeight: 600 }}>+{q.points}</span></div>
-              <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>{q.category} · {q.icon}{q.active ? '' : ' · inactive'}</div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>
+                  {q.title} <span style={{ color: C.signal, fontWeight: 600 }}>+{q.points}</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>
+                  {q.category} · {q.icon} · {q.type ?? 'self'}
+                  {q.difficulty && ` · ${q.difficulty}`}
+                  {q.estimated_minutes && ` · ~${q.estimated_minutes}min`}
+                  {q.partner_required && ' · partner required'}
+                  {!q.active && ' · inactive'}
+                </div>
+                {q.how_to && (
+                  <div style={{ fontSize: 11.5, color: C.inkFaint, marginTop: 4, lineHeight: 1.4 }}>
+                    {q.how_to.slice(0, 100)}{q.how_to.length > 100 ? '…' : ''}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button style={editBtn} onClick={() => startEdit(q)}>Edit</button>
+                <button style={ghostBtn} onClick={() => toggle(q)}>{q.active ? 'Disable' : 'Enable'}</button>
+                <button style={ghostBtn} onClick={() => remove(q.id)}>Delete</button>
+              </div>
             </div>
-            <button style={ghostBtn} onClick={() => toggle(q)}>{q.active ? 'Disable' : 'Enable'}</button>
-            <button style={ghostBtn} onClick={() => remove(q.id)}>Delete</button>
           </div>
         ))}
         {quests.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No quests yet.</div>}

@@ -1,35 +1,58 @@
 import { Router } from 'express'
+import multer from 'multer'
 import { supabase } from '../lib.js'
 
 export const adminPanelRouter = Router()
 
-// Simple secret key auth — no user accounts needed
 function requirePanelSecret(req: any, res: any, next: any) {
   const secret = process.env.ADMIN_PANEL_SECRET
   if (!secret) return res.status(500).json({ error: 'Admin panel not configured.' })
-
   const auth = req.headers['x-admin-secret']
   if (auth !== secret) return res.status(401).json({ error: 'Unauthorized.' })
-
   next()
 }
 
 adminPanelRouter.use(requirePanelSecret)
 
-// ── Beta signups ──────────────────────────────────────────────────────────────
+// ── Image upload ──────────────────────────────────────────────────────────────
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } })
+const ADMIN_IMAGES_BUCKET = 'admin-images'
 
+async function ensureAdminBucket() {
+  const { data } = await supabase.storage.listBuckets()
+  if (!data?.find(b => b.name === ADMIN_IMAGES_BUCKET)) {
+    await supabase.storage.createBucket(ADMIN_IMAGES_BUCKET, {
+      public: true,
+      allowedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+    })
+  }
+}
+
+adminPanelRouter.post('/upload', upload.single('image'), async (req: any, res: any) => {
+  if (!req.file) return res.status(422).json({ error: 'No image file provided.' })
+  try {
+    await ensureAdminBucket()
+    const ext = req.file.mimetype === 'image/png' ? 'png' : req.file.mimetype === 'image/webp' ? 'webp' : 'jpg'
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+    const { error } = await supabase.storage.from(ADMIN_IMAGES_BUCKET).upload(path, req.file.buffer, {
+      contentType: req.file.mimetype,
+      upsert: false,
+    })
+    if (error) return res.status(500).json({ error: error.message })
+    const { data: pub } = supabase.storage.from(ADMIN_IMAGES_BUCKET).getPublicUrl(path)
+    return res.json({ url: pub.publicUrl })
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message ?? 'Upload failed.' })
+  }
+})
+
+// ── Beta signups ──────────────────────────────────────────────────────────────
 adminPanelRouter.get('/beta-signups', async (req, res) => {
   const status = req.query.status as string | undefined
-
-  let query = supabase
-    .from('beta_signups')
-    .select('*')
-    .order('created_at', { ascending: false })
-
+  let query = supabase.from('beta_signups').select('*').order('created_at', { ascending: false })
   if (status && ['pending', 'approved', 'rejected'].includes(status)) {
     query = query.eq('status', status)
   }
-
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
   return res.json({ signups: data ?? [] })
@@ -40,50 +63,58 @@ adminPanelRouter.patch('/beta-signups/:id', async (req, res) => {
   if (!['approved', 'rejected', 'pending'].includes(status)) {
     return res.status(422).json({ error: 'Invalid status.' })
   }
-
   const { data, error } = await supabase
-    .from('beta_signups')
-    .update({ status })
-    .eq('id', req.params.id)
-    .select('*')
-    .maybeSingle()
-
+    .from('beta_signups').update({ status }).eq('id', req.params.id).select('*').maybeSingle()
   if (error) return res.status(500).json({ error: error.message })
   if (!data) return res.status(404).json({ error: 'Signup not found.' })
   return res.json({ signup: data })
 })
 
-// ── Stats ─────────────────────────────────────────────────────────────────────
-
-// ── Events (curated Munich events + view peer events) ───────────────────────
+// ── Events ────────────────────────────────────────────────────────────────────
 adminPanelRouter.get('/events', async (_req, res) => {
   const { data, error } = await supabase
     .from('events')
-    .select('id, title, description, location, starts_at, source, url, host_label, host_id, created_at')
+    .select('id, title, description, location, starts_at, ends_at, source, url, host_label, image_url, event_type, capacity, price_eur, interests, created_at')
     .order('starts_at', { ascending: true })
   if (error) return res.status(500).json({ error: error.message })
   return res.json({ events: data ?? [] })
 })
 
+function parseEventBody(b: any) {
+  const patch: Record<string, unknown> = {}
+  if (b.title !== undefined)       patch.title       = String(b.title).trim()
+  if (b.description !== undefined) patch.description = b.description ? String(b.description).trim() : null
+  if (b.location !== undefined)    patch.location    = b.location ? String(b.location).trim() : null
+  if (b.startsAt !== undefined)    patch.starts_at   = b.startsAt ? new Date(b.startsAt).toISOString() : null
+  if (b.endsAt !== undefined)      patch.ends_at     = b.endsAt ? new Date(b.endsAt).toISOString() : null
+  if (b.url !== undefined)         patch.url         = b.url ? String(b.url).trim() : null
+  if (b.hostLabel !== undefined)   patch.host_label  = b.hostLabel ? String(b.hostLabel).trim() : null
+  if (b.imageUrl !== undefined)    patch.image_url   = b.imageUrl ? String(b.imageUrl).trim() : null
+  if (b.eventType !== undefined)   patch.event_type  = b.eventType || null
+  if (b.capacity !== undefined)    patch.capacity    = b.capacity != null ? Number(b.capacity) : null
+  if (b.priceEur !== undefined)    patch.price_eur   = b.priceEur != null ? Number(b.priceEur) : null
+  if (b.interests !== undefined)   patch.interests   = Array.isArray(b.interests) ? b.interests : []
+  return patch
+}
+
 adminPanelRouter.post('/events', async (req, res) => {
-  const { title, description, location, startsAt, url, hostLabel, interests } = req.body
-  if (!title || !startsAt) return res.status(422).json({ error: 'Title and start time are required.' })
+  const b = req.body
+  if (!b.title || !b.startsAt) return res.status(422).json({ error: 'Title and start time are required.' })
+  const fields = parseEventBody(b)
   const { data, error } = await supabase
     .from('events')
-    .insert({
-      title: String(title).trim(),
-      description: description ? String(description).trim() : null,
-      location: location ? String(location).trim() : null,
-      starts_at: new Date(startsAt).toISOString(),
-      url: url ? String(url).trim() : null,
-      host_label: hostLabel ? String(hostLabel).trim() : 'Munich',
-      source: 'curated',
-      interests: Array.isArray(interests) ? interests : [],
-    })
-    .select('id')
-    .single()
+    .insert({ ...fields, source: 'curated', host_label: fields.host_label ?? 'Munich' })
+    .select('id').single()
   if (error) return res.status(500).json({ error: error.message })
   return res.status(201).json({ id: data.id })
+})
+
+adminPanelRouter.patch('/events/:id', async (req, res) => {
+  const fields = parseEventBody(req.body)
+  if (Object.keys(fields).length === 0) return res.status(400).json({ error: 'No fields provided.' })
+  const { error } = await supabase.from('events').update(fields).eq('id', req.params.id)
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json({ ok: true })
 })
 
 adminPanelRouter.delete('/events/:id', async (req, res) => {
@@ -92,7 +123,7 @@ adminPanelRouter.delete('/events/:id', async (req, res) => {
   return res.json({ ok: true })
 })
 
-// ── Gigs (moderation) ───────────────────────────────────────────────────────
+// ── Gigs ──────────────────────────────────────────────────────────────────────
 adminPanelRouter.get('/gigs', async (_req, res) => {
   const { data, error } = await supabase
     .from('gigs')
@@ -120,49 +151,46 @@ adminPanelRouter.delete('/gigs/:id', async (req, res) => {
   return res.json({ ok: true })
 })
 
-// ── Quests (admin-managed honour quests) ────────────────────────────────────
+// ── Quests ────────────────────────────────────────────────────────────────────
 adminPanelRouter.get('/quests', async (_req, res) => {
   const { data, error } = await supabase.from('quests').select('*').order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
   return res.json({ quests: data ?? [] })
 })
 
+function parseQuestBody(b: any) {
+  const patch: Record<string, unknown> = {}
+  if (b.title !== undefined)              patch.title               = String(b.title).trim()
+  if (b.description !== undefined)        patch.description         = b.description ? String(b.description).trim() : null
+  if (b.points !== undefined)             patch.points              = Number(b.points) || 10
+  if (b.category !== undefined)           patch.category            = b.category
+  if (b.icon !== undefined)               patch.icon                = b.icon
+  if (b.active !== undefined)             patch.active              = !!b.active
+  if (b.startsAt !== undefined)           patch.starts_at           = b.startsAt ? new Date(b.startsAt).toISOString() : null
+  if (b.endsAt !== undefined)             patch.ends_at             = b.endsAt ? new Date(b.endsAt).toISOString() : null
+  if (b.howTo !== undefined)              patch.how_to              = b.howTo ? String(b.howTo).trim() : null
+  if (b.whereToGo !== undefined)          patch.where_to_go         = b.whereToGo ? String(b.whereToGo).trim() : null
+  if (b.difficulty !== undefined)         patch.difficulty          = b.difficulty || null
+  if (b.estimatedMinutes !== undefined)   patch.estimated_minutes   = b.estimatedMinutes != null ? Number(b.estimatedMinutes) : null
+  if (b.partnerRequired !== undefined)    patch.partner_required    = !!b.partnerRequired
+  if (b.type !== undefined)               patch.type                = b.type || 'self'
+  return patch
+}
+
 adminPanelRouter.post('/quests', async (req, res) => {
-  const { title, description, points, category, icon, active, startsAt, endsAt } = req.body
-  if (!title) return res.status(422).json({ error: 'Title is required.' })
+  const b = req.body
+  if (!b.title) return res.status(422).json({ error: 'Title is required.' })
   const key =
-    String(title).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 32) +
+    String(b.title).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 32) +
     '_' + Math.random().toString(36).slice(2, 6)
-  const { data, error } = await supabase
-    .from('quests')
-    .insert({
-      key,
-      title: String(title).trim(),
-      description: description ? String(description).trim() : null,
-      points: Number(points) || 10,
-      category: category || 'social',
-      icon: icon || 'sparkles',
-      active: active !== false,
-      starts_at: startsAt ? new Date(startsAt).toISOString() : null,
-      ends_at: endsAt ? new Date(endsAt).toISOString() : null,
-    })
-    .select('id')
-    .single()
+  const fields = parseQuestBody({ active: true, ...b })
+  const { data, error } = await supabase.from('quests').insert({ key, ...fields }).select('id').single()
   if (error) return res.status(500).json({ error: error.message })
   return res.status(201).json({ id: data.id })
 })
 
 adminPanelRouter.patch('/quests/:id', async (req, res) => {
-  const patch: Record<string, unknown> = {}
-  const b = req.body
-  if (b.title !== undefined) patch.title = String(b.title).trim()
-  if (b.description !== undefined) patch.description = b.description ? String(b.description).trim() : null
-  if (b.points !== undefined) patch.points = Number(b.points) || 0
-  if (b.category !== undefined) patch.category = b.category
-  if (b.icon !== undefined) patch.icon = b.icon
-  if (b.active !== undefined) patch.active = !!b.active
-  if (b.startsAt !== undefined) patch.starts_at = b.startsAt ? new Date(b.startsAt).toISOString() : null
-  if (b.endsAt !== undefined) patch.ends_at = b.endsAt ? new Date(b.endsAt).toISOString() : null
+  const patch = parseQuestBody(req.body)
   if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'No fields provided.' })
   const { error } = await supabase.from('quests').update(patch).eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
@@ -175,6 +203,7 @@ adminPanelRouter.delete('/quests/:id', async (req, res) => {
   return res.json({ ok: true })
 })
 
+// ── Stats ─────────────────────────────────────────────────────────────────────
 adminPanelRouter.get('/stats', async (_req, res) => {
   const [total, pending, approved, rejected] = await Promise.all([
     supabase.from('beta_signups').select('id', { count: 'exact', head: true }),
@@ -182,7 +211,6 @@ adminPanelRouter.get('/stats', async (_req, res) => {
     supabase.from('beta_signups').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
     supabase.from('beta_signups').select('id', { count: 'exact', head: true }).eq('status', 'rejected'),
   ])
-
   return res.json({
     total: total.count ?? 0,
     pending: pending.count ?? 0,
