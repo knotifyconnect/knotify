@@ -299,8 +299,7 @@ body::before {
     border-radius: 22px 22px 0 0; z-index: 9999;
     box-shadow: 0 -12px 48px rgba(26,24,21,0.22);
     background: var(--paper);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
   }
 }
 

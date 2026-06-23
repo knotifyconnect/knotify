@@ -288,68 +288,70 @@ function StageCard({
 }) {
   // Compact mode: round avatar bubble with name label — selected node still shows full card
   if (compact && !selected && !searchHit) {
-    const sz = secondDegree ? 28 : related ? 40 : 36
+    const sz = secondDegree ? 26 : related ? 38 : 34
     const hc = healthColor(node.healthState)
     const firstName = node.name.split(' ')[0]
+    // Position the bubble at the node center; name label goes below WITHOUT shifting center
     return (
-      <button
-        type="button"
-        onClick={onSelect}
-        onPointerDown={onPointerDown}
-        title={node.name}
-        aria-label={node.name}
+      <div
         style={{
           position: 'absolute',
           left: `${node.x / 10}%`,
           top: `${node.y / 5.9}%`,
           transform: 'translate(-50%, -50%)',
-          width: sz + 24,
-          padding: 0,
-          border: 'none',
-          background: 'transparent',
-          cursor: 'grab',
-          touchAction: 'none',
-          zIndex: related ? 3 : 2,
-          opacity: muted || searchMuted ? 0.18 : 1,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 4,
+          gap: 3,
+          zIndex: related ? 3 : muted || searchMuted ? 1 : 2,
+          opacity: muted || searchMuted ? 0.20 : 1,
+          pointerEvents: 'none',
         }}
       >
-        <div style={{
-          width: sz,
-          height: sz,
-          borderRadius: 999,
-          overflow: 'hidden',
-          border: hc
-            ? `2px solid ${hc}`
-            : secondDegree
-              ? '1.5px dashed rgba(84,72,58,0.30)'
-              : '2px solid rgba(244,239,230,0.92)',
-          boxShadow: secondDegree
-            ? 'none'
-            : related
-              ? '0 4px 14px rgba(26,24,21,0.14), 0 0 0 3px rgba(84,72,58,0.08)'
-              : '0 3px 10px rgba(26,24,21,0.12)',
-          flexShrink: 0,
-        }}>
+        <button
+          type="button"
+          onClick={onSelect}
+          onPointerDown={onPointerDown}
+          title={node.name}
+          aria-label={node.name}
+          style={{
+            width: sz,
+            height: sz,
+            padding: 0,
+            border: 'none',
+            borderRadius: 999,
+            overflow: 'hidden',
+            cursor: 'grab',
+            touchAction: 'none',
+            flexShrink: 0,
+            outline: hc ? `2px solid ${hc}` : secondDegree ? undefined : '2px solid rgba(255,252,246,0.90)',
+            outlineOffset: secondDegree ? 0 : 1,
+            boxShadow: secondDegree
+              ? 'none'
+              : related
+                ? '0 4px 14px rgba(26,24,21,0.18), 0 0 0 3px rgba(84,72,58,0.09)'
+                : '0 3px 10px rgba(26,24,21,0.14)',
+            pointerEvents: 'auto',
+          }}
+        >
           <Avatar name={node.name} src={node.avatarUrl} size={sz} rounded={999} />
-        </div>
+        </button>
         <span style={{
-          fontSize: 9.5,
+          fontSize: 9,
           fontWeight: secondDegree ? 500 : 600,
           color: secondDegree ? 'var(--ink-muted)' : 'var(--ink)',
           whiteSpace: 'nowrap',
-          maxWidth: sz + 20,
+          maxWidth: sz + 16,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           lineHeight: 1,
           fontFamily: "'IBM Plex Sans', sans-serif",
+          pointerEvents: 'none',
+          textShadow: '0 1px 4px rgba(244,239,230,0.9), 0 0 8px rgba(244,239,230,0.8)',
         }}>
           {firstName}
         </span>
-      </button>
+      </div>
     )
   }
 

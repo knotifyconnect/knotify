@@ -958,18 +958,10 @@ function TopCommandBar({
       }}
     >
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 3 }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           Your Knot
         </div>
-        <div
-          style={{
-            fontFamily: "'Fraunces', Georgia, serif",
-            fontSize: 'clamp(16px, 1.55vw, 21px)',
-            lineHeight: 1,
-            color: 'var(--ink)',
-            letterSpacing: -0.28,
-          }}
-        >
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(22px, 3vw, 28px)', fontWeight: 400, letterSpacing: '-0.02em', marginTop: 4, lineHeight: 1.05, color: 'var(--ink)' }}>
           Maintain the relationships worth keeping.
         </div>
       </div>
@@ -1358,33 +1350,32 @@ function KnotStage({
                 <div
                   ref={panelRef}
                   className="k-knot-detail-panel"
-                  style={isMobile ? { transform: `translateY(${-panelExpandY}px)`, transition: panelDragRef.current ? 'none' : 'transform 0.25s cubic-bezier(0.32,0.72,0,1)' } : undefined}
+                  style={isMobile ? { transform: `translateY(${-panelExpandY}px)`, transition: panelDragRef.current ? 'none' : 'transform 0.25s cubic-bezier(0.32,0.72,0,1)', display: 'flex', flexDirection: 'column' } : undefined}
                 >
                   {isMobile && (
+                    /* Handle sits OUTSIDE the scroll area — flex sibling above the scroll div */
                     <div
                       onPointerDown={onPanelPointerDown}
                       onPointerMove={onPanelPointerMove}
                       onPointerUp={onPanelPointerUp}
                       onPointerCancel={onPanelPointerUp}
                       style={{
-                        position: 'sticky',
-                        top: 0,
-                        zIndex: 10,
+                        flexShrink: 0,
                         background: 'var(--paper)',
                         borderRadius: '22px 22px 0 0',
-                        padding: '12px 0 10px',
+                        padding: '14px 0 10px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         touchAction: 'none',
                         cursor: 'grab',
                         userSelect: 'none',
-                        flexShrink: 0,
                       }}
                     >
-                      <div style={{ width: 40, height: 5, borderRadius: 999, background: 'rgba(26,24,21,0.22)' }} />
+                      <div style={{ width: 40, height: 5, borderRadius: 999, background: 'rgba(26,24,21,0.25)' }} />
                     </div>
                   )}
+                  <div style={isMobile ? { flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' as any } : undefined}>
                   {selectedConnection ? (
                     <SelectedRelationshipPanel
                       connection={selectedConnection}
@@ -1415,6 +1406,7 @@ function KnotStage({
                       onViewProfile={() => onViewProfile(selectedSecondDegreeUser.id)}
                     />
                   ) : null}
+                  </div>
                 </div>
               )}
             </>
