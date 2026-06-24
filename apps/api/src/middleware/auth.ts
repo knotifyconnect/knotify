@@ -82,7 +82,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       const email = (authEmail ?? '').toLowerCase()
       const ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
       if (!ADMIN_EMAILS.includes(email)) {
-        return res.status(403).json({ error: 'beta_closed', message: 'Access is currently invite-only. You are on the waitlist.' })
+        const { count } = await supabase
+          .from('beta_signups')
+          .select('id', { count: 'exact', head: true })
+          .eq('email', email)
+          .eq('status', 'approved')
+        if ((count ?? 0) === 0) {
+          return res.status(403).json({ error: 'beta_closed', message: 'Access is currently invite-only. You are on the waitlist.' })
+        }
       }
     }
 

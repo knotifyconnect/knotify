@@ -2,6 +2,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { supabase } from '../lib.js'
 import { invalidateBetaCache } from '../middleware/auth.js'
+import { sendBetaApprovalEmail } from '../lib/email.js'
 
 export const adminPanelRouter = Router()
 
@@ -68,6 +69,13 @@ adminPanelRouter.patch('/beta-signups/:id', async (req, res) => {
     .from('beta_signups').update({ status }).eq('id', req.params.id).select('*').maybeSingle()
   if (error) return res.status(500).json({ error: error.message })
   if (!data) return res.status(404).json({ error: 'Signup not found.' })
+
+  if (status === 'approved' && data.email) {
+    sendBetaApprovalEmail(data.email, data.name ?? undefined).catch(err =>
+      console.error('[admin] approval email failed:', err)
+    )
+  }
+
   return res.json({ signup: data })
 })
 

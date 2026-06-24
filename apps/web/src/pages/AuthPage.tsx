@@ -6,6 +6,8 @@ import { apiPost } from '../lib/api'
 import { SignInCard2 } from '../components/ui/sign-in-card-2'
 import { useSeo } from '../lib/seo'
 
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
 type AuthMode = 'login' | 'signup' | 'forgot'
 type MessageTone = 'error' | 'success'
 
@@ -29,6 +31,33 @@ export function AuthPage() {
 
   const location = useLocation()
   const [searchParams] = useSearchParams()
+
+  const [betaOpen, setBetaOpen] = useState<boolean | null>(null)
+  const [waitlistEmail, setWaitlistEmail] = useState('')
+  const [waitlistSubmitted, setWaitlistSubmitted] = useState(false)
+  const [waitlistLoading, setWaitlistLoading] = useState(false)
+  const [waitlistError, setWaitlistError] = useState('')
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/status`)
+      .then(r => r.json())
+      .then((d: { betaOpen: boolean }) => setBetaOpen(d.betaOpen))
+      .catch(() => setBetaOpen(true))
+  }, [])
+
+  async function joinWaitlist(e: FormEvent) {
+    e.preventDefault()
+    setWaitlistLoading(true)
+    setWaitlistError('')
+    try {
+      await apiPost('/api/beta/signup', { email: waitlistEmail.trim().toLowerCase() })
+      setWaitlistSubmitted(true)
+    } catch (err) {
+      setWaitlistError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setWaitlistLoading(false)
+    }
+  }
 
   // Persist invite code across email-confirmation redirect so we can claim it
   // after the user verifies and logs in for the first time (handled in OnboardingPage).
@@ -258,6 +287,61 @@ export function AuthPage() {
     }
 
     void sendPasswordReset()
+  }
+
+  if (betaOpen === false) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f5f0e8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        <div style={{ maxWidth: 420, width: '100%' }}>
+          <div style={{ marginBottom: 28, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#a09287', fontWeight: 500 }}>knotify</div>
+          <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 36, fontWeight: 700, color: '#1a1410', letterSpacing: '-0.02em', margin: '0 0 14px', lineHeight: 1.1 }}>
+            Munich's network<br />is invite-only right now.
+          </h1>
+          <p style={{ fontSize: 15, color: '#6b5f55', lineHeight: 1.7, margin: '0 0 32px' }}>
+            We're opening up in waves. Drop your email and we'll let you know when your spot is ready. Already have an invite? Check your inbox.
+          </p>
+
+          {waitlistSubmitted ? (
+            <div style={{ background: 'rgba(45,125,70,0.08)', border: '0.5px solid rgba(45,125,70,0.2)', borderRadius: 12, padding: '16px 20px' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#2d7d46', marginBottom: 4 }}>You're on the list.</div>
+              <div style={{ fontSize: 13, color: '#6b5f55' }}>We'll email you at <strong>{waitlistEmail}</strong> when your spot opens up.</div>
+            </div>
+          ) : (
+            <form onSubmit={joinWaitlist} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input
+                type="email"
+                required
+                placeholder="your@email.com"
+                value={waitlistEmail}
+                onChange={e => setWaitlistEmail(e.target.value)}
+                style={{ padding: '13px 14px', borderRadius: 10, border: '0.5px solid rgba(84,72,58,0.2)', background: '#fff', fontSize: 14, color: '#1a1410', outline: 'none', fontFamily: 'inherit' }}
+              />
+              {waitlistError && <div style={{ fontSize: 13, color: '#D8442B' }}>{waitlistError}</div>}
+              <button
+                type="submit"
+                disabled={waitlistLoading}
+                style={{ padding: '13px', borderRadius: 10, border: 'none', background: '#1a1410', color: '#fff', fontSize: 14, fontWeight: 600, cursor: waitlistLoading ? 'not-allowed' : 'pointer', opacity: waitlistLoading ? 0.6 : 1 }}
+              >
+                {waitlistLoading ? 'Joining…' : 'Join the waitlist'}
+              </button>
+            </form>
+          )}
+
+          <div style={{ marginTop: 32, paddingTop: 24, borderTop: '0.5px solid rgba(84,72,58,0.12)' }}>
+            <button
+              onClick={() => setBetaOpen(true)}
+              style={{ background: 'none', border: 'none', fontSize: 13, color: '#a09287', cursor: 'pointer', padding: 0 }}
+            >
+              Already have an account? Sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (betaOpen === null) {
+    return <div style={{ minHeight: '100vh', background: '#f5f0e8' }} />
   }
 
   return (

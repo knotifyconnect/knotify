@@ -49,6 +49,12 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true })
 })
 
+app.get('/api/status', async (_req, res) => {
+  const { data } = await supabase.from('app_settings').select('value').eq('key', 'beta_open').maybeSingle()
+  const betaOpen = data?.value === true || data?.value === 'true' || data?.value == null
+  return res.json({ betaOpen })
+})
+
 app.get('/health/db', async (_req, res) => {
   try {
     const result = await supabase.from('users').select('id').limit(1)
