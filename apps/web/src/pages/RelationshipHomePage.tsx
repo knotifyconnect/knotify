@@ -16,7 +16,7 @@ import { ReferralAskModal } from '../components/ReferralAskModal'
 import { CreateAskModal } from '../components/asks/CreateAskModal'
 import { AskDrawer, type Ask } from '../components/asks/AskDrawer'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel, RailCard } from '../lib/desk'
-import { MessageSquare, Coffee, CalendarDays, X, Copy, Check, UserPlus, HandHelping } from 'lucide-react'
+import { MessageSquare, Coffee, CalendarDays, X, Copy, Check, UserPlus } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -398,9 +398,11 @@ export function RelationshipHomePage() {
   const coldCount     = ranked.filter((r) => r.state === 'cold').length
   const coolingCount  = ranked.filter((r) => r.state === 'cooling').length
 
+  // Pulse shows network milestones only — asks live in their own clickable
+  // "Asks for you" section (openAsks feeds the targeted /api/asks/feed instead).
+  void openAsks
   const networkFeed: NetworkItem[] = [
     ...milestones.map((m) => ({ ...m, type: 'milestone' as const })),
-    ...openAsks.map((a) => ({ ...a, type: 'ask' as const })),
   ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12)
 
   const newCount = ranked.filter((r) => r.state === 'new').length
@@ -518,7 +520,70 @@ export function RelationshipHomePage() {
     </div>
   )
 
-  // ── Right rail: Pulse (real network feed) + Next IRL (real events) ─────────
+  // ── Asks block: targeted "for you" feed + your own. Clickable → AskDrawer.
+  // Reused in the desktop rail and the mobile main column (rail is desktop-only).
+  const myOpenAsks = myAsks.filter((a) => a.status === 'open')
+  const asksBlock = (
+    <>
+      <div>
+        <DeskSectionLabel right={
+          <button type="button" onClick={() => setAskOpen(true)} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>+ Ask</button>
+        }>{feedAsks.length > 0 ? `Asks for you · ${feedAsks.length}` : 'Asks for you'}</DeskSectionLabel>
+        {feedAsks.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {feedAsks.slice(0, 5).map((a) => (
+              <button key={a.id} type="button" onClick={() => setAskDetail(a)} style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, fontFamily: T.text }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  {a.author && <KAvatar name={a.author.full_name} src={a.author.avatar_url} size={20} />}
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink }}>{a.author?.full_name ?? 'Someone'}</span>
+                  <span style={{ flex: 1 }} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: T.signal, fontWeight: 600 }}>
+                    <MessageSquare size={11} /> Reply
+                  </span>
+                </div>
+                <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.content}</div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display, padding: '4px 0' }}>
+            No asks for you right now. We'll show ones that match your interests here.
+          </div>
+        )}
+      </div>
+
+      <div>
+        <DeskSectionLabel>Your asks</DeskSectionLabel>
+        {myOpenAsks.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {myOpenAsks.slice(0, 4).map((a) => (
+              <button key={a.id} type="button" onClick={() => setAskDetail(a)} style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, fontFamily: T.text }}>
+                <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4 }}>{a.content}</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                  <span style={{ fontSize: 10.5, color: T.inkFaint }}>{a.reply_count ? `${a.reply_count} repl${a.reply_count === 1 ? 'y' : 'ies'}` : 'No replies yet'}</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); void resolveAsk(a.id) }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); void resolveAsk(a.id) } }}
+                    style={{ border: `0.5px solid ${T.rule}`, borderRadius: 999, padding: '4px 10px', fontSize: 11, color: T.inkMuted, cursor: 'pointer' }}
+                  >
+                    Mark resolved
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <button type="button" onClick={() => setAskOpen(true)} style={{ width: '100%', padding: '12px', borderRadius: 12, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 12.5, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>
+            Need something? Ask for help.
+          </button>
+        )}
+      </div>
+    </>
+  )
+
+  // ── Right rail: Pulse (real network feed) + Asks + Next IRL ────────────────
   const rail = (
     <>
       <div>
@@ -527,7 +592,7 @@ export function RelationshipHomePage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {networkFeed.slice(0, 5).map((it) => (
               <div key={it.id} style={{ padding: 10, borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 6, height: 6, borderRadius: 3, background: it.type === 'milestone' ? T.verd : T.ochre, flexShrink: 0 }} />
+                <div style={{ width: 6, height: 6, borderRadius: 3, background: T.verd, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.3 }}>
                   {it.user && <span style={{ fontWeight: 500 }}>{it.user.full_name} · </span>}
                   <span style={{ color: T.inkMuted }}>{it.content}</span>
@@ -541,49 +606,7 @@ export function RelationshipHomePage() {
         )}
       </div>
 
-      {feedAsks.length > 0 && (
-        <div>
-          <DeskSectionLabel right={
-            <button type="button" onClick={() => navigate('/asks')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>See all</button>
-          }>Asks for you</DeskSectionLabel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {feedAsks.slice(0, 3).map((a) => (
-              <button key={a.id} type="button" onClick={() => setAskDetail(a)} style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, fontFamily: T.text }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                  {a.author && <KAvatar name={a.author.full_name} src={a.author.avatar_url} size={20} />}
-                  <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink }}>{a.author?.full_name ?? 'Someone'}</span>
-                  <span style={{ flex: 1 }} />
-                  <HandHelping size={13} color={T.inkFaint} />
-                </div>
-                <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.content}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div>
-        <DeskSectionLabel right={
-          <button type="button" onClick={() => setAskOpen(true)} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>+ Ask</button>
-        }>Your asks</DeskSectionLabel>
-        {myAsks.filter(a => a.status === 'open').length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {myAsks.filter(a => a.status === 'open').slice(0, 4).map((a) => (
-              <div key={a.id} style={{ padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}` }}>
-                <button type="button" onClick={() => setAskDetail(a)} style={{ textAlign: 'left', cursor: 'pointer', background: 'none', border: 'none', padding: 0, width: '100%', fontSize: 12.5, color: T.ink, lineHeight: 1.4, fontFamily: T.text }}>{a.content}</button>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                  <button type="button" onClick={() => setAskDetail(a)} style={{ background: 'none', border: 'none', padding: 0, fontSize: 10.5, color: T.inkFaint, fontFamily: T.text, cursor: 'pointer' }}>{a.reply_count ? `${a.reply_count} repl${a.reply_count === 1 ? 'y' : 'ies'}` : 'No replies yet'}</button>
-                  <button type="button" onClick={() => resolveAsk(a.id)} style={{ background: 'none', border: `0.5px solid ${T.rule}`, borderRadius: 999, padding: '4px 10px', fontSize: 11, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>Mark resolved</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <button type="button" onClick={() => setAskOpen(true)} style={{ width: '100%', padding: '12px', borderRadius: 12, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 12.5, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>
-            Need something? Ask your knot for help.
-          </button>
-        )}
-      </div>
+      {asksBlock}
 
       <div>
         <DeskSectionLabel>Next · IRL</DeskSectionLabel>
@@ -669,6 +692,11 @@ export function RelationshipHomePage() {
           </button>
         </div>
       )}
+
+      {/* Mobile-only asks (the desktop rail is hidden under lg) */}
+      <div className="lg:hidden" style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 20 }}>
+        {asksBlock}
+      </div>
 
       <DeskPage rail={rail}>
         <HomeHub maintenance={maintenanceNode} />

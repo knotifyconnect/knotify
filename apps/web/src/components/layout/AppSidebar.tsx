@@ -10,7 +10,6 @@ import {
   BriefcaseBusiness,
   ChevronRight,
   Coffee,
-  HandHelping,
   Home,
   LogOut,
   MessageSquare,
@@ -26,7 +25,6 @@ import { apiGet } from '@/lib/api'
 import { useReferralUnreadCount } from '@/hooks/useReferralUnreadCount'
 import { useMessageUnreadCount } from '@/hooks/useMessageUnreadCount'
 import { useConnectionCount } from '@/hooks/useConnectionCount'
-import { useAskUnreadCount } from '@/hooks/useAskUnreadCount'
 
 type Me = {
   id: string
@@ -42,7 +40,7 @@ type NavItem = {
   sub?: string
   href: string
   icon: React.ReactNode
-  badge?: 'jobs' | 'messages' | 'connections' | 'asks'
+  badge?: 'jobs' | 'messages' | 'connections'
   newBadge?: boolean
 }
 
@@ -50,7 +48,6 @@ const BASE_ITEMS: NavItem[] = [
   { title: 'Home',         href: '/home',     icon: <Home              size={15} /> },
   { title: 'Your Knot',    href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
   { title: 'Discover',     href: '/discover', icon: <Search            size={15} /> },
-  { title: 'Asks',         href: '/asks',     icon: <HandHelping       size={15} />, badge: 'asks' },
   { title: 'Jobs & Gigs',  href: '/jobs',     icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
   { title: 'Cafes',        sub: 'IRL',        href: '/cafes',          icon: <Coffee            size={15} /> },
   { title: 'Messages',     href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },
@@ -61,7 +58,6 @@ export function AppSidebar() {
   const referralUnreadCount = useReferralUnreadCount()
   const messageUnreadCount = useMessageUnreadCount()
   const connectionCount = useConnectionCount()
-  const askUnreadCount = useAskUnreadCount()
   const [me, setMe] = useState<Me | null>(null)
   const navigate = useNavigate()
 
@@ -87,7 +83,6 @@ export function AppSidebar() {
     if (item.badge === 'jobs') return referralUnreadCount
     if (item.badge === 'messages') return messageUnreadCount
     if (item.badge === 'connections') return connectionCount
-    if (item.badge === 'asks') return askUnreadCount
     return 0
   }
 
@@ -322,15 +317,15 @@ export function AppSidebar() {
         {([
           { title: 'Home',     href: '/home',     icon: <Home size={18} /> },
           { title: 'Knot',     href: '/map',      icon: <Network size={18} />, badge: 'connections' as const },
-          { title: 'Asks',     href: '/asks',     icon: <HandHelping size={18} />, badge: 'asks' as const },
           { title: 'Jobs',     href: '/jobs',     icon: <BriefcaseBusiness size={18} />, badge: 'jobs' as const },
           { title: 'Messages', href: '/messages', icon: <MessageSquare size={18} />, badge: 'messages' as const },
+          { title: 'Discover', href: '/discover', icon: <Search size={18} /> },
           {
             title: 'Me',
             href: '/profile',
             icon: me ? <KAvatar name={me.full_name} src={me.avatar_url} size={22} /> : <Search size={18} />,
           },
-        ] as Array<{ title: string; href: string; icon: React.ReactNode; badge?: 'jobs' | 'messages' | 'connections' | 'asks' }>).map((item) => {
+        ] as Array<{ title: string; href: string; icon: React.ReactNode; badge?: 'jobs' | 'messages' | 'connections' }>).map((item) => {
           const count = item.badge ? badgeFor(item as NavItem) : 0
           return (
           <NavLink

@@ -32,7 +32,6 @@ const EmployersPage = lazy(() => import('./pages/EmployersPage').then((m) => ({ 
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage').then((m) => ({ default: m.OnboardingPage })))
 const InvitePage = lazy(() => import('./pages/InvitePage').then((m) => ({ default: m.InvitePage })))
-const AsksPage = lazy(() => import('./pages/AsksPage').then((m) => ({ default: m.AsksPage })))
 
 const LAST_ACTIVE_AT_KEY = 'knotify:lastActiveAt'
 const INACTIVITY_REENTRY_MS = 2 * 24 * 60 * 60 * 1000
@@ -172,7 +171,6 @@ function ProtectedAppRoutes() {
         <Route path="/gigs" element={<Navigate to="/jobs" replace />} />
         <Route path="/cafes" element={<CafesPage />} />
         <Route path="/invite" element={<InvitePage />} />
-        <Route path="/asks" element={<AsksPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/auth" element={<Navigate to="/home" replace />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
