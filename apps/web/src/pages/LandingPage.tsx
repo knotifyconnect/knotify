@@ -558,7 +558,7 @@ export function LandingPage() {
               marginBottom: 28,
             }}
           >
-            Three things, well
+            Land it. Keep it. Grow it.
           </div>
           <div className="k-landing-3col">
             {[
@@ -575,7 +575,7 @@ export function LandingPage() {
               {
                 n: '03',
                 title: 'Meet at the café',
-                body: 'Real connection happens in person. Partner cafés across Munich, perks for members, side quests to break the ice.',
+                body: 'Real connection happens in person. Find your people at partner cafés across Munich, enjoy member perks, and use side quests to break the ice.',
               },
             ].map((p) => (
               <div key={p.n}>
@@ -660,7 +660,7 @@ export function LandingPage() {
             {
               step: 2,
               title: 'See who needs attention',
-              desc: 'knotify surfaces who is going cold, who just hit a milestone, and who is waiting on something from you.',
+              desc: 'knotify shows who is going cold, who just hit a milestone, and who is waiting on something from you.',
               color: 'var(--signal)',
             },
             {
@@ -735,7 +735,7 @@ export function LandingPage() {
                 color: 'var(--ink-faint)',
               }}
             >
-              Manifesto · short
+              Manifesto
             </div>
             <blockquote
               style={{
@@ -758,15 +758,20 @@ export function LandingPage() {
           </div>
           <div style={{ fontSize: 15, color: 'var(--ink-muted)', lineHeight: 1.7 }}>
             <p style={{ margin: '0 0 16px' }}>
-              The professional internet is loud. It rewards people who shout, recycle,
-              and self-congratulate. It does not reward the quiet excellence that
-              actually moves careers, the call you took at 11pm, the intro you made
-              for someone who couldn't pay you back, the time you read a draft twice.
+              The professional internet rewards the loudest ones. The person who
+              posts daily, celebrates publicly and makes it all look effortless.
             </p>
             <p style={{ margin: '0 0 16px' }}>
-              knotify is for the second kind of person. We measure what professional
-              life actually rests on: who knows you, who'll vouch for you, who you've
-              sat across from. Not your follower count. Not your post velocity.
+              But most of what actually builds a career happens quietly. The call
+              you took at 11 PM. The intros you selflessly made for someone who
+              couldn't pay you back. The time you read the draft twice, just because
+              they asked.
+            </p>
+            <p style={{ margin: '0 0 16px' }}>
+              knotify is built for that. For the people who show up without an
+              audience. We track what professional life actually runs on. Who knows
+              you, who'll vouch for you, who you've sat across from. Not your
+              follower count. Not how often you post.
             </p>
             <p style={{ margin: 0 }}>
               If that sounds slow, yes. That's the point.
@@ -793,7 +798,7 @@ export function LandingPage() {
             marginBottom: 16,
           }}
         >
-          Questions
+          FAQ
         </div>
         <h2
           style={{
@@ -856,7 +861,7 @@ export function LandingPage() {
             }}
           >
             Ready to stop{' '}
-            <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>losing people?</span>
+            <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>losing connections?</span>
           </h2>
           <p style={{ fontSize: 15, color: 'var(--ink-muted)', marginBottom: 28, lineHeight: 1.6 }}>
             The Munich beta is opening to a limited group. Join the waiting list below.
