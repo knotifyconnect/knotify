@@ -5,8 +5,8 @@
  *  - Cafés: CRUD partner cafés
  *  - Users: toggle is_hr / is_admin
  */
-import { useEffect, useState, type ReactNode } from 'react'
-import { Coffee, ShieldCheck, Users as UsersIcon } from 'lucide-react'
+import { useEffect, useState, type ReactNode, type CSSProperties } from 'react'
+import { Coffee, ShieldCheck, Users as UsersIcon, ClipboardList } from 'lucide-react'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
 
@@ -48,7 +48,19 @@ type AdminUser = {
   created_at: string
 }
 
-type Tab = 'requests' | 'cafes' | 'users'
+type Tab = 'requests' | 'cafes' | 'users' | 'waitlist'
+
+type BetaSignup = {
+  id: string
+  email: string
+  name: string | null
+  role: string | null
+  is_international: boolean | null
+  marketing_consent: boolean
+  beta_risk_consent: boolean
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: string
+}
 
 const EMPTY_CAFE: Omit<Cafe, 'id'> = {
   slug: '',
@@ -149,6 +161,7 @@ export function AdminPage() {
           { id: 'requests', label: 'Role requests', icon: <ShieldCheck size={13} /> },
           { id: 'cafes', label: 'Cafés', icon: <Coffee size={13} /> },
           { id: 'users', label: 'Users', icon: <UsersIcon size={13} /> },
+          { id: 'waitlist', label: 'Waitlist', icon: <ClipboardList size={13} /> },
         ] as Array<{ id: Tab; label: string; icon: ReactNode }>).map((t) => (
           <button
             key={t.id}
@@ -179,8 +192,115 @@ export function AdminPage() {
       {tab === 'requests' && <RoleRequestsTab onError={setError} />}
       {tab === 'cafes' && <CafesTab onError={setError} />}
       {tab === 'users' && <UsersTab onError={setError} />}
+      {tab === 'waitlist' && <WaitlistTab onError={setError} />}
     </div>
   )
+}
+
+// ─── Waitlist tab ─────────────────────────────────────────────────────────────
+function WaitlistTab({ onError }: { onError: (m: string | null) => void }) {
+  const [signups, setSignups] = useState<BetaSignup[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    try {
+      const r = await apiGet<{ signups: BetaSignup[] }>('/api/admin/beta-signups')
+      setSignups(r.signups ?? [])
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Failed to load waitlist')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void load() }, [])
+
+  async function setStatus(id: string, status: BetaSignup['status']) {
+    setBusyId(id)
+    try {
+      await apiPatch(`/api/admin/beta-signups/${id}`, { status })
+      setSignups((prev) => prev.map((s) => (s.id === id ? { ...s, status } : s)))
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  if (loading) return <div style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '20px 0' }}>Loading…</div>
+
+  if (!signups.length) {
+    return <div style={{ fontSize: 13.5, color: 'var(--ink-muted)', padding: '20px 0' }}>No waitlist signups yet.</div>
+  }
+
+  const cell: CSSProperties = { padding: '10px 12px', fontSize: 12.5, color: 'var(--ink)', borderBottom: '0.5px solid var(--rule-soft)', verticalAlign: 'top' }
+  const head: CSSProperties = { padding: '8px 12px', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', textAlign: 'left', borderBottom: '0.5px solid var(--rule)' }
+  const yesNo = (v: boolean) => (
+    <span style={{ fontSize: 11, fontWeight: 600, color: v ? 'var(--verd)' : 'var(--signal)' }}>{v ? 'Yes' : 'No'}</span>
+  )
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 12 }}>
+        {signups.length} signup{signups.length === 1 ? '' : 's'} ·{' '}
+        {signups.filter((s) => s.beta_risk_consent).length} accepted the beta-risk notice
+      </div>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 760 }}>
+        <thead>
+          <tr>
+            <th style={head}>Email</th>
+            <th style={head}>Name</th>
+            <th style={head}>Role</th>
+            <th style={head}>Beta risk</th>
+            <th style={head}>Marketing</th>
+            <th style={head}>Joined</th>
+            <th style={head}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {signups.map((s) => (
+            <tr key={s.id}>
+              <td style={cell}>{s.email}</td>
+              <td style={cell}>{s.name ?? '—'}</td>
+              <td style={cell}>{s.role ?? '—'}</td>
+              <td style={cell}>{yesNo(s.beta_risk_consent)}</td>
+              <td style={cell}>{yesNo(s.marketing_consent)}</td>
+              <td style={{ ...cell, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>
+                {new Date(s.created_at).toLocaleDateString()}
+              </td>
+              <td style={cell}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span
+                    style={{
+                      fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
+                      background: s.status === 'approved' ? 'var(--verd-soft)' : s.status === 'rejected' ? 'var(--signal-soft)' : 'var(--paper-deep)',
+                      color: s.status === 'approved' ? 'var(--verd)' : s.status === 'rejected' ? 'var(--signal)' : 'var(--ink-muted)',
+                    }}
+                  >
+                    {s.status}
+                  </span>
+                  {s.status !== 'approved' && (
+                    <button type="button" disabled={busyId === s.id} onClick={() => setStatus(s.id, 'approved')} style={miniBtn}>Approve</button>
+                  )}
+                  {s.status !== 'rejected' && (
+                    <button type="button" disabled={busyId === s.id} onClick={() => setStatus(s.id, 'rejected')} style={miniBtn}>Reject</button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+const miniBtn: CSSProperties = {
+  padding: '3px 9px', borderRadius: 7, border: '0.5px solid var(--rule)',
+  background: 'white', color: 'var(--ink-muted)', fontSize: 11, cursor: 'pointer',
+  fontFamily: "'IBM Plex Sans', sans-serif",
 }
 
 // ─── Role requests tab ───────────────────────────────────────────────────────

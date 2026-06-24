@@ -8,27 +8,27 @@ import { useSeo } from '@/lib/seo'
 const FAQS = [
   {
     q: 'What is knotify?',
-    a: 'knotify is a professional network built for international students and professionals in Munich. Instead of a feed to scroll, you get a living map of the people you know, nudges before connections go cold, and warm introductions over coffee at partner cafés.',
+    a: 'knotify is a trust-based professional network. Instead of a feed to scroll, you get a living map of the people you know, nudges before connections go cold, and warm introductions that turn quiet trust into real opportunities.',
   },
   {
     q: 'Who is knotify for?',
-    a: 'International students and newcomers to Munich, students at TUM, LMU and other Munich universities, and professionals who want meaningful connections rather than another social feed.',
+    a: 'Anyone building their first circle in a new university, city, career or community, and anyone keeping trusted relationships alive. Students, early-career professionals, and people who want meaningful connections rather than another social feed.',
   },
   {
-    q: 'How do I network in Munich as an international student or newcomer?',
-    a: 'Join knotify, add the people you already know, and get matched to the people, groups and events that fit you. knotify tells you who to reach out to and helps you meet in person at partner cafés across Munich.',
+    q: 'How do I build a network that actually lasts?',
+    a: 'Add the people you already know, and knotify helps the right people stay close, support one another, and create opportunities in the moments that matter. You get a warmer reason to reach out and a nudge before a connection goes cold.',
   },
   {
     q: 'How is knotify different from LinkedIn?',
-    a: 'LinkedIn is a feed and a resume. knotify is a relationship tool. There is nothing to post and no follower count to chase. You keep a private, living map of the people you actually know, get a nudge before a connection goes cold, and meet in person over coffee. It is built for newcomers to Munich who need a real network, not an audience.',
+    a: 'LinkedIn is a feed and a resume. knotify is a relationship tool. There is nothing to post and no follower count to chase. You keep a private, living map of the people you actually know, get a nudge before a connection goes cold, and meet in person over coffee. It is built for people who want a real network, not an audience.',
   },
   {
-    q: 'Which universities and students is knotify for?',
-    a: 'knotify is for international and local students across Munich, including TUM (Technical University of Munich), LMU (Ludwig Maximilian University) and Hochschule München, as well as recent graduates and young professionals starting out in the city.',
+    q: 'Where is knotify available?',
+    a: 'knotify is launching in Munich first, but it is built for communities anywhere. Your network is not limited to one city, so you can keep relationships alive and create opportunities wherever the right people are.',
   },
   {
     q: 'Is knotify free, and when does it launch?',
-    a: "knotify is a free private beta, onboarding Munich's international community first. Join the waiting list and we will reach out as access opens.",
+    a: 'knotify is a free private beta. Join the waiting list and we will reach out as access opens to early communities.',
   },
 ]
 
@@ -173,11 +173,16 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
   const [role, setRole] = useState('')
   const [isInternational, setIsInternational] = useState(false)
   const [consent, setConsent] = useState(false)
+  const [betaRisk, setBetaRisk] = useState(false)
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!betaRisk) {
+      setErrorMsg('Please confirm you understand this is an early beta.')
+      return
+    }
     if (!consent) {
       setErrorMsg('Please accept the terms to continue.')
       return
@@ -196,6 +201,7 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
           role: role || null,
           is_international: isInternational,
           marketing_consent: consent,
+          beta_risk_consent: betaRisk,
         }),
       })
       const data = await res.json()
@@ -226,8 +232,7 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
       >
         <div style={{ fontWeight: 600, marginBottom: 4 }}>You're on the list.</div>
         <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>
-          We'll be in touch when your spot opens up. We're onboarding Munich's international
-          community first.
+          We'll be in touch when your spot opens up. We're opening access to early communities first.
         </div>
       </div>
     )
@@ -289,7 +294,34 @@ function BetaForm({ compact = false }: { compact?: boolean }) {
           style={{ width: 16, height: 16, accentColor: 'var(--signal)', flexShrink: 0 }}
         />
         <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>
-          I'm an international newcomer to Munich
+          I'm new in town and building my network
+        </span>
+      </label>
+
+      {/* Beta-risk acknowledgement, mandatory */}
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 11,
+          padding: '11px 14px',
+          borderRadius: 10,
+          border: `0.5px solid ${betaRisk ? 'var(--signal)' : 'var(--rule)'}`,
+          background: betaRisk ? 'var(--signal-soft)' : 'white',
+          cursor: 'pointer',
+          transition: 'all 0.14s',
+        }}
+      >
+        <input
+          type="checkbox"
+          required
+          checked={betaRisk}
+          onChange={e => setBetaRisk(e.target.checked)}
+          style={{ marginTop: 1, width: 16, height: 16, accentColor: 'var(--signal)', flexShrink: 0 }}
+        />
+        <span style={{ fontSize: 12, color: 'var(--ink)', lineHeight: 1.5 }}>
+          I understand knotify is an early beta. It may contain bugs, incomplete features and
+          security risks, and I use it at my own risk.
         </span>
       </label>
 
@@ -364,11 +396,9 @@ function LandingNav({ onSignIn }: { onSignIn: () => void }) {
 
       <div className="k-landing-nav-links">
         <a href="#how-it-works" style={{ color: 'inherit', textDecoration: 'none' }}>How it works</a>
-        <a href="#cafes" style={{ color: 'inherit', textDecoration: 'none' }}>Cafés</a>
         <a href="#manifesto" style={{ color: 'inherit', textDecoration: 'none' }}>Manifesto</a>
         <a href="#faq" style={{ color: 'inherit', textDecoration: 'none' }}>FAQ</a>
-        <a href="/guides/" style={{ color: 'inherit', textDecoration: 'none' }}>Guides</a>
-        <a href="/employers" style={{ color: 'inherit', textDecoration: 'none' }}>For employers</a>
+        <a href="/guides/" style={{ color: 'inherit', textDecoration: 'none' }}>Blog</a>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -388,9 +418,9 @@ export function LandingPage() {
   const navigate = useNavigate()
 
   useSeo({
-    title: 'knotify · Professional Network for Munich Internationals & Students',
+    title: 'knotify · Networks worth keeping.',
     description:
-      'knotify is the professional network for international students and professionals in Munich. Map your real connections, verify skills, and meet for coffee at partner cafés. Join the private beta.',
+      'knotify is a trust-based professional network. Keep valuable relationships alive, turn quiet trust into warm introductions, and create more referrals, support and real opportunities. Join the private beta.',
     path: '/',
   })
 
@@ -438,7 +468,7 @@ export function LandingPage() {
                 display: 'inline-block',
               }}
             />
-            Private beta · Munich
+            Private beta
           </div>
 
           <h1
@@ -451,10 +481,10 @@ export function LandingPage() {
               margin: 0,
             }}
           >
-            Relationships
+            Networks worth
             <br />
             <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>
-              don't decay.
+              keeping.
             </span>
           </h1>
 
@@ -485,7 +515,7 @@ export function LandingPage() {
               color: 'var(--ink-faint)',
             }}
           >
-            Beta access is by approval. We're starting with Munich's international community.
+            Beta access is by approval. We're opening to early communities first.
           </p>
         </div>
 
@@ -937,7 +967,7 @@ export function LandingPage() {
             margin: '0 0 40px',
           }}
         >
-          Networking in Munich,{' '}
+          Questions,{' '}
           <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>answered.</span>
         </h2>
 
@@ -1064,7 +1094,7 @@ export function LandingPage() {
             <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>losing connections?</span>
           </h2>
           <p style={{ fontSize: 15, color: 'var(--ink-muted)', marginBottom: 28, lineHeight: 1.6 }}>
-            The Munich beta is opening to a limited group. Join the waiting list below.
+            The private beta is opening to a limited group. Join the waiting list below.
           </p>
           <BetaForm compact />
         </div>
@@ -1076,9 +1106,7 @@ export function LandingPage() {
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {([
             ['Manifesto', () => document.getElementById('manifesto')?.scrollIntoView({ behavior: 'smooth' })],
-            ['Cafés', () => document.getElementById('cafes')?.scrollIntoView({ behavior: 'smooth' })],
-            ['Guides', () => { window.location.href = '/guides/' }],
-            ['For employers', () => navigate('/employers')],
+            ['Blog', () => { window.location.href = '/guides/' }],
             ['Privacy', () => navigate('/privacy')],
             ['Impressum', () => navigate('/impressum')],
           ] as const).map(([label, fn]) => (
@@ -1087,7 +1115,7 @@ export function LandingPage() {
             </span>
           ))}
         </div>
-        <span>© 2026 knotify · Munich</span>
+        <span>© 2026 knotify</span>
       </footer>
     </div>
   )

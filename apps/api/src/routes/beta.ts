@@ -7,7 +7,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ROLES = ['student', 'professional', 'professor', 'investor', 'company']
 
 betaRouter.post('/', async (req, res) => {
-  const { email, marketing_consent, name, role, interests, is_international } = req.body
+  const { email, marketing_consent, beta_risk_consent, name, role, interests, is_international } = req.body
 
   if (!email || !EMAIL_RE.test(email)) {
     return res.status(400).json({ error: 'Valid email required.' })
@@ -16,6 +16,8 @@ betaRouter.post('/', async (req, res) => {
   if (marketing_consent !== true) {
     return res.status(400).json({ error: 'Consent is required to join the beta.' })
   }
+
+  const riskAccepted = beta_risk_consent === true
 
   const cleanRole = typeof role === 'string' && ROLES.includes(role) ? role : null
   const cleanInterests = Array.isArray(interests)
@@ -37,6 +39,9 @@ betaRouter.post('/', async (req, res) => {
       marketing_consent: true,
       consent_version: 'v1',
       consent_given_at: new Date().toISOString(),
+      beta_risk_consent: riskAccepted,
+      beta_risk_version: riskAccepted ? 'v1' : null,
+      beta_risk_given_at: riskAccepted ? new Date().toISOString() : null,
       ip_address: ip,
       source: 'landing',
     },
