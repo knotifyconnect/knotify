@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import multer from 'multer'
 import { supabase } from '../lib.js'
+import { invalidateBetaCache } from '../middleware/auth.js'
 
 export const adminPanelRouter = Router()
 
@@ -278,4 +279,78 @@ adminPanelRouter.get('/stats', async (_req, res) => {
     approved: approved.count ?? 0,
     rejected: rejected.count ?? 0,
   })
+})
+
+// ── App settings (beta toggle etc.) ──────────────────────────────────────────
+adminPanelRouter.get('/settings', async (_req, res) => {
+  const { data, error } = await supabase.from('app_settings').select('key, value')
+  if (error) return res.status(500).json({ error: error.message })
+  const settings: Record<string, unknown> = {}
+  for (const row of data ?? []) settings[row.key] = row.value
+  return res.json({ settings })
+})
+
+adminPanelRouter.patch('/settings', async (req, res) => {
+  const { key, value } = req.body
+  if (typeof key !== 'string' || key.length === 0) {
+    return res.status(422).json({ error: 'key is required' })
+  }
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  if (error) return res.status(500).json({ error: error.message })
+  if (key === 'beta_open') invalidateBetaCache()
+  return res.json({ ok: true })
+})
+
+// ── Invites admin ─────────────────────────────────────────────────────────────
+adminPanelRouter.get('/invites', async (_req, res) => {
+  // All invite rows joined with both users
+  const { data: rows, error } = await supabase
+    .from('invites')
+    .select('id, created_at, code, inviter_id, invitee_id')
+    .order('created_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+
+  const allIds = new Set<string>()
+  for (const r of rows ?? []) { allIds.add(r.inviter_id); allIds.add(r.invitee_id) }
+
+  const usersRes = allIds.size
+    ? await supabase.from('users').select('id, full_name, username, email, persona, interests, goals, created_at').in('id', [...allIds])
+    : { data: [], error: null }
+  if (usersRes.error) return res.status(500).json({ error: usersRes.error.message })
+
+  const byId = new Map((usersRes.data ?? []).map((u: any) => [u.id, u]))
+
+  function isOnboarded(u: any) {
+    if (!u) return false
+    const interests = Array.isArray(u.interests) ? u.interests : []
+    const goals = Array.isArray(u.goals) ? u.goals : []
+    return !!u.persona && interests.length >= 3 && goals.length >= 1
+  }
+
+  const invites = (rows ?? []).map((r: any) => {
+    const inviter = byId.get(r.inviter_id)
+    const invitee = byId.get(r.invitee_id)
+    return {
+      id: r.id,
+      created_at: r.created_at,
+      code: r.code,
+      inviter: inviter ? { id: inviter.id, full_name: inviter.full_name, username: inviter.username, email: inviter.email } : null,
+      invitee: invitee ? { id: invitee.id, full_name: invitee.full_name, username: invitee.username, email: invitee.email, onboarded: isOnboarded(invitee) } : null,
+    }
+  })
+
+  // Leaderboard: inviters ranked by count
+  const countMap = new Map<string, { inviter: any; total: number; onboarded: number }>()
+  for (const inv of invites) {
+    if (!inv.inviter) continue
+    const entry = countMap.get(inv.inviter.id) ?? { inviter: inv.inviter, total: 0, onboarded: 0 }
+    entry.total++
+    if (inv.invitee?.onboarded) entry.onboarded++
+    countMap.set(inv.inviter.id, entry)
+  }
+  const leaderboard = [...countMap.values()].sort((a, b) => b.total - a.total)
+
+  return res.json({ invites, leaderboard })
 })

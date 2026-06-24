@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api, getSecret, setSecret, clearSecret } from './api'
-import { EventsAdmin, GigsAdmin, QuestsAdmin } from './AdminPanels'
+import { EventsAdmin, GigsAdmin, QuestsAdmin, InvitesAdmin } from './AdminPanels'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface BetaSignup {
@@ -267,8 +267,81 @@ function exportCSV(signups: BetaSignup[]) {
 }
 
 // ── Admin app ─────────────────────────────────────────────────────────────────
+function SettingsPanel() {
+  const [betaOpen, setBetaOpen] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    api.settings()
+      .then((r: any) => setBetaOpen(r.settings?.beta_open === true || r.settings?.beta_open === 'true' || r.settings?.beta_open == null))
+      .catch((e: any) => setErr(e.message))
+  }, [])
+
+  async function toggle() {
+    if (betaOpen === null) return
+    setSaving(true)
+    setErr('')
+    try {
+      await api.updateSetting('beta_open', !betaOpen)
+      setBetaOpen(!betaOpen)
+    } catch (e: any) { setErr(e.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div style={{ maxWidth: 520 }}>
+      <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 400, letterSpacing: '-0.02em', marginBottom: 20 }}>Settings</h2>
+      {err && <div style={{ color: T.signal, fontSize: 13, marginBottom: 12 }}>{err}</div>}
+
+      <div style={{ background: T.white, border: `0.5px solid ${T.rule}`, borderRadius: 14, padding: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, marginBottom: 4 }}>Open beta</div>
+            <div style={{ fontSize: 13, color: T.inkMuted, lineHeight: 1.5 }}>
+              {betaOpen
+                ? 'Anyone with a confirmed email can access the app.'
+                : 'Only users approved in Beta signups can access the app. Others see a waitlist message.'}
+            </div>
+          </div>
+          <button
+            onClick={toggle}
+            disabled={saving || betaOpen === null}
+            style={{
+              flexShrink: 0,
+              width: 48,
+              height: 28,
+              borderRadius: 999,
+              border: 'none',
+              background: betaOpen ? T.verd : T.inkFaint,
+              position: 'relative',
+              cursor: saving || betaOpen === null ? 'not-allowed' : 'pointer',
+              transition: 'background 0.2s',
+            }}
+          >
+            <span style={{
+              position: 'absolute',
+              top: 3,
+              left: betaOpen ? 23 : 3,
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              background: '#fff',
+              transition: 'left 0.2s',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+            }} />
+          </button>
+        </div>
+        <div style={{ marginTop: 14, fontSize: 12, color: betaOpen ? T.verd : T.amber, fontWeight: 600 }}>
+          {betaOpen === null ? 'Loading…' : betaOpen ? '● Open — all confirmed users can log in' : '● Closed — approved list only'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AdminApp({ onLogout }: { onLogout: () => void }) {
-  const [section, setSection] = useState<'signups' | 'events' | 'gigs' | 'quests'>('signups')
+  const [section, setSection] = useState<'signups' | 'events' | 'gigs' | 'quests' | 'invites' | 'settings'>('signups')
   const [stats, setStats] = useState<Stats | null>(null)
   const [signups, setSignups] = useState<BetaSignup[]>([])
   const [filter, setFilter] = useState<string>('all')
@@ -353,7 +426,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
 
         {/* Section tabs */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 28, flexWrap: 'wrap' }}>
-          {(['signups', 'events', 'gigs', 'quests'] as const).map(s => (
+          {(['signups', 'events', 'gigs', 'quests', 'invites', 'settings'] as const).map(s => (
             <button key={s} onClick={() => setSection(s)} style={{
               padding: '7px 16px', borderRadius: 999,
               border: `0.5px solid ${section === s ? T.signal : T.rule}`,
@@ -361,13 +434,15 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
               color: section === s ? '#fff' : T.inkMuted,
               fontSize: 13, fontWeight: 500, cursor: 'pointer', textTransform: 'capitalize',
               fontFamily: 'IBM Plex Sans, sans-serif',
-            }}>{s === 'signups' ? 'Beta signups' : s}</button>
+            }}>{s === 'signups' ? 'Beta signups' : s.charAt(0).toUpperCase() + s.slice(1)}</button>
           ))}
         </div>
 
         {section === 'events' && <EventsAdmin />}
         {section === 'gigs' && <GigsAdmin />}
         {section === 'quests' && <QuestsAdmin />}
+        {section === 'invites' && <InvitesAdmin />}
+        {section === 'settings' && <SettingsPanel />}
 
         {section === 'signups' && (<>
         {/* Page title */}

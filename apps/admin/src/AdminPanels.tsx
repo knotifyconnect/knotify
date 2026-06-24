@@ -607,3 +607,152 @@ export function QuestsAdmin() {
     </div>
   )
 }
+
+// ── Invites ───────────────────────────────────────────────────────────────────
+type InviteRow = {
+  id: string
+  created_at: string
+  code: string
+  inviter: { id: string; full_name: string; username: string; email: string } | null
+  invitee: { id: string; full_name: string; username: string; email: string; onboarded: boolean } | null
+}
+type LeaderboardEntry = {
+  inviter: { id: string; full_name: string; username: string; email: string }
+  total: number
+  onboarded: number
+}
+
+export function InvitesAdmin() {
+  const [invites, setInvites] = useState<InviteRow[]>([])
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [err, setErr] = useState('')
+  const [view, setView] = useState<'leaderboard' | 'all'>('leaderboard')
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.invites()
+      setInvites(r.invites ?? [])
+      setLeaderboard(r.leaderboard ?? [])
+    } catch (e: any) { setErr(e.message) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
+  return (
+    <div>
+      <h2 style={h2}>Invites</h2>
+
+      {err && <div style={{ color: C.signal, fontSize: 13, marginBottom: 12 }}>{err}</div>}
+
+      {/* Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
+        {[
+          { label: 'Total invites', value: invites.length },
+          { label: 'Onboarded', value: invites.filter(i => i.invitee?.onboarded).length },
+          { label: 'Unique inviters', value: leaderboard.length },
+        ].map(s => (
+          <div key={s.label} style={{ ...cardWrap, margin: 0 }}>
+            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 32, fontWeight: 400, color: C.ink, lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontSize: 11, color: C.inkFaint, marginTop: 4 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* View toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        {(['leaderboard', 'all'] as const).map(v => (
+          <button key={v} onClick={() => setView(v)} style={{
+            padding: '6px 14px', borderRadius: 999, border: `0.5px solid ${view === v ? C.signal : C.inkFaint}`,
+            background: view === v ? C.signal : 'transparent', color: view === v ? '#fff' : C.inkMuted,
+            fontSize: 12, fontWeight: 500, cursor: 'pointer', textTransform: 'capitalize',
+            fontFamily: 'IBM Plex Sans, sans-serif',
+          }}>{v === 'leaderboard' ? 'Top inviters' : 'All invites'}</button>
+        ))}
+      </div>
+
+      {view === 'leaderboard' && (
+        <div style={cardWrap}>
+          {leaderboard.length === 0
+            ? <div style={{ color: C.inkFaint, fontSize: 13 }}>No invites yet.</div>
+            : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `0.5px solid ${C.rule}` }}>
+                    {['#', 'Member', 'Email', 'Invited', 'Onboarded'].map(h => (
+                      <th key={h} style={{ ...fieldLabel, padding: '6px 10px', textAlign: 'left' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard.map((e, i) => (
+                    <tr key={e.inviter.id} style={{ borderBottom: `0.5px solid ${C.rule}` }}>
+                      <td style={{ padding: '10px', color: C.inkFaint, fontFamily: 'IBM Plex Mono, monospace' }}>{i + 1}</td>
+                      <td style={{ padding: '10px' }}>
+                        <div style={{ fontWeight: 500, color: C.ink }}>{e.inviter.full_name}</div>
+                        <div style={{ fontSize: 11, color: C.inkFaint }}>@{e.inviter.username}</div>
+                      </td>
+                      <td style={{ padding: '10px', fontFamily: 'IBM Plex Mono, monospace', color: C.inkMuted, fontSize: 12 }}>{e.inviter.email}</td>
+                      <td style={{ padding: '10px', fontWeight: 600, color: C.ink }}>{e.total}</td>
+                      <td style={{ padding: '10px' }}>
+                        <span style={{ color: e.onboarded > 0 ? C.verd : C.inkFaint, fontWeight: e.onboarded > 0 ? 600 : 400 }}>
+                          {e.onboarded}
+                        </span>
+                        <span style={{ color: C.inkFaint, fontSize: 11 }}> / {e.total}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          }
+        </div>
+      )}
+
+      {view === 'all' && (
+        <div style={cardWrap}>
+          {invites.length === 0
+            ? <div style={{ color: C.inkFaint, fontSize: 13 }}>No invites yet.</div>
+            : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `0.5px solid ${C.rule}` }}>
+                    {['Inviter', 'Invitee', 'Onboarded', 'Date'].map(h => (
+                      <th key={h} style={{ ...fieldLabel, padding: '6px 10px', textAlign: 'left' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {invites.map(inv => (
+                    <tr key={inv.id} style={{ borderBottom: `0.5px solid ${C.rule}` }}>
+                      <td style={{ padding: '10px' }}>
+                        <div style={{ fontWeight: 500, color: C.ink }}>{inv.inviter?.full_name ?? '—'}</div>
+                        <div style={{ fontSize: 11, color: C.inkFaint }}>@{inv.inviter?.username}</div>
+                      </td>
+                      <td style={{ padding: '10px' }}>
+                        <div style={{ fontWeight: 500, color: C.ink }}>{inv.invitee?.full_name ?? '—'}</div>
+                        <div style={{ fontSize: 11, color: C.inkFaint }}>@{inv.invitee?.username}</div>
+                      </td>
+                      <td style={{ padding: '10px' }}>
+                        <span style={{
+                          display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
+                          background: inv.invitee?.onboarded ? 'rgba(45,125,70,0.1)' : 'rgba(84,72,58,0.08)',
+                          color: inv.invitee?.onboarded ? C.verd : C.inkFaint,
+                        }}>
+                          {inv.invitee?.onboarded ? 'Yes' : 'Pending'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px', color: C.inkMuted }}>{fmtDate(inv.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          }
+        </div>
+      )}
+    </div>
+  )
+}

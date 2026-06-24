@@ -1,6 +1,21 @@
 import type { NextFunction, Request, Response } from 'express'
 import { supabase } from '../lib.js'
 
+// Cache beta_open setting for 30s to avoid a DB hit on every request.
+let betaOpenCache: { value: boolean; expiresAt: number } | null = null
+
+async function isBetaOpen(): Promise<boolean> {
+  const now = Date.now()
+  if (betaOpenCache && now < betaOpenCache.expiresAt) return betaOpenCache.value
+  const { data } = await supabase.from('app_settings').select('value').eq('key', 'beta_open').maybeSingle()
+  const value = data?.value === true || data?.value === 'true' || data?.value == null
+  betaOpenCache = { value, expiresAt: now + 30_000 }
+  return value
+}
+
+// Call this from the admin settings PATCH to invalidate cache immediately.
+export function invalidateBetaCache() { betaOpenCache = null }
+
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
@@ -105,6 +120,23 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   req.appUserId = lookup.id
   req.isAdmin = Boolean(lookup.is_admin)
   req.isHr = Boolean(lookup.is_hr)
+
+  // Beta gate: when closed, only admins + approved beta signups can proceed.
+  if (!lookup.is_admin) {
+    const open = await isBetaOpen()
+    if (!open) {
+      const email = (authEmail ?? '').toLowerCase()
+      const approved = await supabase
+        .from('beta_signups')
+        .select('id', { count: 'exact', head: true })
+        .eq('email', email)
+        .eq('status', 'approved')
+      if ((approved.count ?? 0) === 0) {
+        return res.status(403).json({ error: 'beta_closed', message: 'Access is currently invite-only. You are on the waitlist.' })
+      }
+    }
+  }
+
   next()
 }
 

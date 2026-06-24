@@ -87,7 +87,7 @@ type OnboardingStatus = {
 
 function ProfileCompletionGate({ children }: { children: ReactNode }) {
   const location = useLocation()
-  const [status, setStatus] = useState<'loading' | 'complete' | 'incomplete' | 'error'>('loading')
+  const [status, setStatus] = useState<'loading' | 'complete' | 'incomplete' | 'beta_closed' | 'error'>('loading')
 
   useEffect(() => {
     let mounted = true
@@ -99,21 +99,48 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
         const result = await apiGet<OnboardingStatus>('/api/users/me/onboarding-status')
         if (!mounted) return
         setStatus(result.complete ? 'complete' : 'incomplete')
-      } catch {
+      } catch (err) {
         if (!mounted) return
-        setStatus('error')
+        const msg = err instanceof Error ? err.message : ''
+        if (msg.includes('beta_closed') || msg.includes('[403]')) {
+          setStatus('beta_closed')
+        } else {
+          setStatus('error')
+        }
       }
     }
 
     void checkProfileCompletion()
 
-    return () => {
-      mounted = false
-    }
+    return () => { mounted = false }
   }, [location.pathname])
 
   if (status === 'loading') {
     return <div className="min-h-screen bg-bg-base" />
+  }
+
+  if (status === 'beta_closed') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f5f0e8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        <div style={{ maxWidth: 400, textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 32, fontWeight: 700, color: '#1a1815', marginBottom: 12 }}>
+            You're on the list.
+          </div>
+          <p style={{ fontSize: 15, color: '#6B6358', lineHeight: 1.6, marginBottom: 24 }}>
+            knotify is currently invite-only. We'll reach out to <strong style={{ color: '#1a1815' }}>terminasyan99@gmail.com</strong> when your spot opens up.
+          </p>
+          <p style={{ fontSize: 13, color: '#A29A8C' }}>
+            Know someone already inside? Ask them to share their invite link with you.
+          </p>
+          <button
+            onClick={() => { void import('./lib/supabase').then(m => m.supabase.auth.signOut()).then(() => window.location.href = '/') }}
+            style={{ marginTop: 32, background: 'none', border: '0.5px solid #D9D1BF', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#6B6358', cursor: 'pointer' }}
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (status === 'incomplete') {

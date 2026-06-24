@@ -62,4 +62,12 @@ export const api = {
   createQuest: (body: unknown) => request('/api/admin-panel/quests', { method: 'POST', body: JSON.stringify(body) }),
   updateQuest: (id: string, body: unknown) => request(`/api/admin-panel/quests/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteQuest: (id: string) => request(`/api/admin-panel/quests/${id}`, { method: 'DELETE' }),
+
+  // Settings
+  settings: () => request('/api/admin-panel/settings'),
+  updateSetting: (key: string, value: unknown) =>
+    request('/api/admin-panel/settings', { method: 'PATCH', body: JSON.stringify({ key, value }) }),
+
+  // Invites
+  invites: () => request('/api/admin-panel/invites'),
 }
