@@ -693,7 +693,7 @@ export function RelationshipHomePage() {
       )}
 
       {/* Mobile-only asks (the desktop rail is hidden under lg) */}
-      <div className="lg:hidden" style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 20 }}>
+      <div className="lg:hidden" style={{ flexDirection: 'column', gap: 20, marginBottom: 20 }}>
         {asksBlock}
       </div>
 
