@@ -535,28 +535,43 @@ export function RelationshipHomePage() {
     </button>
   )
 
+  const RAIL_FEED_LIMIT = 4
   const asksBlock = (
     <>
       <div>
         <DeskSectionLabel right={
-          <button type="button" onClick={() => setAskOpen(true)} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>+ Ask</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {feedAsks.length > RAIL_FEED_LIMIT && (
+              <button type="button" onClick={() => navigate('/asks')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text, padding: 0 }}>See all →</button>
+            )}
+            <button type="button" onClick={() => setAskOpen(true)} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text, padding: 0 }}>+ Ask</button>
+          </div>
         }>{feedAsks.length > 0 ? `Asks for you · ${feedAsks.length}` : 'Asks for you'}</DeskSectionLabel>
         {feedAsks.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {feedAsks.slice(0, 5).map((a) => compactRow(a, { showAuthor: true }))}
+            {feedAsks.slice(0, RAIL_FEED_LIMIT).map((a) => compactRow(a, { showAuthor: true }))}
+            {feedAsks.length > RAIL_FEED_LIMIT && (
+              <button type="button" onClick={() => navigate('/asks')} style={{ textAlign: 'center', width: '100%', padding: '6px 0', borderRadius: 8, border: 'none', background: 'transparent', fontSize: 11.5, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>
+                +{feedAsks.length - RAIL_FEED_LIMIT} more asks →
+              </button>
+            )}
           </div>
         ) : (
-          <div style={{ fontSize: 12, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display, padding: '2px 0' }}>
-            Asks that match your interests will appear here.
-          </div>
+          <button type="button" onClick={() => navigate('/asks')} style={{ width: '100%', padding: '10px', borderRadius: 10, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 12, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text, textAlign: 'center' }}>
+            No targeted asks yet — view all →
+          </button>
         )}
       </div>
 
       <div>
-        <DeskSectionLabel>Your asks</DeskSectionLabel>
+        <DeskSectionLabel right={
+          myOpenAsks.length > 0
+            ? <button type="button" onClick={() => navigate('/asks')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text, padding: 0 }}>Manage →</button>
+            : undefined
+        }>Your asks</DeskSectionLabel>
         {myOpenAsks.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {myOpenAsks.slice(0, 4).map((a) => compactRow(a, { showAuthor: false }))}
+            {myOpenAsks.slice(0, 3).map((a) => compactRow(a, { showAuthor: false }))}
           </div>
         ) : (
           <button type="button" onClick={() => setAskOpen(true)} style={{ width: '100%', padding: '10px', borderRadius: 10, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 12, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>
