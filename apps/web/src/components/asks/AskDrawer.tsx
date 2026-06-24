@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { X, Globe, Hash, Briefcase, Send } from 'lucide-react'
 import { apiGet, apiPost, apiDelete } from '../../lib/api'
-import { KAvatar, KBtn } from '../../lib/knotify'
+import { KAvatar } from '../../lib/knotify'
 import { T } from '../../lib/desk'
-import { useIsMobile } from '../../hooks/useIsMobile'
 import { PERSONAS } from '../../lib/taxonomy'
 
 export type Ask = {
@@ -44,7 +43,6 @@ export function AskDrawer({
   onClose: () => void
   onChanged?: () => void
 }) {
-  const isMobile = useIsMobile()
   const [replies, setReplies] = useState<Reply[]>([])
   const [loading, setLoading] = useState(true)
   const [body, setBody] = useState('')
@@ -99,23 +97,30 @@ export function AskDrawer({
     <div
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(26,24,21,0.45)', backdropFilter: 'blur(2px)',
-        display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'flex-end', alignItems: 'stretch',
+        position: 'fixed', inset: 0, zIndex: 220,
+        background: 'rgba(26,24,21,0.5)',
+        backdropFilter: 'blur(2px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        boxSizing: 'border-box',
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: isMobile ? '100%' : 480,
-          maxWidth: '100%',
-          height: isMobile ? '88vh' : '100vh',
+          width: '100%',
+          maxWidth: 520,
+          maxHeight: '90vh',
           background: T.paper,
-          borderRadius: isMobile ? '20px 20px 0 0' : 0,
-          borderLeft: isMobile ? 'none' : `0.5px solid ${T.rule}`,
+          borderRadius: 20,
+          border: `0.5px solid ${T.rule}`,
           display: 'flex',
           flexDirection: 'column',
           fontFamily: T.text,
           overflow: 'hidden',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.18)',
         }}
       >
         {/* Header */}
@@ -134,36 +139,35 @@ export function AskDrawer({
 
         {/* Ask body */}
         <div style={{ padding: '16px 20px', borderBottom: `0.5px solid ${T.ruleSoft}` }}>
-          <p style={{ fontSize: 15, color: T.ink, lineHeight: 1.6, margin: 0, fontFamily: T.text }}>{ask.content}</p>
+          <p style={{ fontSize: 15, color: T.ink, lineHeight: 1.6, margin: 0 }}>{ask.content}</p>
           {status === 'resolved' && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8, fontSize: 11, fontWeight: 700, color: T.verd, background: T.verdSoft, padding: '3px 10px', borderRadius: 999 }}>● Resolved</span>
           )}
         </div>
 
-        {/* Replies list */}
+        {/* Replies */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.inkFaint, marginBottom: 12 }}>
             {replies.length > 0 ? `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}` : 'Replies'}
           </div>
-
           {loading ? (
             <div style={{ fontSize: 13, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>Loading…</div>
           ) : replies.length === 0 ? (
-            <div style={{ padding: '20px 0', textAlign: 'center' }}>
+            <div style={{ textAlign: 'center', padding: '16px 0' }}>
               <div style={{ fontSize: 15, fontStyle: 'italic', color: T.inkMuted, fontFamily: T.display, marginBottom: 4 }}>Be the first to help.</div>
               <div style={{ fontSize: 12, color: T.inkFaint }}>Your reply could make a real difference.</div>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {replies.map((r) => (
-                <div key={r.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                  <KAvatar name={r.author?.full_name ?? '?'} src={r.author?.avatar_url ?? null} size={32} />
+                <div key={r.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <KAvatar name={r.author?.full_name ?? '?'} src={r.author?.avatar_url ?? null} size={30} />
                   <div style={{ flex: 1, minWidth: 0, background: T.paperSoft, borderRadius: 12, padding: '10px 14px' }}>
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, marginBottom: 3 }}>{r.author?.full_name ?? 'Someone'}</div>
                     <div style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.5 }}>{r.body}</div>
                   </div>
                   {currentUserId === r.user_id && (
-                    <button onClick={() => deleteReply(r.id)} aria-label="Delete reply" style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkFaint, padding: 4, display: 'flex', marginTop: 6 }}>
+                    <button onClick={() => deleteReply(r.id)} aria-label="Delete reply" style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkFaint, padding: 4, display: 'flex', marginTop: 4 }}>
                       <X size={14} />
                     </button>
                   )}
@@ -173,8 +177,8 @@ export function AskDrawer({
           )}
         </div>
 
-        {/* Footer: reply composer + optional resolve */}
-        <div style={{ flexShrink: 0, borderTop: `1px solid ${T.ruleSoft}`, padding: '14px 20px', paddingBottom: isMobile ? 'max(14px, env(safe-area-inset-bottom))' : 14, background: T.paper }}>
+        {/* Footer */}
+        <div style={{ flexShrink: 0, borderTop: `1px solid ${T.ruleSoft}`, padding: '14px 20px', background: T.paper }}>
           {mine && (
             <div style={{ marginBottom: 12 }}>
               <button
@@ -194,16 +198,15 @@ export function AskDrawer({
               placeholder={mine ? 'Add a note…' : 'Write a helpful reply…'}
               rows={2}
               style={{
-                flex: 1, resize: 'none', minHeight: 56, maxHeight: 140,
+                flex: 1, resize: 'none', minHeight: 52, maxHeight: 120,
                 padding: '12px 14px', borderRadius: 14,
-                border: `1px solid ${body.trim() ? T.ink : T.rule}`,
+                border: `1px solid ${T.rule}`,
                 background: T.paperSoft,
                 fontSize: 14, color: T.ink, outline: 'none',
                 fontFamily: T.text, lineHeight: 1.5, boxSizing: 'border-box',
-                transition: 'border-color 0.15s ease',
               }}
               onFocus={(e) => { e.currentTarget.style.borderColor = T.ink }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = body.trim() ? T.ink : T.rule }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = T.rule }}
             />
             <button
               onClick={sendReply}
@@ -215,13 +218,12 @@ export function AskDrawer({
                 color: body.trim() ? T.paper : T.inkFaint,
                 cursor: body.trim() ? 'pointer' : 'default',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'background 0.15s ease, color 0.15s ease',
+                transition: 'background 0.15s, color 0.15s',
               }}
             >
               <Send size={18} />
             </button>
           </div>
-          <div style={{ fontSize: 10.5, color: T.inkFaint, marginTop: 6 }}>⌘↵ to send</div>
         </div>
       </div>
     </div>
