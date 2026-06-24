@@ -50,7 +50,7 @@ export function AuthPage() {
     setWaitlistLoading(true)
     setWaitlistError('')
     try {
-      await apiPost('/api/beta/signup', { email: waitlistEmail.trim().toLowerCase() })
+      await apiPost('/api/beta', { email: waitlistEmail.trim().toLowerCase(), marketing_consent: true })
       setWaitlistSubmitted(true)
     } catch (err) {
       setWaitlistError(err instanceof Error ? err.message : 'Something went wrong')
