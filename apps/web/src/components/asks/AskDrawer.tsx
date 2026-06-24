@@ -100,7 +100,7 @@ export function AskDrawer({
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(26,24,21,0.45)', backdropFilter: 'blur(2px)',
-        display: 'flex', justifyContent: isMobile ? 'stretch' : 'flex-end', alignItems: isMobile ? 'flex-end' : 'stretch',
+        display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'flex-end', alignItems: 'stretch',
       }}
     >
       <div
