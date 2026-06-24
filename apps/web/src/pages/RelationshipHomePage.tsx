@@ -285,10 +285,6 @@ export function RelationshipHomePage() {
     loadFeedAsks()
   }
 
-  async function resolveAsk(id: string) {
-    setMyAsks((a) => a.map((x) => x.id === id ? { ...x, status: 'resolved' } : x))
-    try { await apiPost(`/api/asks/${id}/resolve`, {}) } catch { loadMyAsks(userId) }
-  }
 
   useEffect(() => {
     apiGet<{ user: { full_name: string; id: string } }>('/api/users/me')
@@ -523,6 +519,22 @@ export function RelationshipHomePage() {
   // ── Asks block: targeted "for you" feed + your own. Clickable → AskDrawer.
   // Reused in the desktop rail and the mobile main column (rail is desktop-only).
   const myOpenAsks = myAsks.filter((a) => a.status === 'open')
+  const compactRow = (a: Ask, opts: { showAuthor: boolean }) => (
+    <button
+      key={a.id}
+      type="button"
+      onClick={() => setAskDetail(a)}
+      style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: '8px 10px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.text }}
+    >
+      <div style={{ width: 5, height: 5, borderRadius: 3, background: T.ochre, flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {opts.showAuthor && a.author && <span style={{ fontWeight: 600, color: T.ink }}>{a.author.full_name.split(' ')[0]} · </span>}
+        <span style={{ color: T.inkMuted }}>{a.content}</span>
+      </div>
+      <span style={{ fontSize: 10, color: T.inkFaint, flexShrink: 0 }}>{a.reply_count ? `${a.reply_count}↩` : ''}</span>
+    </button>
+  )
+
   const asksBlock = (
     <>
       <div>
@@ -530,24 +542,12 @@ export function RelationshipHomePage() {
           <button type="button" onClick={() => setAskOpen(true)} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>+ Ask</button>
         }>{feedAsks.length > 0 ? `Asks for you · ${feedAsks.length}` : 'Asks for you'}</DeskSectionLabel>
         {feedAsks.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {feedAsks.slice(0, 5).map((a) => (
-              <button key={a.id} type="button" onClick={() => setAskDetail(a)} style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, fontFamily: T.text }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                  {a.author && <KAvatar name={a.author.full_name} src={a.author.avatar_url} size={20} />}
-                  <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink }}>{a.author?.full_name ?? 'Someone'}</span>
-                  <span style={{ flex: 1 }} />
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: T.signal, fontWeight: 600 }}>
-                    <MessageSquare size={11} /> Reply
-                  </span>
-                </div>
-                <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.content}</div>
-              </button>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {feedAsks.slice(0, 5).map((a) => compactRow(a, { showAuthor: true }))}
           </div>
         ) : (
-          <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display, padding: '4px 0' }}>
-            No asks for you right now. We'll show ones that match your interests here.
+          <div style={{ fontSize: 12, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display, padding: '2px 0' }}>
+            Asks that match your interests will appear here.
           </div>
         )}
       </div>
@@ -555,27 +555,11 @@ export function RelationshipHomePage() {
       <div>
         <DeskSectionLabel>Your asks</DeskSectionLabel>
         {myOpenAsks.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {myOpenAsks.slice(0, 4).map((a) => (
-              <button key={a.id} type="button" onClick={() => setAskDetail(a)} style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, fontFamily: T.text }}>
-                <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4 }}>{a.content}</div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                  <span style={{ fontSize: 10.5, color: T.inkFaint }}>{a.reply_count ? `${a.reply_count} repl${a.reply_count === 1 ? 'y' : 'ies'}` : 'No replies yet'}</span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); void resolveAsk(a.id) }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); void resolveAsk(a.id) } }}
-                    style={{ border: `0.5px solid ${T.rule}`, borderRadius: 999, padding: '4px 10px', fontSize: 11, color: T.inkMuted, cursor: 'pointer' }}
-                  >
-                    Mark resolved
-                  </span>
-                </div>
-              </button>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {myOpenAsks.slice(0, 4).map((a) => compactRow(a, { showAuthor: false }))}
           </div>
         ) : (
-          <button type="button" onClick={() => setAskOpen(true)} style={{ width: '100%', padding: '12px', borderRadius: 12, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 12.5, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>
+          <button type="button" onClick={() => setAskOpen(true)} style={{ width: '100%', padding: '10px', borderRadius: 10, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 12, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>
             Need something? Ask for help.
           </button>
         )}
