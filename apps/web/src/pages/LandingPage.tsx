@@ -460,9 +460,22 @@ export function LandingPage() {
 
           <p
             style={{
+              fontFamily: "'Fraunces', serif",
+              fontStyle: 'italic',
+              fontSize: 19,
+              color: 'var(--signal)',
+              marginTop: 18,
+              letterSpacing: '-0.01em',
+            }}
+          >
+            Networks worth keeping.
+          </p>
+
+          <p
+            style={{
               fontSize: 17,
               color: 'var(--ink-muted)',
-              marginTop: 22,
+              marginTop: 14,
               lineHeight: 1.6,
               maxWidth: 460,
             }}
@@ -535,6 +548,107 @@ export function LandingPage() {
               <span style={{ fontStyle: 'italic' }}>at Tortoise.</span>
             </div>
           </FloatCard>
+        </div>
+      </section>
+
+      {/* ── Dual audience ── */}
+      <section
+        style={{
+          padding: 'clamp(40px, 6vw, 80px) clamp(16px, 4vw, 40px)',
+          maxWidth: 1160,
+          margin: '0 auto',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10.5,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: 'var(--ink-faint)',
+            marginBottom: 16,
+          }}
+        >
+          Which sounds more like you?
+        </div>
+        <h2
+          style={{
+            fontFamily: "'Fraunces', serif",
+            fontSize: 42,
+            fontWeight: 400,
+            letterSpacing: '-0.03em',
+            margin: '0 0 40px',
+          }}
+        >
+          Two ways in,{' '}
+          <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>one network.</span>
+        </h2>
+
+        <div className="k-landing-dual">
+          {/* Building your first circle */}
+          <div
+            style={{
+              background: 'var(--signal-soft)',
+              border: '0.5px solid rgba(216,68,43,0.25)',
+              borderRadius: 20,
+              padding: 'clamp(24px, 3vw, 36px)',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "'Fraunces', serif",
+                fontSize: 26,
+                fontWeight: 500,
+                letterSpacing: '-0.02em',
+                color: 'var(--signal-deep)',
+              }}
+            >
+              Building your <span style={{ fontStyle: 'italic' }}>first circle?</span>
+            </div>
+            <p style={{ fontSize: 15, color: 'var(--ink-muted)', lineHeight: 1.6, margin: '12px 0 20px' }}>
+              You are new to a university, city, career, or community. You need people who can offer:
+            </p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {['practical help', 'honest advice', 'shared experience', 'warm introductions', 'a way into new opportunities'].map((t) => (
+                <li key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14.5, color: 'var(--ink)' }}>
+                  <span style={{ width: 5, height: 5, borderRadius: 3, background: 'var(--signal)', flexShrink: 0 }} />
+                  {t}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Keeping trusted relationships alive */}
+          <div
+            style={{
+              background: 'var(--ink)',
+              borderRadius: 20,
+              padding: 'clamp(24px, 3vw, 36px)',
+              color: 'var(--paper-soft)',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "'Fraunces', serif",
+                fontSize: 26,
+                fontWeight: 500,
+                letterSpacing: '-0.02em',
+                color: 'var(--paper)',
+              }}
+            >
+              Keeping <span style={{ fontStyle: 'italic', color: 'var(--ochre)' }}>trusted relationships</span> alive?
+            </div>
+            <p style={{ fontSize: 15, color: 'rgba(250,246,238,0.72)', lineHeight: 1.6, margin: '12px 0 20px' }}>
+              You already met and built connections with valuable people, but time passes and connections quietly fade. You want to:
+            </p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {['reconnect with purpose', 'stay close to the right people', 'help without being overwhelmed', 'remain useful to your network', 'create opportunities for one another'].map((t) => (
+                <li key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14.5, color: 'var(--paper-soft)' }}>
+                  <span style={{ width: 5, height: 5, borderRadius: 3, background: 'var(--ochre)', flexShrink: 0 }} />
+                  {t}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </section>
 
@@ -643,31 +757,33 @@ export function LandingPage() {
             margin: '0 0 48px',
           }}
         >
-          Simple,{' '}
+          This is where{' '}
           <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>
-            by design.
+            knotify fits.
           </span>
         </h2>
 
-        <div className="k-landing-how-grid">
+        <div className="k-landing-flow">
           {[
             {
               step: 1,
-              title: 'Add the people you know',
-              desc: 'Not everyone, just the ones that matter. Your network becomes a living, navigable map.',
-              color: 'var(--signal)',
+              title: 'You need something, or have something to offer',
+              desc: 'Advice, support, an introduction, mentoring, or a career insight.',
             },
             {
               step: 2,
-              title: 'See who needs attention',
-              desc: 'knotify shows who is going cold, who just hit a milestone, and who is waiting on something from you.',
-              color: 'var(--signal)',
+              title: 'knotify finds the right people',
+              desc: 'And the warmest way to reach them, with shared context and a real reason to connect.',
             },
             {
               step: 3,
-              title: 'Reach out, or meet in person',
-              desc: 'Make the ask, send the intro, or book a coffee at a partner café in Munich.',
-              color: 'var(--verd)',
+              title: 'A real conversation happens',
+              desc: 'Online or over coffee at a partner café in Munich.',
+            },
+            {
+              step: 4,
+              title: 'The relationship stays alive',
+              desc: 'And becomes more valuable for both sides over time.',
             },
           ].map((item) => (
             <div
@@ -684,7 +800,7 @@ export function LandingPage() {
                   width: 32,
                   height: 32,
                   borderRadius: 8,
-                  background: item.color,
+                  background: 'var(--signal)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -704,6 +820,7 @@ export function LandingPage() {
                   fontWeight: 500,
                   letterSpacing: '-0.02em',
                   marginBottom: 8,
+                  lineHeight: 1.2,
                 }}
               >
                 {item.title}
@@ -839,6 +956,78 @@ export function LandingPage() {
               </p>
             </details>
           ))}
+        </div>
+      </section>
+
+      {/* ── Closer than you think ── */}
+      <section
+        style={{
+          background: 'var(--paper-soft)',
+          borderTop: '0.5px solid var(--rule-soft)',
+          borderBottom: '0.5px solid var(--rule-soft)',
+          padding: 'clamp(48px, 6vw, 80px) clamp(16px, 4vw, 40px)',
+        }}
+      >
+        <div style={{ maxWidth: 760, margin: '0 auto', textAlign: 'center' }}>
+          <h2
+            style={{
+              fontFamily: "'Fraunces', serif",
+              fontSize: 'clamp(30px, 4vw, 44px)',
+              fontWeight: 400,
+              letterSpacing: '-0.03em',
+              lineHeight: 1.1,
+              margin: '0 0 36px',
+            }}
+          >
+            The right people are often{' '}
+            <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>closer than you think.</span>
+          </h2>
+          <div className="k-landing-3col" style={{ gap: 32 }}>
+            {[
+              { title: 'One person', accent: 'to ask.' },
+              { title: 'One person', accent: 'to help.' },
+              { title: 'One relationship', accent: 'worth keeping.' },
+            ].map((item) => (
+              <div key={item.accent} style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1.25 }}>
+                {item.title}
+                <br />
+                <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>{item.accent}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* App store badges */}
+          <div style={{ marginTop: 44 }}>
+            <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 16 }}>
+              Coming soon
+            </div>
+            <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
+              {[
+                { store: 'App Store', sub: 'Coming soon to the' },
+                { store: 'Google Play', sub: 'Coming soon to' },
+              ].map((b) => (
+                <div
+                  key={b.store}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 18px 10px 12px',
+                    borderRadius: 14,
+                    background: 'var(--ink)',
+                    color: 'var(--paper)',
+                    opacity: 0.92,
+                  }}
+                >
+                  <img src="/app-icon.svg" alt="knotify app icon" width={36} height={36} style={{ borderRadius: 9, flexShrink: 0 }} />
+                  <div style={{ textAlign: 'left', lineHeight: 1.2 }}>
+                    <div style={{ fontSize: 10, color: 'rgba(250,246,238,0.6)' }}>{b.sub}</div>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 500 }}>{b.store}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
