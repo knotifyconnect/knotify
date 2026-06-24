@@ -108,8 +108,7 @@ export function AskDrawer({
         style={{
           width: isMobile ? '100%' : 480,
           maxWidth: '100%',
-          height: isMobile ? 'auto' : '100vh',
-          maxHeight: isMobile ? '88vh' : '100vh',
+          height: isMobile ? '88vh' : '100vh',
           background: T.paper,
           borderRadius: isMobile ? '20px 20px 0 0' : 0,
           borderLeft: isMobile ? 'none' : `0.5px solid ${T.rule}`,

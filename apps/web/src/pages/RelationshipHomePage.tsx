@@ -668,27 +668,31 @@ export function RelationshipHomePage() {
       )}
 
       {!inviteDismissed && inviteUrl && (
-        <div style={{ marginBottom: 20, padding: '14px 18px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <UserPlus size={16} style={{ color: T.inkMuted, flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>
-              Invite your network to Munich's professional graph
+        <div style={{ marginBottom: 20, padding: '14px 18px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+            <UserPlus size={16} style={{ color: T.inkMuted, flexShrink: 0, marginTop: 2 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>
+                Invite your network to Munich's professional graph
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: T.inkFaint, marginTop: 2, fontFamily: "'IBM Plex Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <button type="button" onClick={dismissInviteCard} style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: T.inkFaint, display: 'flex', flexShrink: 0 }}>
+              <X size={14} />
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.paper, borderRadius: 8, border: `0.5px solid ${T.rule}`, padding: '8px 10px' }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: T.inkFaint, fontFamily: "'IBM Plex Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {inviteUrl}
             </div>
+            <button
+              type="button"
+              onClick={copyInviteLink}
+              style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 6, border: 'none', background: inviteCopied ? '#22c55e' : T.ink, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}
+            >
+              {inviteCopied ? <Check size={12} /> : <Copy size={12} />}
+              {inviteCopied ? 'Copied!' : 'Copy link'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={copyInviteLink}
-            style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: inviteCopied ? '#22c55e' : T.ink, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}
-          >
-            {inviteCopied ? <Check size={13} /> : <Copy size={13} />}
-            {inviteCopied ? 'Copied!' : 'Copy link'}
-          </button>
-          <button type="button" onClick={dismissInviteCard} style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: T.inkFaint, display: 'flex', flexShrink: 0 }}>
-            <X size={14} />
-          </button>
         </div>
       )}
 
