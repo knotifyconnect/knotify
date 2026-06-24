@@ -314,17 +314,20 @@ export function AppSidebar() {
           padding: '0 8px',
         }}
       >
-        {[
+        {([
           { title: 'Home',     href: '/home',     icon: <Home size={18} /> },
-          { title: 'Knot',     href: '/map',      icon: <Network size={18} /> },
-          { title: 'Messages', href: '/messages', icon: <MessageSquare size={18} /> },
+          { title: 'Knot',     href: '/map',      icon: <Network size={18} />, badge: 'connections' as const },
+          { title: 'Jobs',     href: '/jobs',     icon: <BriefcaseBusiness size={18} />, badge: 'jobs' as const },
+          { title: 'Messages', href: '/messages', icon: <MessageSquare size={18} />, badge: 'messages' as const },
           { title: 'Discover', href: '/discover', icon: <Search size={18} /> },
           {
             title: 'Me',
             href: '/profile',
             icon: me ? <KAvatar name={me.full_name} src={me.avatar_url} size={22} /> : <Search size={18} />,
           },
-        ].map((item) => (
+        ] as Array<{ title: string; href: string; icon: React.ReactNode; badge?: 'jobs' | 'messages' | 'connections' }>).map((item) => {
+          const count = item.badge ? badgeFor(item as NavItem) : 0
+          return (
           <NavLink
             key={item.href + item.title}
             to={item.href}
@@ -341,7 +344,22 @@ export function AppSidebar() {
                   color: isActive ? 'var(--signal)' : 'var(--ink-faint)',
                 }}
               >
-                {item.icon}
+                <span style={{ position: 'relative', display: 'inline-flex' }}>
+                  {item.icon}
+                  {count > 0 && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: -3,
+                        right: -5,
+                        minWidth: 7,
+                        height: 7,
+                        borderRadius: 999,
+                        background: 'var(--signal)',
+                      }}
+                    />
+                  )}
+                </span>
                 <span
                   style={{
                     fontSize: 9.5,
@@ -354,7 +372,8 @@ export function AppSidebar() {
               </div>
             )}
           </NavLink>
-        ))}
+          )
+        })}
       </nav>
     </>
   )

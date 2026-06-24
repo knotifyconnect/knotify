@@ -23,6 +23,7 @@ import { DeskHeader } from '../lib/desk'
 import { AvatarPicker } from '../components/ui/avatar-picker'
 import { AvatarGroup } from '../components/ui/avatar-1'
 import { avatarUrl } from '../lib/avatar'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -239,6 +240,7 @@ export function ProfilePage() {
 
 function OwnProfileView() {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [me, setMe] = useState<Me | null>(null)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -700,10 +702,10 @@ function OwnProfileView() {
             minHeight: 238,
             background:
               'radial-gradient(circle at 8% 0%, rgba(216,68,43,0.13) 0%, transparent 34%), linear-gradient(135deg, #fffaf3 0%, #f4eadb 100%)',
-            padding: 28,
+            padding: isMobile ? 18 : 28,
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) 320px',
-            gap: 22,
+            gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 320px',
+            gap: isMobile ? 18 : 22,
             alignItems: 'stretch',
             borderBottom: '1px solid rgba(35,31,28,0.08)',
           }}
@@ -862,7 +864,7 @@ function OwnProfileView() {
         </div>
 
         {!editMode && me.bio && (
-          <div style={{ padding: '18px 28px 24px', background: 'var(--paper)', borderTop: '1px solid var(--rule-soft)' }}>
+          <div style={{ padding: isMobile ? '16px 18px 20px' : '18px 28px 24px', background: 'var(--paper)', borderTop: '1px solid var(--rule-soft)' }}>
             <p style={{ maxWidth: 760, fontSize: 14.5, lineHeight: 1.65, color: 'var(--ink-soft)', margin: 0 }}>
               {me.bio}
             </p>
