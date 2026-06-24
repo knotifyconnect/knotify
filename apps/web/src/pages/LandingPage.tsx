@@ -460,29 +460,17 @@ export function LandingPage() {
 
           <p
             style={{
-              fontFamily: "'Fraunces', serif",
-              fontStyle: 'italic',
-              fontSize: 19,
-              color: 'var(--signal)',
-              marginTop: 18,
-              letterSpacing: '-0.01em',
-            }}
-          >
-            Networks worth keeping.
-          </p>
-
-          <p
-            style={{
               fontSize: 17,
               color: 'var(--ink-muted)',
-              marginTop: 14,
+              marginTop: 22,
               lineHeight: 1.6,
               maxWidth: 460,
             }}
           >
-            The professional network for internationals and students in Munich.
-            knotify tells you who is going cold, who just hit a milestone, and
-            who you can actually help, so the people who matter don't slip away.
+            Whether you're building your first circle or keeping trusted
+            relationships alive, knotify helps the right people stay close,
+            support one another, and create opportunities in the moments that
+            matter.
           </p>
 
           {/* Beta form */}
@@ -584,71 +572,94 @@ export function LandingPage() {
         </h2>
 
         <div className="k-landing-dual">
-          {/* Building your first circle */}
-          <div
-            style={{
-              background: 'var(--signal-soft)',
-              border: '0.5px solid rgba(216,68,43,0.25)',
-              borderRadius: 20,
-              padding: 'clamp(24px, 3vw, 36px)',
-            }}
-          >
+          {[
+            {
+              eyebrow: 'New here',
+              accent: 'var(--signal)',
+              accentSoft: 'var(--signal-soft)',
+              title: <>Building your <span style={{ fontStyle: 'italic' }}>first circle?</span></>,
+              body: 'You are new to a university, city, career, or community. You need people who can offer:',
+              items: ['practical help', 'honest advice', 'shared experience', 'warm introductions', 'a way into new opportunities'],
+              icon: (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22V12" />
+                  <path d="M12 12C12 8 9 6 5 6c0 4 3 6 7 6Z" />
+                  <path d="M12 12c0-3 2-5 6-5 0 4-3 5-6 5Z" />
+                </svg>
+              ),
+            },
+            {
+              eyebrow: 'Already connected',
+              accent: 'var(--ochre)',
+              accentSoft: 'var(--ochre-soft)',
+              title: <>Keeping <span style={{ fontStyle: 'italic' }}>relationships</span> alive?</>,
+              body: 'You already built connections with valuable people, but time passes and they quietly fade. You want to:',
+              items: ['reconnect with purpose', 'stay close to the right people', 'help without being overwhelmed', 'remain useful to your network', 'create opportunities for one another'],
+              icon: (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              ),
+            },
+          ].map((card) => (
             <div
+              key={card.eyebrow}
               style={{
-                fontFamily: "'Fraunces', serif",
-                fontSize: 26,
-                fontWeight: 500,
-                letterSpacing: '-0.02em',
-                color: 'var(--signal-deep)',
+                background: 'white',
+                border: '0.5px solid var(--rule)',
+                borderRadius: 16,
+                padding: 'clamp(24px, 3vw, 32px)',
+                position: 'relative',
+                overflow: 'hidden',
               }}
             >
-              Building your <span style={{ fontStyle: 'italic' }}>first circle?</span>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: card.accent }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+                <div
+                  style={{
+                    width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+                    background: card.accentSoft, color: card.accent,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  {card.icon}
+                </div>
+                <span
+                  style={{
+                    fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase',
+                    fontWeight: 600, color: card.accent,
+                  }}
+                >
+                  {card.eyebrow}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontFamily: "'Fraunces', serif",
+                  fontSize: 26,
+                  fontWeight: 500,
+                  letterSpacing: '-0.02em',
+                  color: 'var(--ink)',
+                }}
+              >
+                {card.title}
+              </div>
+              <p style={{ fontSize: 15, color: 'var(--ink-muted)', lineHeight: 1.6, margin: '12px 0 20px' }}>
+                {card.body}
+              </p>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 11 }}>
+                {card.items.map((t) => (
+                  <li key={t} style={{ display: 'flex', alignItems: 'center', gap: 11, fontSize: 14.5, color: 'var(--ink)' }}>
+                    <span style={{ width: 6, height: 6, borderRadius: 3, background: card.accent, flexShrink: 0 }} />
+                    {t}
+                  </li>
+                ))}
+              </ul>
             </div>
-            <p style={{ fontSize: 15, color: 'var(--ink-muted)', lineHeight: 1.6, margin: '12px 0 20px' }}>
-              You are new to a university, city, career, or community. You need people who can offer:
-            </p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {['practical help', 'honest advice', 'shared experience', 'warm introductions', 'a way into new opportunities'].map((t) => (
-                <li key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14.5, color: 'var(--ink)' }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 3, background: 'var(--signal)', flexShrink: 0 }} />
-                  {t}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Keeping trusted relationships alive */}
-          <div
-            style={{
-              background: 'var(--ink)',
-              borderRadius: 20,
-              padding: 'clamp(24px, 3vw, 36px)',
-              color: 'var(--paper-soft)',
-            }}
-          >
-            <div
-              style={{
-                fontFamily: "'Fraunces', serif",
-                fontSize: 26,
-                fontWeight: 500,
-                letterSpacing: '-0.02em',
-                color: 'var(--paper)',
-              }}
-            >
-              Keeping <span style={{ fontStyle: 'italic', color: 'var(--ochre)' }}>trusted relationships</span> alive?
-            </div>
-            <p style={{ fontSize: 15, color: 'rgba(250,246,238,0.72)', lineHeight: 1.6, margin: '12px 0 20px' }}>
-              You already met and built connections with valuable people, but time passes and connections quietly fade. You want to:
-            </p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {['reconnect with purpose', 'stay close to the right people', 'help without being overwhelmed', 'remain useful to your network', 'create opportunities for one another'].map((t) => (
-                <li key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14.5, color: 'var(--paper-soft)' }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 3, background: 'var(--ochre)', flexShrink: 0 }} />
-                  {t}
-                </li>
-              ))}
-            </ul>
-          </div>
+          ))}
         </div>
       </section>
 
