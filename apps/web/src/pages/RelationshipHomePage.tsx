@@ -13,8 +13,10 @@ import { apiGet, apiPost } from '../lib/api'
 import { HomeHub } from '../components/HomeHub'
 import { KAvatar, KBtn } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
+import { CreateAskModal } from '../components/asks/CreateAskModal'
+import { AskDrawer, type Ask } from '../components/asks/AskDrawer'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel, RailCard } from '../lib/desk'
-import { MessageSquare, Coffee, CalendarDays, X, Copy, Check, UserPlus } from 'lucide-react'
+import { MessageSquare, Coffee, CalendarDays, X, Copy, Check, UserPlus, HandHelping } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -249,10 +251,10 @@ export function RelationshipHomePage() {
   const [referralPeer, setReferralPeer] = useState<Peer | null>(null)
   const [askMenuPeer, setAskMenuPeer] = useState<Peer | null>(null)
   const [railEvents, setRailEvents] = useState<Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }>>([])
-  const [myAsks, setMyAsks] = useState<Array<{ id: string; content: string; status: 'open' | 'resolved'; created_at: string; reply_count?: number }>>([])
+  const [myAsks, setMyAsks] = useState<Ask[]>([])
+  const [feedAsks, setFeedAsks] = useState<Ask[]>([])
   const [askOpen, setAskOpen] = useState(false)
-  const [askText, setAskText] = useState('')
-  const [askBusy, setAskBusy] = useState(false)
+  const [askDetail, setAskDetail] = useState<Ask | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const [inviteCopied, setInviteCopied] = useState(false)
   const [inviteDismissed, setInviteDismissed] = useState(() => {
@@ -266,21 +268,21 @@ export function RelationshipHomePage() {
 
   const loadMyAsks = useCallback((uid: string) => {
     if (!uid) return
-    apiGet<{ asks: Array<{ id: string; content: string; status: 'open' | 'resolved'; created_at: string; reply_count?: number }> }>(`/api/asks/by-user/${uid}`)
+    apiGet<{ asks: Ask[] }>(`/api/asks/by-user/${uid}`)
       .then((r) => setMyAsks(r.asks ?? [])).catch(() => {})
   }, [])
 
-  useEffect(() => { if (userId) loadMyAsks(userId) }, [userId, loadMyAsks])
+  const loadFeedAsks = useCallback(() => {
+    apiGet<{ asks: Ask[] }>('/api/asks/feed?limit=4')
+      .then((r) => setFeedAsks(r.asks ?? [])).catch(() => {})
+  }, [])
 
-  async function postAsk() {
-    const content = askText.trim()
-    if (!content) return
-    setAskBusy(true)
-    try {
-      await apiPost('/api/asks', { content })
-      setAskText(''); setAskOpen(false)
-      loadMyAsks(userId)
-    } finally { setAskBusy(false) }
+  useEffect(() => { if (userId) loadMyAsks(userId) }, [userId, loadMyAsks])
+  useEffect(() => { loadFeedAsks() }, [loadFeedAsks])
+
+  function refreshAsks() {
+    if (userId) loadMyAsks(userId)
+    loadFeedAsks()
   }
 
   async function resolveAsk(id: string) {
@@ -539,6 +541,27 @@ export function RelationshipHomePage() {
         )}
       </div>
 
+      {feedAsks.length > 0 && (
+        <div>
+          <DeskSectionLabel right={
+            <button type="button" onClick={() => navigate('/asks')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>See all</button>
+          }>Asks for you</DeskSectionLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {feedAsks.slice(0, 3).map((a) => (
+              <button key={a.id} type="button" onClick={() => setAskDetail(a)} style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, fontFamily: T.text }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  {a.author && <KAvatar name={a.author.full_name} src={a.author.avatar_url} size={20} />}
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink }}>{a.author?.full_name ?? 'Someone'}</span>
+                  <span style={{ flex: 1 }} />
+                  <HandHelping size={13} color={T.inkFaint} />
+                </div>
+                <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.content}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
         <DeskSectionLabel right={
           <button type="button" onClick={() => setAskOpen(true)} style={{ background: 'none', border: 'none', fontSize: 11, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>+ Ask</button>
@@ -547,9 +570,9 @@ export function RelationshipHomePage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {myAsks.filter(a => a.status === 'open').slice(0, 4).map((a) => (
               <div key={a.id} style={{ padding: 12, borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}` }}>
-                <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4, fontFamily: T.text }}>{a.content}</div>
+                <button type="button" onClick={() => setAskDetail(a)} style={{ textAlign: 'left', cursor: 'pointer', background: 'none', border: 'none', padding: 0, width: '100%', fontSize: 12.5, color: T.ink, lineHeight: 1.4, fontFamily: T.text }}>{a.content}</button>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                  <span style={{ fontSize: 10.5, color: T.inkFaint, fontFamily: T.text }}>{a.reply_count ? `${a.reply_count} repl${a.reply_count === 1 ? 'y' : 'ies'}` : 'No replies yet'}</span>
+                  <button type="button" onClick={() => setAskDetail(a)} style={{ background: 'none', border: 'none', padding: 0, fontSize: 10.5, color: T.inkFaint, fontFamily: T.text, cursor: 'pointer' }}>{a.reply_count ? `${a.reply_count} repl${a.reply_count === 1 ? 'y' : 'ies'}` : 'No replies yet'}</button>
                   <button type="button" onClick={() => resolveAsk(a.id)} style={{ background: 'none', border: `0.5px solid ${T.rule}`, borderRadius: 999, padding: '4px 10px', fontSize: 11, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}>Mark resolved</button>
                 </div>
               </div>
@@ -594,29 +617,10 @@ export function RelationshipHomePage() {
         />
       )}
       {askOpen && (
-        <div onClick={() => setAskOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(26,24,21,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(3px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: T.paper, borderRadius: 18, padding: 22 }}>
-            <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 21, color: T.ink, marginBottom: 4 }}>Ask your knot</div>
-            <div style={{ fontSize: 13, color: T.inkMuted, marginBottom: 14, fontFamily: T.text, lineHeight: 1.5 }}>
-              Need a hand, an intro, a recommendation? Post it and the people in your knot will see it.
-            </div>
-            <textarea
-              autoFocus
-              value={askText}
-              onChange={(e) => setAskText(e.target.value.slice(0, 280))}
-              placeholder="e.g. Looking for a flat in Schwabing, anyone subletting? Or: who knows someone at Celonis?"
-              rows={4}
-              style={{ width: '100%', padding: '11px 13px', borderRadius: 12, border: `0.5px solid ${T.rule}`, background: T.paperSoft, fontSize: 14, color: T.ink, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: T.text, lineHeight: 1.5 }}
-            />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
-              <span style={{ fontSize: 11, color: T.inkFaint, fontFamily: T.text }}>{askText.length}/280</span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <KBtn variant="ghost" size="sm" onClick={() => setAskOpen(false)}>Cancel</KBtn>
-                <KBtn variant="signal" size="sm" onClick={postAsk} disabled={askBusy || !askText.trim()}>{askBusy ? 'Posting…' : 'Post ask'}</KBtn>
-              </div>
-            </div>
-          </div>
-        </div>
+        <CreateAskModal onClose={() => setAskOpen(false)} onCreated={refreshAsks} />
+      )}
+      {askDetail && (
+        <AskDrawer ask={askDetail} currentUserId={userId || null} onClose={() => setAskDetail(null)} onChanged={refreshAsks} />
       )}
 
       <DeskHeader

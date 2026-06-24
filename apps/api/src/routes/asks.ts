@@ -23,6 +23,8 @@ const ALLOWED_EMOJIS = ['❤️', '👍', '🙌', '💡', '🔥', '🤝'] as con
 
 const createAskSchema = z.object({
   content: z.string().min(1).max(280),
+  audienceType: z.enum(['everyone', 'interest', 'persona']).default('everyone'),
+  audienceValue: z.string().max(80).nullable().optional(),
 })
 const replySchema = z.object({
   body: z.string().min(1).max(800),
@@ -38,6 +40,8 @@ type AskRow = {
   status: 'open' | 'resolved'
   resolved_at: string | null
   created_at: string
+  audience_type?: 'everyone' | 'interest' | 'persona'
+  audience_value?: string | null
 }
 
 type ReactionRow = {
@@ -144,14 +148,101 @@ asksRouter.post('/', requireAuth, async (req, res) => {
     const parsed = createAskSchema.safeParse(req.body)
     if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
 
+    const audienceType = parsed.data.audienceType
+    const audienceValue = audienceType === 'everyone' ? null : (parsed.data.audienceValue ?? null)
+    if (audienceType !== 'everyone' && !audienceValue) {
+      return res.status(422).json({ error: 'Pick who this ask is for.' })
+    }
+
     const insert = await supabase
       .from('user_asks')
-      .insert({ user_id: req.appUserId, content: parsed.data.content })
+      .insert({
+        user_id: req.appUserId,
+        content: parsed.data.content,
+        audience_type: audienceType,
+        audience_value: audienceValue,
+      })
       .select('*')
       .maybeSingle()
 
     if (insert.error || !insert.data) return res.status(500).json({ error: insert.error?.message ?? 'Insert failed' })
     return res.json({ ask: { ...insert.data, reactions: {}, reply_count: 0 } })
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+  }
+})
+
+// ── "Asks for you" feed: targeted, answerable asks from other people ──────────
+async function matchedOpenAsks(viewerId: string): Promise<AskRow[]> {
+  const meR = await supabase.from('users').select('interests, persona').eq('id', viewerId).maybeSingle()
+  const interests: string[] = Array.isArray(meR.data?.interests) ? meR.data!.interests : []
+  const persona: string | null = meR.data?.persona ?? null
+
+  // Pull recent open asks from other people, then match by audience in JS — the
+  // audience values (interest strings) aren't safe to interpolate into a filter.
+  const askR = await supabase
+    .from('user_asks')
+    .select('*')
+    .eq('status', 'open')
+    .neq('user_id', viewerId)
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  const rows = (askR.data ?? []) as AskRow[]
+  return rows.filter((a) => {
+    const type = a.audience_type ?? 'everyone'
+    if (type === 'everyone') return true
+    if (type === 'interest') return !!a.audience_value && interests.includes(a.audience_value)
+    if (type === 'persona') return !!a.audience_value && persona === a.audience_value
+    return false
+  })
+}
+
+async function attachAuthors<T extends { user_id: string }>(rows: T[]) {
+  const ids = [...new Set(rows.map((r) => r.user_id))]
+  if (ids.length === 0) return rows.map((r) => ({ ...r, author: null as null | object }))
+  const usersR = await supabase.from('users').select('id, full_name, username, avatar_url').in('id', ids)
+  const byId = new Map((usersR.data ?? []).map((u) => [u.id, u]))
+  return rows.map((r) => ({ ...r, author: byId.get(r.user_id) ?? null }))
+}
+
+asksRouter.get('/feed', requireAuth, async (req, res) => {
+  try {
+    if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
+    const limit = Math.min(Number(req.query.limit) || 30, 60)
+
+    const matched = await matchedOpenAsks(req.appUserId)
+
+    const seenR = await supabase.from('users').select('asks_seen_at').eq('id', req.appUserId).maybeSingle()
+    const seenAt = seenR.data?.asks_seen_at ? new Date(seenR.data.asks_seen_at).getTime() : 0
+    const unseen = matched.filter((a) => new Date(a.created_at).getTime() > seenAt).length
+
+    const hydrated = await hydrateAsks(matched.slice(0, limit), req.appUserId)
+    const withAuthors = await attachAuthors(hydrated)
+    return res.json({ asks: withAuthors, unseen })
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+  }
+})
+
+asksRouter.get('/unread-count', requireAuth, async (req, res) => {
+  try {
+    if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
+    const matched = await matchedOpenAsks(req.appUserId)
+    const seenR = await supabase.from('users').select('asks_seen_at').eq('id', req.appUserId).maybeSingle()
+    const seenAt = seenR.data?.asks_seen_at ? new Date(seenR.data.asks_seen_at).getTime() : 0
+    const count = matched.filter((a) => new Date(a.created_at).getTime() > seenAt).length
+    return res.json({ count })
+  } catch {
+    return res.json({ count: 0 })
+  }
+})
+
+asksRouter.post('/seen', requireAuth, async (req, res) => {
+  try {
+    if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
+    await supabase.from('users').update({ asks_seen_at: new Date().toISOString() }).eq('id', req.appUserId)
+    return res.json({ ok: true })
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
   }
