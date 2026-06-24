@@ -25,6 +25,7 @@ import { questsRouter } from './routes/quests.js'
 import { eventsRouter } from './routes/events.js'
 import { gigsRouter } from './routes/gigs.js'
 import { invitesRouter } from './routes/invites.js'
+import { feedbackRouter } from './routes/feedback.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { supabase } from './lib.js'
 import { getAccessConfig, resolveInviteCode } from './lib/access.js'
@@ -110,5 +111,6 @@ app.use('/api/quests', questsRouter)
 app.use('/api/events', eventsRouter)
 app.use('/api/gigs', gigsRouter)
 app.use('/api/invites', invitesRouter)
+app.use('/api/feedback', feedbackRouter)
 
 app.use(errorHandler)

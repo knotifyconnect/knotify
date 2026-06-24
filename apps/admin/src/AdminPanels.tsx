@@ -756,3 +756,104 @@ export function InvitesAdmin() {
     </div>
   )
 }
+
+// ── Feedback ──────────────────────────────────────────────────────────────────
+type FeedbackRow = {
+  id: string
+  type: 'bug' | 'suggestion' | 'other'
+  message: string
+  page: string | null
+  user_agent: string | null
+  status: 'open' | 'resolved'
+  created_at: string
+  resolved_at: string | null
+  user: { id: string; full_name: string; username: string; email: string } | null
+}
+
+const FB_META: Record<FeedbackRow['type'], { label: string; bg: string; color: string }> = {
+  bug: { label: 'Bug', bg: 'rgba(216,68,43,0.1)', color: '#D8442B' },
+  suggestion: { label: 'Idea', bg: 'rgba(184,130,15,0.12)', color: '#b8820f' },
+  other: { label: 'Other', bg: 'rgba(84,72,58,0.08)', color: '#6b5f55' },
+}
+
+export function FeedbackAdmin() {
+  const [rows, setRows] = useState<FeedbackRow[]>([])
+  const [openCount, setOpenCount] = useState(0)
+  const [filter, setFilter] = useState<'open' | 'resolved' | 'all'>('open')
+  const [err, setErr] = useState('')
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.feedback(filter === 'all' ? undefined : filter)
+      setRows(r.feedback ?? [])
+      setOpenCount(r.openCount ?? 0)
+    } catch (e: any) { setErr(e.message) }
+  }, [filter])
+  useEffect(() => { void load() }, [load])
+
+  async function toggle(row: FeedbackRow) {
+    const next = row.status === 'resolved' ? 'open' : 'resolved'
+    try {
+      await api.resolveFeedback(row.id, next)
+      void load()
+    } catch (e: any) { setErr(e.message) }
+  }
+
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  }
+
+  return (
+    <div>
+      <h2 style={h2}>Feedback {openCount > 0 && <span style={{ fontSize: 13, color: C.signal }}>· {openCount} open</span>}</h2>
+      {err && <div style={{ color: C.signal, fontSize: 13, marginBottom: 12 }}>{err}</div>}
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        {(['open', 'resolved', 'all'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)} style={{
+            padding: '6px 14px', borderRadius: 999, border: `0.5px solid ${filter === f ? C.signal : C.inkFaint}`,
+            background: filter === f ? C.signal : 'transparent', color: filter === f ? '#fff' : C.inkMuted,
+            fontSize: 12, fontWeight: 500, cursor: 'pointer', textTransform: 'capitalize',
+            fontFamily: 'IBM Plex Sans, sans-serif',
+          }}>{f}</button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {rows.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>Nothing here.</div>}
+        {rows.map(r => {
+          const meta = FB_META[r.type]
+          const resolved = r.status === 'resolved'
+          return (
+            <div key={r.id} style={{ ...rowCard, opacity: resolved ? 0.62 : 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: meta.bg, color: meta.color }}>
+                  {meta.label}
+                </span>
+                <span style={{ fontSize: 12, color: C.inkMuted }}>
+                  {r.user ? `${r.user.full_name} · ${r.user.email}` : 'Unknown user'}
+                </span>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontSize: 11.5, color: C.inkFaint }}>{fmtDate(r.created_at)}</span>
+              </div>
+              <div style={{ fontSize: 14, color: C.ink, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{r.message}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
+                {r.page && (
+                  <span style={{ fontSize: 11.5, color: C.inkFaint, fontFamily: 'IBM Plex Mono, monospace' }}>{r.page}</span>
+                )}
+                <span style={{ flex: 1 }} />
+                <button onClick={() => toggle(r)} style={{
+                  padding: '6px 12px', borderRadius: 8, border: `0.5px solid ${resolved ? C.inkFaint : C.verd}`,
+                  background: resolved ? 'transparent' : 'rgba(45,125,70,0.08)', color: resolved ? C.inkMuted : C.verd,
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif',
+                }}>
+                  {resolved ? 'Reopen' : 'Mark resolved'}
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}

@@ -318,6 +318,47 @@ adminPanelRouter.patch('/settings', async (req, res) => {
   return res.json({ ok: true })
 })
 
+// ── Feedback admin ────────────────────────────────────────────────────────────
+adminPanelRouter.get('/feedback', async (req, res) => {
+  const status = req.query.status as string | undefined
+  let query = supabase
+    .from('feedback')
+    .select('id, type, message, page, user_agent, status, created_at, resolved_at, user_id')
+    .order('created_at', { ascending: false })
+  if (status && ['open', 'resolved'].includes(status)) query = query.eq('status', status)
+
+  const { data: rows, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+
+  const userIds = [...new Set((rows ?? []).map((r: any) => r.user_id).filter(Boolean))]
+  const usersRes = userIds.length
+    ? await supabase.from('users').select('id, full_name, username, email').in('id', userIds)
+    : { data: [] as any[] }
+  const byId = new Map((usersRes.data ?? []).map((u: any) => [u.id, u]))
+
+  const feedback = (rows ?? []).map((r: any) => ({
+    ...r,
+    user: r.user_id ? (byId.get(r.user_id) ?? null) : null,
+  }))
+
+  const openCount = (rows ?? []).filter((r: any) => r.status === 'open').length
+  return res.json({ feedback, openCount })
+})
+
+adminPanelRouter.patch('/feedback/:id', async (req, res) => {
+  const { status } = req.body
+  if (!['open', 'resolved'].includes(status)) return res.status(422).json({ error: 'Invalid status.' })
+  const { data, error } = await supabase
+    .from('feedback')
+    .update({ status, resolved_at: status === 'resolved' ? new Date().toISOString() : null })
+    .eq('id', req.params.id)
+    .select('id')
+    .maybeSingle()
+  if (error) return res.status(500).json({ error: error.message })
+  if (!data) return res.status(404).json({ error: 'Feedback not found.' })
+  return res.json({ ok: true })
+})
+
 // ── Invites admin ─────────────────────────────────────────────────────────────
 adminPanelRouter.get('/invites', async (_req, res) => {
   // All invite rows joined with both users

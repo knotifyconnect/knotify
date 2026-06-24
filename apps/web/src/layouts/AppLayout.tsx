@@ -1,6 +1,7 @@
 import type { PropsWithChildren } from 'react'
 import { useLocation } from 'react-router-dom'
 import { AppSidebar } from '../components/layout/AppSidebar'
+import { FeedbackWidget } from '../components/FeedbackWidget'
 
 export function AppLayout({ children }: PropsWithChildren) {
   const location = useLocation()
@@ -28,6 +29,7 @@ export function AppLayout({ children }: PropsWithChildren) {
       >
         {children}
       </main>
+      <FeedbackWidget />
     </div>
   )
 }

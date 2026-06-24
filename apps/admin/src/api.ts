@@ -70,4 +70,9 @@ export const api = {
 
   // Invites
   invites: () => request('/api/admin-panel/invites'),
+
+  // Feedback
+  feedback: (status?: string) => request(`/api/admin-panel/feedback${status ? `?status=${status}` : ''}`),
+  resolveFeedback: (id: string, status: 'open' | 'resolved') =>
+    request(`/api/admin-panel/feedback/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
 }
