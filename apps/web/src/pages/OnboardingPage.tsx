@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet, apiPatch } from '../lib/api'
+import { apiGet, apiPatch, apiPost } from '../lib/api'
 import {
   PERSONAS, INTERESTS, GOALS, MUNICH_TENURE, COMMON_LANGUAGES,
 } from '../lib/taxonomy'
@@ -183,6 +183,16 @@ export function OnboardingPage() {
       })
       const status = await apiGet<OnboardingStatus>('/api/users/me/onboarding-status')
       if (!status.complete) throw new Error(`Still missing: ${status.missing.join(', ')}`)
+
+      // Claim pending invite attribution (stored before email confirmation redirect).
+      try {
+        const pendingCode = localStorage.getItem('knotify:pendingInvite')
+        if (pendingCode) {
+          await apiPost('/api/invites/claim', { code: pendingCode })
+          localStorage.removeItem('knotify:pendingInvite')
+        }
+      } catch { /* non-critical: don't block onboarding */ }
+
       navigate('/home', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')

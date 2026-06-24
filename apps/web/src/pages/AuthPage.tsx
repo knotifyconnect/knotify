@@ -29,6 +29,15 @@ export function AuthPage() {
 
   const location = useLocation()
   const [searchParams] = useSearchParams()
+
+  // Persist invite code across email-confirmation redirect so we can claim it
+  // after the user verifies and logs in for the first time (handled in OnboardingPage).
+  useEffect(() => {
+    const code = searchParams.get('invite')
+    if (code) {
+      try { localStorage.setItem('knotify:pendingInvite', code.trim().toUpperCase()) } catch { /* ignore */ }
+    }
+  }, [searchParams])
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

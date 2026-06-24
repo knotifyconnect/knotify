@@ -71,6 +71,27 @@ const VERIFIED: VerifiedQuest[] = [
     where_to_go: 'Discover page to find people. Events are the fastest way to meet people to connect with.',
     estimated_minutes: 30, difficulty: 'medium', partner_required: true,
   },
+  {
+    key: 'invite_first', title: 'Open the door', description: 'Bring one friend onto knotify.',
+    points: 15, category: 'network', icon: 'handshake',
+    how_to: 'Share your personal invite link. Once a friend signs up and sets up their profile, this is yours. The network grows one real introduction at a time.',
+    where_to_go: 'Invite page — copy your link or share it.',
+    estimated_minutes: 5, difficulty: 'easy', partner_required: true,
+  },
+  {
+    key: 'invite_squad', title: 'Bring the crew', description: 'Get 3 friends onto knotify.',
+    points: 30, category: 'network', icon: 'users',
+    how_to: 'Invite the people who make Munich feel like home. When 3 of them join and finish onboarding, claim this. A network is more useful the more of your real circle is on it.',
+    where_to_go: 'Invite page — share your link with your group.',
+    estimated_minutes: 20, difficulty: 'medium', partner_required: true,
+  },
+  {
+    key: 'invite_super', title: 'Super-connector', description: 'Bring 10 friends onto knotify.',
+    points: 60, category: 'network', icon: 'sparkles',
+    how_to: 'Ten real people, brought in by you. This is how a city stops feeling cold. Reaching this marks you as one of the people knotify is built around.',
+    where_to_go: 'Invite page — share your link far and wide.',
+    estimated_minutes: 60, difficulty: 'hard', partner_required: true,
+  },
 ]
 
 // Credibility tiers. Reaching "Trusted" unlocks offering gigs.
@@ -95,17 +116,23 @@ type EvalEntry = { done: boolean; progress?: number; target?: number }
 
 // Evaluate verified-quest conditions against live data (not gameable).
 async function evaluate(userId: string): Promise<Record<string, EvalEntry>> {
-  const userRow = await supabase
-    .from('users')
-    .select('persona, interests, goals, bio, avatar_url, languages')
-    .eq('id', userId)
-    .maybeSingle()
-
-  const conn = await supabase
-    .from('connections')
-    .select('id', { count: 'exact', head: true })
-    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
-    .eq('status', 'accepted')
+  const [userRow, conn, invitedRows] = await Promise.all([
+    supabase
+      .from('users')
+      .select('persona, interests, goals, bio, avatar_url, languages')
+      .eq('id', userId)
+      .maybeSingle(),
+    supabase
+      .from('connections')
+      .select('id', { count: 'exact', head: true })
+      .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+      .eq('status', 'accepted'),
+    // Count invitees who completed onboarding (not gameable: requires real profile).
+    supabase
+      .from('invites')
+      .select('invitee_id')
+      .eq('inviter_id', userId),
+  ])
 
   const u = (userRow.data ?? {}) as any
   const interests = Array.isArray(u.interests) ? u.interests : []
@@ -114,6 +141,23 @@ async function evaluate(userId: string): Promise<Record<string, EvalEntry>> {
   const bio = typeof u.bio === 'string' ? u.bio.trim() : ''
   const connCount = conn.count ?? 0
 
+  // For invite milestones we only count invitees who have finished onboarding
+  // (have a persona, 3+ interests, 1+ goal). This prevents farming empty signups.
+  let onboardedInviteCount = 0
+  const inviteeIds = (invitedRows.data ?? []).map((r: any) => r.invitee_id)
+  if (inviteeIds.length > 0) {
+    const inviteeProfiles = await supabase
+      .from('users')
+      .select('persona, interests, goals')
+      .in('id', inviteeIds)
+    const profiles = inviteeProfiles.data ?? []
+    onboardedInviteCount = profiles.filter((p: any) => {
+      const pi = Array.isArray(p.interests) ? p.interests : []
+      const pg = Array.isArray(p.goals) ? p.goals : []
+      return !!p.persona && pi.length >= 3 && pg.length >= 1
+    }).length
+  }
+
   return {
     complete_profile: { done: !!u.persona && interests.length >= 3 && goals.length >= 1 },
     add_bio_photo:    { done: bio.length > 0 || !!u.avatar_url },
@@ -121,6 +165,9 @@ async function evaluate(userId: string): Promise<Record<string, EvalEntry>> {
     polyglot:         { done: languages.length >= 2, progress: Math.min(languages.length, 2), target: 2 },
     first_connection: { done: connCount >= 1 },
     growing_network:  { done: connCount >= 5, progress: Math.min(connCount, 5), target: 5 },
+    invite_first:     { done: onboardedInviteCount >= 1, progress: Math.min(onboardedInviteCount, 1), target: 1 },
+    invite_squad:     { done: onboardedInviteCount >= 3, progress: Math.min(onboardedInviteCount, 3), target: 3 },
+    invite_super:     { done: onboardedInviteCount >= 10, progress: Math.min(onboardedInviteCount, 10), target: 10 },
   }
 }
 
