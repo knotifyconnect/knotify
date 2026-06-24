@@ -180,7 +180,7 @@ export function AuthPage() {
         email: normalizedEmail,
         password: trimmedPassword,
         options: {
-          emailRedirectTo: `${window.location.origin}/login?verified=1`,
+          emailRedirectTo: `${import.meta.env.VITE_APP_URL || window.location.origin}/login?verified=1`,
           data: {
             fullName: cleanedFullName,
             username: cleanedUsername,
@@ -224,7 +224,7 @@ export function AuthPage() {
       }
 
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${import.meta.env.VITE_APP_URL || window.location.origin}/reset-password`,
       })
 
       if (resetError) throw resetError
