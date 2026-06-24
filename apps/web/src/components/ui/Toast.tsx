@@ -24,7 +24,9 @@ export function ToastContainer() {
                     ? 'bg-[#14b8a6]'
                     : toast.type === 'message'
                       ? 'bg-[#f59e0b]'
-                      : 'bg-[#9090a8]'
+                      : toast.type === 'invite_bonus'
+                        ? 'bg-[#22c55e]'
+                        : 'bg-[#9090a8]'
               }`}
             />
             <div>

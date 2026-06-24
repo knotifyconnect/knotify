@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '../lib/api'
+import { useToastStore } from '../store/toasts'
 import {
   PERSONAS, INTERESTS, GOALS, MUNICH_TENURE, COMMON_LANGUAGES,
 } from '../lib/taxonomy'
@@ -93,7 +94,7 @@ function StepHeader({ eyebrow, title, sub }: { eyebrow: string; title: string; s
   )
 }
 
-const TOTAL_STEPS = 5
+const TOTAL_STEPS = 6
 
 const SOCIAL_ENERGY_OPTIONS: Array<{ value: 'active' | 'selective' | 'gentle'; label: string; sub: string }> = [
   { value: 'active',    label: 'Active networker',  sub: 'Surface lots of opportunities. I want to grow fast.' },
@@ -103,6 +104,7 @@ const SOCIAL_ENERGY_OPTIONS: Array<{ value: 'active' | 'selective' | 'gentle'; l
 
 export function OnboardingPage() {
   const navigate = useNavigate()
+  const pushToast = useToastStore((s) => s.pushToast)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -120,6 +122,10 @@ export function OnboardingPage() {
   const [interests, setInterests] = useState<string[]>([])
   const [goals, setGoals] = useState<string[]>([])
   const [socialEnergy, setSocialEnergy] = useState<'active' | 'selective' | 'gentle'>('selective')
+
+  // invite step state
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const [inviteCopied, setInviteCopied] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -163,7 +169,25 @@ export function OnboardingPage() {
     interests.length >= 3,
     goals.length >= 1,
     !!socialEnergy,
+    true, // invite step is always skippable
   ]
+
+  // Fetch invite URL lazily when user reaches the invite step
+  useEffect(() => {
+    if (step !== 5 || inviteUrl) return
+    apiGet<{ url: string }>('/api/invites/me')
+      .then((d) => setInviteUrl(d.url))
+      .catch(() => {/* non-critical */})
+  }, [step, inviteUrl])
+
+  async function copyInviteLink() {
+    if (!inviteUrl) return
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setInviteCopied(true)
+      setTimeout(() => setInviteCopied(false), 2000)
+    } catch {/* ignore */}
+  }
 
   async function finish() {
     setSaving(true)
@@ -188,8 +212,15 @@ export function OnboardingPage() {
       try {
         const pendingCode = localStorage.getItem('knotify:pendingInvite')
         if (pendingCode) {
-          await apiPost('/api/invites/claim', { code: pendingCode })
+          const result = await apiPost<{ ok: boolean; welcomeBonus?: number; alreadyAttributed?: boolean }>('/api/invites/claim', { code: pendingCode })
           localStorage.removeItem('knotify:pendingInvite')
+          if (result.welcomeBonus) {
+            pushToast({
+              type: 'invite_bonus',
+              title: `+${result.welcomeBonus} credibility points`,
+              body: 'Welcome bonus for joining via an invite. Go earn more on the Quests page.',
+            })
+          }
         }
       } catch { /* non-critical: don't block onboarding */ }
 
@@ -367,6 +398,55 @@ export function OnboardingPage() {
           </>
         )}
 
+        {step === 5 && (
+          <>
+            <StepHeader
+              eyebrow="Almost done"
+              title="Bring a friend to Munich's network."
+              sub="The network is more useful the more of your real circle is on it. Anyone who joins through your link gets +10 credibility as a welcome bonus."
+            />
+            <div style={{ display: 'grid', gap: 16 }}>
+              {/* invite link box */}
+              <div style={{ background: 'var(--paper-soft, #faf6ee)', border: '1px solid var(--rule)', borderRadius: 12, padding: '14px 16px' }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 8, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                  Your invite link
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ flex: 1, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: 'var(--ink)', wordBreak: 'break-all', userSelect: 'all' }}>
+                    {inviteUrl ?? 'Loading…'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copyInviteLink}
+                    disabled={!inviteUrl}
+                    style={{ flexShrink: 0, padding: '8px 16px', borderRadius: 8, border: 'none', background: inviteCopied ? '#22c55e' : 'var(--ink)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: inviteUrl ? 'pointer' : 'default', transition: 'background 0.15s' }}
+                  >
+                    {inviteCopied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              {/* what they earn */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                {[
+                  { pts: '+15 pts', label: '1 friend joins' },
+                  { pts: '+30 pts', label: '3 friends join' },
+                  { pts: '+60 pts', label: '10 friends join' },
+                ].map((m) => (
+                  <div key={m.label} style={{ textAlign: 'center', padding: '12px 8px', background: 'var(--paper-soft, #faf6ee)', border: '1px solid var(--rule)', borderRadius: 10 }}>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 700, color: 'var(--signal)' }}>{m.pts}</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 3 }}>{m.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0, lineHeight: 1.5 }}>
+                Credibility unlocks gigs, coffee meetings with professionals, and more. You can always find your invite link later on the home page.
+              </p>
+            </div>
+          </>
+        )}
+
         {error && (
           <div style={{ marginTop: 18, border: '0.5px solid rgba(216,68,43,0.3)', background: 'rgba(216,68,43,0.07)', color: 'var(--signal)', borderRadius: 12, padding: 12, fontSize: 13 }}>
             {error}
@@ -399,7 +479,7 @@ export function OnboardingPage() {
               fontFamily: "'IBM Plex Sans', sans-serif",
             }}
           >
-            {saving ? 'Saving…' : step === TOTAL_STEPS - 1 ? 'Finish' : 'Continue'}
+            {saving ? 'Saving…' : step === TOTAL_STEPS - 1 ? (inviteCopied ? 'Finish' : 'Skip for now') : 'Continue'}
           </button>
         </div>
       </div>

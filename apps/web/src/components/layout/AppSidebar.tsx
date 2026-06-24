@@ -51,7 +51,6 @@ const BASE_ITEMS: NavItem[] = [
   { title: 'Jobs & Gigs',  href: '/jobs',     icon: <BriefcaseBusiness size={15} />, badge: 'jobs', newBadge: true },
   { title: 'Cafes',        sub: 'IRL',        href: '/cafes',          icon: <Coffee            size={15} /> },
   { title: 'Messages',     href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },
-  { title: 'Invite',       href: '/invite',   icon: <UserPlus          size={15} /> },
 ]
 
 export function AppSidebar() {

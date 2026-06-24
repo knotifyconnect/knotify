@@ -14,7 +14,7 @@ import { HomeHub } from '../components/HomeHub'
 import { KAvatar, KBtn } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel, RailCard } from '../lib/desk'
-import { MessageSquare, Coffee, CalendarDays, X } from 'lucide-react'
+import { MessageSquare, Coffee, CalendarDays, X, Copy, Check, UserPlus } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -253,6 +253,11 @@ export function RelationshipHomePage() {
   const [askOpen, setAskOpen] = useState(false)
   const [askText, setAskText] = useState('')
   const [askBusy, setAskBusy] = useState(false)
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const [inviteCopied, setInviteCopied] = useState(false)
+  const [inviteDismissed, setInviteDismissed] = useState(() => {
+    try { return localStorage.getItem('knotify:inviteDismissed') === '1' } catch { return false }
+  })
 
   useEffect(() => {
     apiGet<{ events: Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }> }>('/api/events?limit=3')
@@ -288,6 +293,25 @@ export function RelationshipHomePage() {
       .then((r) => { setFirstName(r.user?.full_name?.split(' ')[0] ?? ''); setUserId(r.user?.id ?? '') })
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (inviteDismissed) return
+    apiGet<{ url: string }>('/api/invites/me').then((r) => setInviteUrl(r.url)).catch(() => {})
+  }, [inviteDismissed])
+
+  async function copyInviteLink() {
+    if (!inviteUrl) return
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setInviteCopied(true)
+      setTimeout(() => setInviteCopied(false), 2000)
+    } catch {/* ignore */}
+  }
+
+  function dismissInviteCard() {
+    setInviteDismissed(true)
+    try { localStorage.setItem('knotify:inviteDismissed', '1') } catch {/* ignore */}
+  }
 
   useEffect(() => {
     let mounted = true
@@ -614,6 +638,31 @@ export function RelationshipHomePage() {
             </div>
           </div>
           <KBtn variant="signal" size="sm" onClick={() => navigate('/map')}>Review</KBtn>
+        </div>
+      )}
+
+      {!inviteDismissed && inviteUrl && (
+        <div style={{ marginBottom: 20, padding: '14px 18px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <UserPlus size={16} style={{ color: T.inkMuted, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>
+              Invite your network to Munich's professional graph
+            </div>
+            <div style={{ fontSize: 12, color: T.inkFaint, marginTop: 2, fontFamily: "'IBM Plex Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {inviteUrl}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={copyInviteLink}
+            style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: inviteCopied ? '#22c55e' : T.ink, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}
+          >
+            {inviteCopied ? <Check size={13} /> : <Copy size={13} />}
+            {inviteCopied ? 'Copied!' : 'Copy link'}
+          </button>
+          <button type="button" onClick={dismissInviteCard} style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: T.inkFaint, display: 'flex', flexShrink: 0 }}>
+            <X size={14} />
+          </button>
         </div>
       )}
 
