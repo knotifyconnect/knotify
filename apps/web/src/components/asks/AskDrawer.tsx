@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Globe, Hash, Briefcase, Send } from 'lucide-react'
 import { apiGet, apiPost, apiDelete } from '../../lib/api'
 import { KAvatar } from '../../lib/knotify'
@@ -94,7 +95,7 @@ export function AskDrawer({
     } catch { setStatus(status) }
   }
 
-  return (
+  return createPortal(
     <div
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
@@ -227,6 +228,7 @@ export function AskDrawer({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
