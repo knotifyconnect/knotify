@@ -94,22 +94,26 @@ export function AskDrawer({
   }
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 220,
-        background: 'rgba(26,24,21,0.5)',
-        backdropFilter: 'blur(2px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '16px',
-        boxSizing: 'border-box',
-      }}
-    >
+    <>
+      {/* Backdrop — separate from modal to avoid iOS Safari backdropFilter stacking bug */}
+      <div
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(26,24,21,0.55)' }}
+      />
+
+      {/* Modal */}
+      <div
+        style={{
+          position: 'fixed', inset: 0, zIndex: 221,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px', boxSizing: 'border-box',
+          pointerEvents: 'none',
+        }}
+      >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
+          pointerEvents: 'auto',
           width: '100%',
           maxWidth: 520,
           maxHeight: '90vh',
@@ -226,6 +230,7 @@ export function AskDrawer({
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }
