@@ -101,22 +101,18 @@ export function AskDrawer({
         style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(26,24,21,0.55)' }}
       />
 
-      {/* Modal */}
-      <div
-        style={{
-          position: 'fixed', inset: 0, zIndex: 221,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '16px', boxSizing: 'border-box',
-          pointerEvents: 'none',
-        }}
-      >
+      {/* Modal — transform centering works on every browser/screen size */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          pointerEvents: 'auto',
-          width: '100%',
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 221,
+          width: 'calc(100vw - 32px)',
           maxWidth: 520,
-          maxHeight: '90vh',
+          maxHeight: '85vh',
           background: T.paper,
           borderRadius: 20,
           border: `0.5px solid ${T.rule}`,
@@ -124,7 +120,7 @@ export function AskDrawer({
           flexDirection: 'column',
           fontFamily: T.text,
           overflow: 'hidden',
-          boxShadow: '0 24px 60px rgba(0,0,0,0.18)',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.22)',
         }}
       >
         {/* Header */}
@@ -229,7 +225,6 @@ export function AskDrawer({
             </button>
           </div>
         </div>
-      </div>
       </div>
     </>
   )
