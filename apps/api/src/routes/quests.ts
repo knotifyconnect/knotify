@@ -128,10 +128,13 @@ async function evaluate(userId: string): Promise<Record<string, EvalEntry>> {
       .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
       .eq('status', 'accepted'),
     // Count invitees who completed onboarding (not gameable: requires real profile).
+    // Only verified email invites ('email' kind) count — reusable-link joins don't,
+    // so a member can't farm credibility by pasting their link in a group chat.
     supabase
       .from('invites')
       .select('invitee_id')
-      .eq('inviter_id', userId),
+      .eq('inviter_id', userId)
+      .eq('kind', 'email'),
   ])
 
   const u = (userRow.data ?? {}) as any

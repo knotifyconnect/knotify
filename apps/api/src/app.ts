@@ -27,7 +27,7 @@ import { gigsRouter } from './routes/gigs.js'
 import { invitesRouter } from './routes/invites.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { supabase } from './lib.js'
-import { getAccessConfig } from './lib/access.js'
+import { getAccessConfig, resolveInviteCode } from './lib/access.js'
 
 export const app = express()
 
@@ -51,24 +51,21 @@ app.get('/health', (_req, res) => {
 })
 
 // Public: drives the auth page. Tells the client which access mode we're in and,
-// if an invite code is present, whether it's valid and who it's from.
+// if an invite code is present, whether it's valid, who it's from, and (for a
+// verified email invite) the address it must be redeemed with.
 app.get('/api/access/context', async (req, res) => {
-  const { mode, teamCode } = await getAccessConfig()
-  const code = String(req.query.invite ?? '').trim().toUpperCase()
+  const { mode } = await getAccessConfig()
+  const raw = String(req.query.invite ?? '').trim()
 
-  let invite: { valid: boolean; inviterName: string | null } | null = null
-  if (code) {
-    if (teamCode && code === teamCode) {
-      invite = { valid: true, inviterName: null }
-    } else {
-      const member = await supabase.from('users').select('full_name').eq('invite_code', code).maybeSingle()
-      if (member.data) {
-        const firstName = (member.data.full_name || '').trim().split(/\s+/)[0] || 'A member'
-        invite = { valid: true, inviterName: firstName }
-      } else {
-        invite = { valid: false, inviterName: null }
-      }
-    }
+  let invite:
+    | { valid: boolean; kind: 'team' | 'member' | 'email' | null; inviterName: string | null; lockedEmail: string | null }
+    | null = null
+
+  if (raw) {
+    const resolved = await resolveInviteCode(raw)
+    invite = resolved
+      ? { valid: true, kind: resolved.kind, inviterName: resolved.inviterName, lockedEmail: resolved.email }
+      : { valid: false, kind: null, inviterName: null, lockedEmail: null }
   }
 
   return res.json({ mode, invite })

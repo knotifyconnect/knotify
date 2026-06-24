@@ -29,6 +29,8 @@ type SignInCard2Props = {
   inviteBanner?: string | null
   /** When true, hides the login/signup switcher (e.g. invite-only with no invite). */
   hideSignupTab?: boolean
+  /** When true, the email field is read-only (verified invite pins the address). */
+  emailLocked?: boolean
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -143,6 +145,7 @@ export function SignInCard2({
   onSubmit,
   inviteBanner,
   hideSignupTab,
+  emailLocked,
 }: SignInCard2Props) {
   const [showPassword, setShowPassword] = useState(false)
   const header = getHeaderCopy(mode)
@@ -359,11 +362,17 @@ export function SignInCard2({
                 value={email}
                 onChange={(e) => onEmailChange(e.target.value)}
                 placeholder="you@example.com"
-                style={inputStyle}
+                style={emailLocked ? { ...inputStyle, opacity: 0.7, cursor: 'not-allowed' } : inputStyle}
                 required
                 disabled={loading}
+                readOnly={emailLocked}
               />
             </FieldBox>
+            {emailLocked && (
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 6, paddingLeft: 2 }}>
+                Your invite is tied to this address.
+              </div>
+            )}
           </div>
 
           {showPasswordField && (

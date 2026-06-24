@@ -5,7 +5,7 @@ import { ADMIN_EMAILS, evaluateNewUserAccess } from '../lib/access.js'
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-type TokenUser = { id: string; email?: string; user_metadata?: Record<string, unknown> }
+type TokenUser = { id: string; email?: string; email_confirmed_at?: string | null; confirmed_at?: string | null; user_metadata?: Record<string, unknown> }
 
 /**
  * Validate a bearer token directly against the Supabase Auth HTTP API.
@@ -45,6 +45,10 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   const authEmail = sdkUser?.email ?? httpUser?.email
   const metadata = (sdkUser?.user_metadata ?? httpUser?.user_metadata ?? {}) as Record<string, unknown>
   const metaInviteCode = typeof metadata.inviteCode === 'string' ? metadata.inviteCode : null
+  const emailConfirmed = Boolean(
+    sdkUser?.email_confirmed_at ?? sdkUser?.confirmed_at ??
+    httpUser?.email_confirmed_at ?? httpUser?.confirmed_at
+  )
 
   if (!authId) {
     return res.status(401).json({ error: 'Invalid token' })
@@ -66,6 +70,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     .maybeSingle()).data
 
   if (!lookup) {
+    // Strict email confirmation: never create an account for an unverified email.
+    // This holds even if the Supabase "Confirm email" project setting is off.
+    if (!emailConfirmed) {
+      return res.status(403).json({ error: 'email_unconfirmed', message: 'Please confirm your email before continuing.' })
+    }
+
     // Access gate: only blocks brand-new accounts. Existing users always pass.
     // The invite code rides along in the Supabase signup metadata, so we can
     // validate it server-side here without trusting client-held localStorage.

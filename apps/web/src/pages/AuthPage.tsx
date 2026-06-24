@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { apiPost } from '../lib/api'
 import { SignInCard2 } from '../components/ui/sign-in-card-2'
 import { useSeo } from '../lib/seo'
+import { readPendingInvite, writePendingInvite } from '../lib/invite'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -33,15 +34,13 @@ export function AuthPage() {
   const [searchParams] = useSearchParams()
 
   // The invite code can arrive in the URL or have been stashed on a prior visit.
-  const inviteCode = (
-    searchParams.get('invite') ||
-    (typeof localStorage !== 'undefined' ? localStorage.getItem('knotify:pendingInvite') : '') ||
-    ''
-  ).trim().toUpperCase()
+  // Not upper-cased: verified email-invite tokens are case-sensitive.
+  const inviteCode = (searchParams.get('invite') || readPendingInvite() || '').trim()
 
   const [accessMode, setAccessMode] = useState<'open' | 'invite_only' | null>(null)
   const [inviteValid, setInviteValid] = useState(false)
   const [inviterName, setInviterName] = useState<string | null>(null)
+  const [lockedEmail, setLockedEmail] = useState<string | null>(null)
   // A visitor without an invite can still choose to sign in to an existing account.
   const [forceAuth, setForceAuth] = useState(false)
 
@@ -54,10 +53,17 @@ export function AuthPage() {
     const q = inviteCode ? `?invite=${encodeURIComponent(inviteCode)}` : ''
     fetch(`${API_BASE}/api/access/context${q}`)
       .then(r => r.json())
-      .then((d: { mode: 'open' | 'invite_only'; invite: { valid: boolean; inviterName: string | null } | null }) => {
+      .then((d: { mode: 'open' | 'invite_only'; invite: { valid: boolean; inviterName: string | null; lockedEmail: string | null } | null }) => {
         setAccessMode(d.mode)
         setInviteValid(Boolean(d.invite?.valid))
         setInviterName(d.invite?.inviterName ?? null)
+        // Verified email invites pin the signup to the invited address.
+        if (d.invite?.valid && d.invite.lockedEmail) {
+          setLockedEmail(d.invite.lockedEmail)
+          setEmail(d.invite.lockedEmail)
+        } else {
+          setLockedEmail(null)
+        }
       })
       .catch(() => setAccessMode('open'))
   }, [inviteCode])
@@ -80,9 +86,7 @@ export function AuthPage() {
   // after the user verifies and logs in for the first time (handled in OnboardingPage).
   useEffect(() => {
     const code = searchParams.get('invite')
-    if (code) {
-      try { localStorage.setItem('knotify:pendingInvite', code.trim().toUpperCase()) } catch { /* ignore */ }
-    }
+    if (code) writePendingInvite(code)
   }, [searchParams])
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
@@ -386,6 +390,7 @@ export function AuthPage() {
       onSubmit={onSubmit}
       inviteBanner={invited ? inviterName : null}
       hideSignupTab={accessMode === 'invite_only' && !inviteValid}
+      emailLocked={Boolean(lockedEmail) && mode === 'signup'}
     />
   )
 }

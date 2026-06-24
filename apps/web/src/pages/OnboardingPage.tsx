@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '../lib/api'
 import { useToastStore } from '../store/toasts'
+import { readPendingInvite, clearPendingInvite } from '../lib/invite'
 import {
   PERSONAS, INTERESTS, GOALS, MUNICH_TENURE, COMMON_LANGUAGES,
 } from '../lib/taxonomy'
@@ -210,10 +211,10 @@ export function OnboardingPage() {
 
       // Claim pending invite attribution (stored before email confirmation redirect).
       try {
-        const pendingCode = localStorage.getItem('knotify:pendingInvite')
+        const pendingCode = readPendingInvite()
         if (pendingCode) {
           const result = await apiPost<{ ok: boolean; welcomeBonus?: number; alreadyAttributed?: boolean }>('/api/invites/claim', { code: pendingCode })
-          localStorage.removeItem('knotify:pendingInvite')
+          clearPendingInvite()
           if (result.welcomeBonus) {
             pushToast({
               type: 'invite_bonus',
