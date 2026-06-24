@@ -5,6 +5,7 @@ import { KAvatar } from '../../lib/knotify'
 import { T } from '../../lib/desk'
 import { PERSONAS } from '../../lib/taxonomy'
 
+
 export type Ask = {
   id: string
   user_id: string
@@ -94,23 +95,23 @@ export function AskDrawer({
   }
 
   return (
-    <>
-      {/* Backdrop — separate from modal to avoid iOS Safari backdropFilter stacking bug */}
-      <div
-        onClick={onClose}
-        style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(26,24,21,0.55)' }}
-      />
-
-      {/* Modal — transform centering works on every browser/screen size */}
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed',
+        top: 0, right: 0, bottom: 0, left: 0,
+        zIndex: 220,
+        background: 'rgba(26,24,21,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          zIndex: 221,
-          width: 'calc(100vw - 32px)',
+          width: '100%',
           maxWidth: 520,
           maxHeight: '85vh',
           background: T.paper,
@@ -120,7 +121,7 @@ export function AskDrawer({
           flexDirection: 'column',
           fontFamily: T.text,
           overflow: 'hidden',
-          boxShadow: '0 24px 60px rgba(0,0,0,0.22)',
+          boxShadow: '0 24px 64px rgba(26,24,21,0.18)',
         }}
       >
         {/* Header */}
@@ -226,6 +227,6 @@ export function AskDrawer({
           </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }
