@@ -32,18 +32,35 @@ export function AuthPage() {
   const location = useLocation()
   const [searchParams] = useSearchParams()
 
-  const [betaOpen, setBetaOpen] = useState<boolean | null>(null)
+  // The invite code can arrive in the URL or have been stashed on a prior visit.
+  const inviteCode = (
+    searchParams.get('invite') ||
+    (typeof localStorage !== 'undefined' ? localStorage.getItem('knotify:pendingInvite') : '') ||
+    ''
+  ).trim().toUpperCase()
+
+  const [accessMode, setAccessMode] = useState<'open' | 'invite_only' | null>(null)
+  const [inviteValid, setInviteValid] = useState(false)
+  const [inviterName, setInviterName] = useState<string | null>(null)
+  // A visitor without an invite can still choose to sign in to an existing account.
+  const [forceAuth, setForceAuth] = useState(false)
+
   const [waitlistEmail, setWaitlistEmail] = useState('')
   const [waitlistSubmitted, setWaitlistSubmitted] = useState(false)
   const [waitlistLoading, setWaitlistLoading] = useState(false)
   const [waitlistError, setWaitlistError] = useState('')
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/status`)
+    const q = inviteCode ? `?invite=${encodeURIComponent(inviteCode)}` : ''
+    fetch(`${API_BASE}/api/access/context${q}`)
       .then(r => r.json())
-      .then((d: { betaOpen: boolean }) => setBetaOpen(d.betaOpen))
-      .catch(() => setBetaOpen(true))
-  }, [])
+      .then((d: { mode: 'open' | 'invite_only'; invite: { valid: boolean; inviterName: string | null } | null }) => {
+        setAccessMode(d.mode)
+        setInviteValid(Boolean(d.invite?.valid))
+        setInviterName(d.invite?.inviterName ?? null)
+      })
+      .catch(() => setAccessMode('open'))
+  }, [inviteCode])
 
   async function joinWaitlist(e: FormEvent) {
     e.preventDefault()
@@ -213,6 +230,9 @@ export function AuthPage() {
           data: {
             fullName: cleanedFullName,
             username: cleanedUsername,
+            // Travels with the auth identity so the server can validate access
+            // server-side at first request, without trusting localStorage.
+            ...(inviteCode ? { inviteCode } : {}),
           },
         },
       })
@@ -289,7 +309,13 @@ export function AuthPage() {
     void sendPasswordReset()
   }
 
-  if (betaOpen === false) {
+  if (accessMode === null) {
+    return <div style={{ minHeight: '100vh', background: '#f5f0e8' }} />
+  }
+
+  // Invite-only, no valid invite, and the visitor hasn't chosen to sign in:
+  // show the waitlist. This is the only place public signup is withheld.
+  if (accessMode === 'invite_only' && !inviteValid && !forceAuth) {
     return (
       <div style={{ minHeight: '100vh', background: '#f5f0e8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'IBM Plex Sans', sans-serif" }}>
         <div style={{ maxWidth: 420, width: '100%' }}>
@@ -298,7 +324,7 @@ export function AuthPage() {
             Munich's network<br />is invite-only right now.
           </h1>
           <p style={{ fontSize: 15, color: '#6b5f55', lineHeight: 1.7, margin: '0 0 32px' }}>
-            We're opening up in waves. Drop your email and we'll let you know when your spot is ready. Already have an invite? Check your inbox.
+            We're opening up in waves. Drop your email and we'll let you know when your spot is ready. Got an invite link from a member? Open it to join straight away.
           </p>
 
           {waitlistSubmitted ? (
@@ -329,7 +355,7 @@ export function AuthPage() {
 
           <div style={{ marginTop: 32, paddingTop: 24, borderTop: '0.5px solid rgba(84,72,58,0.12)' }}>
             <button
-              onClick={() => setBetaOpen(true)}
+              onClick={() => { setForceAuth(true); changeMode('login') }}
               style={{ background: 'none', border: 'none', fontSize: 13, color: '#a09287', cursor: 'pointer', padding: 0 }}
             >
               Already have an account? Sign in
@@ -340,9 +366,7 @@ export function AuthPage() {
     )
   }
 
-  if (betaOpen === null) {
-    return <div style={{ minHeight: '100vh', background: '#f5f0e8' }} />
-  }
+  const invited = accessMode === 'invite_only' && inviteValid
 
   return (
     <SignInCard2
@@ -360,6 +384,8 @@ export function AuthPage() {
       onFullNameChange={setFullName}
       onUsernameChange={setUsername}
       onSubmit={onSubmit}
+      inviteBanner={invited ? inviterName : null}
+      hideSignupTab={accessMode === 'invite_only' && !inviteValid}
     />
   )
 }

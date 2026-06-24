@@ -1,30 +1,18 @@
 import type { NextFunction, Request, Response } from 'express'
 import { supabase } from '../lib.js'
-
-// Cache beta_open setting for 30s to avoid a DB hit on every request.
-let betaOpenCache: { value: boolean; expiresAt: number } | null = null
-
-async function isBetaOpen(): Promise<boolean> {
-  const now = Date.now()
-  if (betaOpenCache && now < betaOpenCache.expiresAt) return betaOpenCache.value
-  const { data } = await supabase.from('app_settings').select('value').eq('key', 'beta_open').maybeSingle()
-  const value = data?.value === true || data?.value === 'true' || data?.value == null
-  betaOpenCache = { value, expiresAt: now + 30_000 }
-  return value
-}
-
-// Call this from the admin settings PATCH to invalidate cache immediately.
-export function invalidateBetaCache() { betaOpenCache = null }
+import { ADMIN_EMAILS, evaluateNewUserAccess } from '../lib/access.js'
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+type TokenUser = { id: string; email?: string; user_metadata?: Record<string, unknown> }
 
 /**
  * Validate a bearer token directly against the Supabase Auth HTTP API.
  * This bypasses the JS SDK entirely, avoiding any version-related quirks
  * with how getUser() handles the new sb_secret_* / sb_publishable_* key formats.
  */
-async function validateTokenHttp(token: string): Promise<{ id: string; email?: string } | null> {
+async function validateTokenHttp(token: string): Promise<TokenUser | null> {
   try {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: {
@@ -36,7 +24,7 @@ async function validateTokenHttp(token: string): Promise<{ id: string; email?: s
       console.warn(`[auth] HTTP validation failed: ${res.status}`)
       return null
     }
-    const data = await res.json() as { id: string; email?: string }
+    const data = await res.json() as TokenUser
     return data.id ? data : null
   } catch (err) {
     console.error('[auth] HTTP validation error:', err)
@@ -55,6 +43,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   const authId = sdkUser?.id ?? httpUser?.id
   const authEmail = sdkUser?.email ?? httpUser?.email
+  const metadata = (sdkUser?.user_metadata ?? httpUser?.user_metadata ?? {}) as Record<string, unknown>
+  const metaInviteCode = typeof metadata.inviteCode === 'string' ? metadata.inviteCode : null
 
   if (!authId) {
     return res.status(401).json({ error: 'Invalid token' })
@@ -76,21 +66,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     .maybeSingle()).data
 
   if (!lookup) {
-    // Beta gate: only blocks brand-new accounts. Existing users always pass through.
-    const open = await isBetaOpen()
-    if (!open) {
-      const email = (authEmail ?? '').toLowerCase()
-      const ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
-      if (!ADMIN_EMAILS.includes(email)) {
-        const { count } = await supabase
-          .from('beta_signups')
-          .select('id', { count: 'exact', head: true })
-          .eq('email', email)
-          .eq('status', 'approved')
-        if ((count ?? 0) === 0) {
-          return res.status(403).json({ error: 'beta_closed', message: 'Access is currently invite-only. You are on the waitlist.' })
-        }
-      }
+    // Access gate: only blocks brand-new accounts. Existing users always pass.
+    // The invite code rides along in the Supabase signup metadata, so we can
+    // validate it server-side here without trusting client-held localStorage.
+    const access = await evaluateNewUserAccess({ email: authEmail, inviteCode: metaInviteCode })
+    if (!access.allowed) {
+      return res.status(403).json({ error: 'beta_closed', message: 'Access is currently invite-only. You are on the waitlist.' })
     }
 
     const email = authEmail ?? `user-${authId.slice(0, 8)}@unknown.app`
@@ -98,7 +79,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const stem = (email.split('@')[0] ?? 'New user').replace(/[._+-]+/g, ' ')
     const fullName = stem.charAt(0).toUpperCase() + stem.slice(1)
 
-    const ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
     const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase())
 
     const insert = await supabase

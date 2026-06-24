@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import multer from 'multer'
 import { supabase } from '../lib.js'
-import { invalidateBetaCache } from '../middleware/auth.js'
+import { invalidateAccessCache } from '../lib/access.js'
 import { sendBetaApprovalEmail } from '../lib/email.js'
 
 export const adminPanelRouter = Router()
@@ -299,15 +299,22 @@ adminPanelRouter.get('/settings', async (_req, res) => {
 })
 
 adminPanelRouter.patch('/settings', async (req, res) => {
-  const { key, value } = req.body
-  if (typeof key !== 'string' || key.length === 0) {
-    return res.status(422).json({ error: 'key is required' })
+  let { key, value } = req.body
+  const allowed = ['access_mode', 'team_invite_code', 'beta_open']
+  if (typeof key !== 'string' || !allowed.includes(key)) {
+    return res.status(422).json({ error: 'Unknown setting' })
+  }
+  if (key === 'access_mode' && value !== 'open' && value !== 'invite_only') {
+    return res.status(422).json({ error: 'access_mode must be "open" or "invite_only"' })
+  }
+  if (key === 'team_invite_code') {
+    value = String(value ?? '').trim().toUpperCase().slice(0, 24)
   }
   const { error } = await supabase
     .from('app_settings')
     .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
   if (error) return res.status(500).json({ error: error.message })
-  if (key === 'beta_open') invalidateBetaCache()
+  invalidateAccessCache()
   return res.json({ ok: true })
 })
 

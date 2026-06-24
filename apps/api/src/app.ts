@@ -27,6 +27,7 @@ import { gigsRouter } from './routes/gigs.js'
 import { invitesRouter } from './routes/invites.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { supabase } from './lib.js'
+import { getAccessConfig } from './lib/access.js'
 
 export const app = express()
 
@@ -49,10 +50,28 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true })
 })
 
-app.get('/api/status', async (_req, res) => {
-  const { data } = await supabase.from('app_settings').select('value').eq('key', 'beta_open').maybeSingle()
-  const betaOpen = data?.value === true || data?.value === 'true' || data?.value == null
-  return res.json({ betaOpen })
+// Public: drives the auth page. Tells the client which access mode we're in and,
+// if an invite code is present, whether it's valid and who it's from.
+app.get('/api/access/context', async (req, res) => {
+  const { mode, teamCode } = await getAccessConfig()
+  const code = String(req.query.invite ?? '').trim().toUpperCase()
+
+  let invite: { valid: boolean; inviterName: string | null } | null = null
+  if (code) {
+    if (teamCode && code === teamCode) {
+      invite = { valid: true, inviterName: null }
+    } else {
+      const member = await supabase.from('users').select('full_name').eq('invite_code', code).maybeSingle()
+      if (member.data) {
+        const firstName = (member.data.full_name || '').trim().split(/\s+/)[0] || 'A member'
+        invite = { valid: true, inviterName: firstName }
+      } else {
+        invite = { valid: false, inviterName: null }
+      }
+    }
+  }
+
+  return res.json({ mode, invite })
 })
 
 app.get('/health/db', async (_req, res) => {

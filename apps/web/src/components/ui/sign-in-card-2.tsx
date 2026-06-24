@@ -25,6 +25,10 @@ type SignInCard2Props = {
   onFullNameChange: (value: string) => void
   onUsernameChange: (value: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  /** When set, shows an "invited by" banner above the heading. */
+  inviteBanner?: string | null
+  /** When true, hides the login/signup switcher (e.g. invite-only with no invite). */
+  hideSignupTab?: boolean
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -137,6 +141,8 @@ export function SignInCard2({
   onFullNameChange,
   onUsernameChange,
   onSubmit,
+  inviteBanner,
+  hideSignupTab,
 }: SignInCard2Props) {
   const [showPassword, setShowPassword] = useState(false)
   const header = getHeaderCopy(mode)
@@ -231,6 +237,26 @@ export function SignInCard2({
           <KnotifyLogoImg variant="wordmark" height={26} />
         </div>
 
+        {inviteBanner && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'var(--paper-soft)',
+              border: '0.5px solid var(--rule)',
+              borderRadius: 12,
+              padding: '10px 14px',
+              marginBottom: 18,
+              fontSize: 13.5,
+              color: 'var(--ink)',
+            }}
+          >
+            <span style={{ fontSize: 16 }}>🎟️</span>
+            <span><strong>{inviteBanner}</strong> invited you to knotify.</span>
+          </div>
+        )}
+
         <div style={{ marginBottom: 8 }}>
           <KPill color="signal">{header.pill}</KPill>
         </div>
@@ -250,7 +276,7 @@ export function SignInCard2({
           {header.subtitle}
         </p>
 
-        {mode !== 'forgot' && (
+        {mode !== 'forgot' && !hideSignupTab && (
           <div
             style={{
               display: 'flex',

@@ -268,72 +268,123 @@ function exportCSV(signups: BetaSignup[]) {
 
 // ── Admin app ─────────────────────────────────────────────────────────────────
 function SettingsPanel() {
-  const [betaOpen, setBetaOpen] = useState<boolean | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [mode, setMode] = useState<'open' | 'invite_only' | null>(null)
+  const [teamCode, setTeamCode] = useState('')
+  const [teamCodeSaved, setTeamCodeSaved] = useState('')
+  const [savingMode, setSavingMode] = useState(false)
+  const [savingCode, setSavingCode] = useState(false)
   const [err, setErr] = useState('')
 
   useEffect(() => {
     api.settings()
-      .then((r: any) => setBetaOpen(r.settings?.beta_open === true || r.settings?.beta_open === 'true' || r.settings?.beta_open == null))
+      .then((r: any) => {
+        const s = r.settings ?? {}
+        const m = s.access_mode === 'invite_only' || s.access_mode === 'open'
+          ? s.access_mode
+          : (s.beta_open === false || s.beta_open === 'false' ? 'invite_only' : 'open')
+        setMode(m)
+        const code = String(s.team_invite_code ?? '')
+        setTeamCode(code)
+        setTeamCodeSaved(code)
+      })
       .catch((e: any) => setErr(e.message))
   }, [])
 
-  async function toggle() {
-    if (betaOpen === null) return
-    setSaving(true)
+  async function changeMode(next: 'open' | 'invite_only') {
+    if (next === mode) return
+    setSavingMode(true)
     setErr('')
     try {
-      await api.updateSetting('beta_open', !betaOpen)
-      setBetaOpen(!betaOpen)
+      await api.updateSetting('access_mode', next)
+      setMode(next)
     } catch (e: any) { setErr(e.message) }
-    finally { setSaving(false) }
+    finally { setSavingMode(false) }
   }
 
+  async function saveTeamCode() {
+    const clean = teamCode.trim().toUpperCase()
+    setSavingCode(true)
+    setErr('')
+    try {
+      await api.updateSetting('team_invite_code', clean)
+      setTeamCode(clean)
+      setTeamCodeSaved(clean)
+    } catch (e: any) { setErr(e.message) }
+    finally { setSavingCode(false) }
+  }
+
+  const inviteOnly = mode === 'invite_only'
+
   return (
-    <div style={{ maxWidth: 520 }}>
+    <div style={{ maxWidth: 560 }}>
       <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 400, letterSpacing: '-0.02em', marginBottom: 20 }}>Settings</h2>
       {err && <div style={{ color: T.signal, fontSize: 13, marginBottom: 12 }}>{err}</div>}
 
+      {/* Access mode */}
+      <div style={{ background: T.white, border: `0.5px solid ${T.rule}`, borderRadius: 14, padding: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, marginBottom: 4 }}>Access</div>
+        <div style={{ fontSize: 13, color: T.inkMuted, lineHeight: 1.5, marginBottom: 16 }}>
+          Controls who can create an account. Existing members can always sign in either way.
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, opacity: mode === null ? 0.5 : 1, pointerEvents: mode === null || savingMode ? 'none' : 'auto' }}>
+          {([
+            { v: 'open' as const, label: 'Open', desc: 'Anyone can sign up' },
+            { v: 'invite_only' as const, label: 'Invite-only', desc: 'Invite, approval, or admin' },
+          ]).map(opt => {
+            const active = mode === opt.v
+            return (
+              <button
+                key={opt.v}
+                onClick={() => changeMode(opt.v)}
+                style={{
+                  flex: 1, textAlign: 'left', padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+                  border: `1px solid ${active ? T.signal : T.rule}`,
+                  background: active ? T.signalSoft : 'transparent',
+                }}
+              >
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: active ? T.signal : T.ink }}>{opt.label}</div>
+                <div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{opt.desc}</div>
+              </button>
+            )
+          })}
+        </div>
+
+        <div style={{ marginTop: 14, fontSize: 12, color: inviteOnly ? T.amber : T.verd, fontWeight: 600 }}>
+          {mode === null ? 'Loading…' : inviteOnly ? '● Invite-only — newcomers without an invite see the waitlist' : '● Open — public signup is live'}
+        </div>
+      </div>
+
+      {/* Team invite code */}
       <div style={{ background: T.white, border: `0.5px solid ${T.rule}`, borderRadius: 14, padding: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, marginBottom: 4 }}>Open beta</div>
-            <div style={{ fontSize: 13, color: T.inkMuted, lineHeight: 1.5 }}>
-              {betaOpen
-                ? 'Anyone with a confirmed email can access the app.'
-                : 'Only users approved in Beta signups can access the app. Others see a waitlist message.'}
-            </div>
-          </div>
-          <button
-            onClick={toggle}
-            disabled={saving || betaOpen === null}
+        <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, marginBottom: 4 }}>Team invite code</div>
+        <div style={{ fontSize: 13, color: T.inkMuted, lineHeight: 1.5, marginBottom: 14 }}>
+          A reserved code for testing signups while invite-only, without flipping the site open.
+          Share <code style={{ background: T.ruleSoft, padding: '1px 5px', borderRadius: 4 }}>knotify.pro/signup?invite={teamCodeSaved || 'CODE'}</code> with testers. Rotate it if it leaks.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            value={teamCode}
+            onChange={e => setTeamCode(e.target.value.toUpperCase())}
+            placeholder="KNOTIFYTEAM"
             style={{
-              flexShrink: 0,
-              width: 48,
-              height: 28,
-              borderRadius: 999,
-              border: 'none',
-              background: betaOpen ? T.verd : T.inkFaint,
-              position: 'relative',
-              cursor: saving || betaOpen === null ? 'not-allowed' : 'pointer',
-              transition: 'background 0.2s',
+              flex: 1, padding: '9px 12px', borderRadius: 8, border: `0.5px solid ${T.rule}`,
+              background: T.white, fontSize: 13.5, color: T.ink, outline: 'none',
+              fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '0.05em',
+            }}
+          />
+          <button
+            onClick={saveTeamCode}
+            disabled={savingCode || teamCode.trim().toUpperCase() === teamCodeSaved}
+            style={{
+              padding: '9px 18px', borderRadius: 8, border: 'none',
+              background: savingCode || teamCode.trim().toUpperCase() === teamCodeSaved ? T.inkFaint : T.ink,
+              color: '#fff', fontSize: 13, fontWeight: 600,
+              cursor: savingCode || teamCode.trim().toUpperCase() === teamCodeSaved ? 'not-allowed' : 'pointer',
             }}
           >
-            <span style={{
-              position: 'absolute',
-              top: 3,
-              left: betaOpen ? 23 : 3,
-              width: 22,
-              height: 22,
-              borderRadius: '50%',
-              background: '#fff',
-              transition: 'left 0.2s',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-            }} />
+            {savingCode ? 'Saving…' : 'Save'}
           </button>
-        </div>
-        <div style={{ marginTop: 14, fontSize: 12, color: betaOpen ? T.verd : T.amber, fontWeight: 600 }}>
-          {betaOpen === null ? 'Loading…' : betaOpen ? '● Open — all confirmed users can log in' : '● Closed — approved list only'}
         </div>
       </div>
     </div>
