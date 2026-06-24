@@ -76,6 +76,16 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     .maybeSingle()).data
 
   if (!lookup) {
+    // Beta gate: only blocks brand-new accounts. Existing users always pass through.
+    const open = await isBetaOpen()
+    if (!open) {
+      const email = (authEmail ?? '').toLowerCase()
+      const ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
+      if (!ADMIN_EMAILS.includes(email)) {
+        return res.status(403).json({ error: 'beta_closed', message: 'Access is currently invite-only. You are on the waitlist.' })
+      }
+    }
+
     const email = authEmail ?? `user-${authId.slice(0, 8)}@unknown.app`
     const baseUsername = `user_${authId.replace(/-/g, '').slice(0, 12)}`
     const stem = (email.split('@')[0] ?? 'New user').replace(/[._+-]+/g, ' ')
@@ -120,22 +130,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   req.appUserId = lookup.id
   req.isAdmin = Boolean(lookup.is_admin)
   req.isHr = Boolean(lookup.is_hr)
-
-  // Beta gate: when closed, only admins + approved beta signups can proceed.
-  if (!lookup.is_admin) {
-    const open = await isBetaOpen()
-    if (!open) {
-      const email = (authEmail ?? '').toLowerCase()
-      const approved = await supabase
-        .from('beta_signups')
-        .select('id', { count: 'exact', head: true })
-        .eq('email', email)
-        .eq('status', 'approved')
-      if ((approved.count ?? 0) === 0) {
-        return res.status(403).json({ error: 'beta_closed', message: 'Access is currently invite-only. You are on the waitlist.' })
-      }
-    }
-  }
 
   next()
 }
