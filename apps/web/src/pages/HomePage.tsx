@@ -11,9 +11,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowBigUp, Hash, Image as ImageIcon, MessageCircle, Plus, Send, X } from 'lucide-react'
+import { ArrowBigUp, Globe, Briefcase, Hash, Image as ImageIcon, MessageCircle, Plus, Send, X } from 'lucide-react'
 import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '@/lib/knotify'
 import { apiDelete, apiGet, apiPost, apiPostForm } from '@/lib/api'
+import { AskDrawer, type Ask } from '../components/asks/AskDrawer'
+import { PERSONAS } from '../lib/taxonomy'
 
 type UserPreview = {
   id: string
@@ -185,6 +187,23 @@ export function HomePage() {
 
   const activeChannelSlug = scope.kind === 'channel' ? scope.slug : null
 
+  // ── Asks rail state ────────────────────────────────────────────────────────
+  const [railAsks, setRailAsks] = useState<Ask[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [askDetail, setAskDetail] = useState<Ask | null>(null)
+
+  useEffect(() => {
+    apiGet<{ user: { id: string } }>('/api/users/me')
+      .then((r) => setCurrentUserId(r.user?.id ?? null))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    apiGet<{ asks: Ask[] }>('/api/asks/feed?limit=20')
+      .then((r) => setRailAsks(r.asks ?? []))
+      .catch(() => {})
+  }, [])
+
   return (
     <div style={{ maxWidth: 1180, margin: '0 auto', fontFamily: "'IBM Plex Sans', sans-serif" }}>
       {/* ── Header ────────────────────────────────────────────────────── */}
@@ -310,14 +329,28 @@ export function HomePage() {
           )}
         </div>
 
-        {/* Right rail: trending (desktop only) */}
-        <div className="hidden lg:block">
+        {/* Right rail: asks + trending (desktop only) */}
+        <div className="hidden lg:flex" style={{ flexDirection: 'column', gap: 14 }}>
+          <AsksRail asks={railAsks} onOpen={setAskDetail} />
           <TrendingRail
             channels={trendingChannels}
             onPick={(slug) => setScope({ kind: 'channel', slug })}
           />
         </div>
       </div>
+
+      {askDetail && (
+        <AskDrawer
+          ask={askDetail}
+          currentUserId={currentUserId}
+          onClose={() => setAskDetail(null)}
+          onChanged={() => {
+            apiGet<{ asks: Ask[] }>('/api/asks/feed?limit=20')
+              .then((r) => setRailAsks(r.asks ?? []))
+              .catch(() => {})
+          }}
+        />
+      )}
 
       {createChannelOpen && (
         <CreateChannelModal
@@ -532,6 +565,104 @@ function railBtnStyle(active: boolean): React.CSSProperties {
     textAlign: 'left',
     width: '100%',
   }
+}
+
+// ─── Asks rail ─────────────────────────────────────────────────────────────
+const RAIL_LIMIT = 4
+
+function AskAudienceChip({ ask }: { ask: Ask }) {
+  const type = ask.audience_type ?? 'everyone'
+  let Icon = Globe
+  let label = 'Everyone'
+  if (type === 'interest') { Icon = Hash; label = ask.audience_value ?? 'Topic' }
+  if (type === 'persona') {
+    Icon = Briefcase
+    label = PERSONAS.find((p) => p.value === ask.audience_value)?.label ?? 'Profession'
+  }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, background: 'var(--paper-deep)', fontSize: 9.5, color: 'var(--ink-muted)' }}>
+      <Icon size={8} /> {label}
+    </span>
+  )
+}
+
+function AsksRail({ asks, onOpen }: { asks: Ask[]; onOpen: (a: Ask) => void }) {
+  const navigate = useNavigate()
+  const visible = asks.slice(0, RAIL_LIMIT)
+  const overflow = asks.length - RAIL_LIMIT
+
+  return (
+    <KCard style={{ padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+          Asks for you
+        </div>
+        {overflow > 0 && (
+          <button
+            type="button"
+            onClick={() => navigate('/asks')}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10.5, color: 'var(--signal)', fontFamily: "'IBM Plex Sans', sans-serif", padding: 0 }}
+          >
+            See all +{overflow}
+          </button>
+        )}
+      </div>
+
+      {visible.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: "'Fraunces', serif", padding: '6px 0 2px' }}>
+          No targeted asks yet.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {visible.map((ask) => (
+            <button
+              key={ask.id}
+              type="button"
+              onClick={() => onOpen(ask)}
+              style={{
+                textAlign: 'left', width: '100%', cursor: 'pointer',
+                padding: '9px 10px', borderRadius: 10,
+                background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)',
+                display: 'flex', flexDirection: 'column', gap: 5,
+                fontFamily: "'IBM Plex Sans', sans-serif",
+                transition: 'background 0.12s ease',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper-deep)' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper-soft)' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                {ask.author && <KAvatar name={ask.author.full_name} src={ask.author.avatar_url} size={22} />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ask.author?.full_name ?? 'Someone'}
+                  </div>
+                </div>
+                <AskAudienceChip ask={ask} />
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {ask.content}
+              </div>
+              {(ask.reply_count ?? 0) > 0 && (
+                <div style={{ fontSize: 10, color: 'var(--ink-faint)' }}>
+                  {ask.reply_count} {ask.reply_count === 1 ? 'reply' : 'replies'}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => navigate('/asks')}
+        style={{ marginTop: 10, width: '100%', padding: '7px 0', borderRadius: 8, border: '0.5px solid var(--rule)', background: 'transparent', cursor: 'pointer', fontSize: 11.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans', sans-serif' " }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper-soft)' }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+      >
+        View all asks
+      </button>
+    </KCard>
+  )
 }
 
 // ─── Trending rail ─────────────────────────────────────────────────────────
