@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { KnotGraphNode, KnotHealthState } from './KnotForceGraph'
 
@@ -186,6 +186,7 @@ export function KnotMobileGraph({
   me,
   nodes,
   selectedNodeId,
+  query = '',
   onSelectNode,
   onClearSelection,
   expandedRootId = null,
@@ -195,6 +196,7 @@ export function KnotMobileGraph({
   me: MeNode
   nodes: KnotGraphNode[]
   selectedNodeId: string | null
+  query?: string
   onSelectNode: (node: KnotGraphNode) => void
   onClearSelection: () => void
   expandedRootId?: string | null
@@ -231,6 +233,25 @@ export function KnotMobileGraph({
   // (not "me"), so it's visually clear they belong to that person's network.
   const rootEntry = expandedRootId ? positioned.find(p => p.n.id === expandedRootId) : undefined
   const rootPos = rootEntry ? { x: rootEntry.x, y: rootEntry.y } : { x: CX, y: CY }
+
+  // Search highlighting — mirrors the desktop graph: matching nodes stand out,
+  // the rest dim, and the view pans to the first match.
+  const normalizedQuery = query.trim().toLowerCase()
+  const hasQuery = normalizedQuery.length > 0
+  const prevQueryRef = useRef('')
+  useEffect(() => {
+    const prevHadQuery = prevQueryRef.current.trim().length > 0
+    prevQueryRef.current = query
+
+    if (hasQuery) {
+      const hit = positioned.find(p => p.n.matchesQuery)
+      if (hit) setPan({ x: -scale * (hit.x - CX), y: -scale * (hit.y - CY) })
+      return
+    }
+    // Recenter when the query is cleared.
+    if (prevHadQuery) setPan({ x: 0, y: 0 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [normalizedQuery])
 
   function onBgDown(e: React.PointerEvent<SVGSVGElement>) {
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -346,6 +367,7 @@ export function KnotMobileGraph({
           const isSecond = n.degree === 'second'
           const from = isSecond ? rootPos : { x: CX, y: CY }
           const sel = n.id === selectedNodeId
+          const searchMuted = hasQuery && !n.matchesQuery
           return (
             <path
               key={`ln-${n.id}`}
@@ -355,7 +377,7 @@ export function KnotMobileGraph({
               strokeWidth={sel ? 1.6 : isSecond ? 1.2 : 0.8}
               strokeDasharray={isSecond ? '5 4' : undefined}
               strokeLinecap="round"
-              opacity={isDimmed(n) ? 0.18 : 1}
+              opacity={searchMuted ? 0.1 : isDimmed(n) ? 0.18 : 1}
             />
           )
         })}
@@ -368,25 +390,27 @@ export function KnotMobileGraph({
         {/* Connection nodes */}
         {positioned.map(({ n, x, y, r }) => {
           const sel = n.id === selectedNodeId
+          const searchHit = hasQuery && n.matchesQuery
+          const searchMuted = hasQuery && !n.matchesQuery
           const hc = n.healthState ? HEALTH[n.healthState] : null
           const hasImg = !!n.avatarUrl && !imgFail.has(n.id)
           const clipId = `c-${n.id}`
           const label = n.name.split(' ')[0].slice(0, 9)
           const labelW = Math.max(22, label.length * 5.2 + 8)
-          // Scale up selected node
-          const scale = sel ? 1.55 : 1
-          const scaledR = r * scale
+          // Scale up the selected node, and emphasize search matches
+          const nodeScale = sel ? 1.55 : searchHit && !sel ? 1.3 : 1
 
           return (
             <g
               key={n.id}
               data-node={n.id}
-              transform={`translate(${x},${y}) scale(${scale})`}
+              transform={`translate(${x},${y}) scale(${nodeScale})`}
               onClick={(e) => { e.stopPropagation(); sel ? onClearSelection() : onSelectNode(n) }}
-              style={{ cursor: 'pointer', transformOrigin: `${x}px ${y}px`, opacity: isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
+              style={{ cursor: 'pointer', transformOrigin: `${x}px ${y}px`, opacity: searchMuted ? 0.16 : isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
             >
-              {/* Outer selection / expanded-root / health ring */}
+              {/* Outer selection / search-match / expanded-root / health ring */}
               {sel && <circle cx={0} cy={0} r={r + 5} fill="rgba(216,68,43,0.12)" stroke="#D8442B" strokeWidth={1.5} />}
+              {!sel && searchHit && <circle cx={0} cy={0} r={r + 5} fill="rgba(26,24,21,0.06)" stroke="#1A1815" strokeWidth={1.75} />}
               {!sel && n.id === expandedRootId && expandedMode && (
                 <circle cx={0} cy={0} r={r + 5} fill="rgba(31,107,94,0.12)" stroke="#1F6B5E" strokeWidth={2} />
               )}
@@ -435,7 +459,7 @@ export function KnotMobileGraph({
                 textAnchor="middle"
                 fontSize={8}
                 fontFamily="'IBM Plex Sans', sans-serif"
-                fontWeight={sel ? 700 : 600}
+                fontWeight={sel || searchHit ? 700 : 600}
                 fill={sel ? '#D8442B' : '#1A1815'}
                 style={{ pointerEvents: 'none' }}
               >

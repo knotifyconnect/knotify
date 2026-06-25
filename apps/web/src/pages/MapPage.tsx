@@ -1258,6 +1258,7 @@ function KnotStage({
                 me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
                 nodes={nodes}
                 selectedNodeId={selectedNode?.id ?? null}
+                query={query}
                 onSelectNode={(node: KnotGraphNode) => {
                   const match = nodes.find((item) => item.id === node.id)
                   if (!match) return
