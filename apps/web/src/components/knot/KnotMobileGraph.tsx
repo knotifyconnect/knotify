@@ -179,6 +179,8 @@ const VW = 390
 const VH = 600
 const CX = VW / 2
 const CY = VH / 2
+const MIN_ZOOM = 0.6
+const MAX_ZOOM = 3
 
 export function KnotMobileGraph({
   me,
@@ -201,7 +203,11 @@ export function KnotMobileGraph({
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const panRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null)
+  // Active touch points + pinch gesture state for two-finger zoom.
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null)
   const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [scale, setScale] = useState(1)
   const [imgFail, setImgFail] = useState(new Set<string>())
 
   const direct = nodes.filter(n => n.degree !== 'second')
@@ -227,18 +233,43 @@ export function KnotMobileGraph({
   const rootPos = rootEntry ? { x: rootEntry.x, y: rootEntry.y } : { x: CX, y: CY }
 
   function onBgDown(e: React.PointerEvent<SVGSVGElement>) {
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    svgRef.current?.setPointerCapture(e.pointerId)
+
+    // Second finger down → begin a pinch-zoom and cancel any in-flight pan.
+    if (pointersRef.current.size === 2) {
+      const [a, b] = [...pointersRef.current.values()]
+      pinchRef.current = { startDist: Math.hypot(a.x - b.x, a.y - b.y) || 1, startScale: scale }
+      panRef.current = null
+      return
+    }
+
     if ((e.target as Element).closest('[data-node]')) return
     panRef.current = { startX: e.clientX, startY: e.clientY, ox: pan.x, oy: pan.y, moved: false }
-    svgRef.current?.setPointerCapture(e.pointerId)
   }
   function onBgMove(e: React.PointerEvent<SVGSVGElement>) {
+    if (pointersRef.current.has(e.pointerId)) {
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    }
+
+    // Two-finger pinch: scale relative to the gesture's starting spread.
+    if (pinchRef.current && pointersRef.current.size >= 2) {
+      const [a, b] = [...pointersRef.current.values()]
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1
+      const next = pinchRef.current.startScale * (dist / pinchRef.current.startDist)
+      setScale(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next)))
+      return
+    }
+
     if (!panRef.current) return
     const dx = e.clientX - panRef.current.startX
     const dy = e.clientY - panRef.current.startY
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) panRef.current.moved = true
     setPan({ x: panRef.current.ox + dx, y: panRef.current.oy + dy })
   }
-  function onBgUp() {
+  function onBgUp(e: React.PointerEvent<SVGSVGElement>) {
+    pointersRef.current.delete(e.pointerId)
+    if (pointersRef.current.size < 2) pinchRef.current = null
     if (panRef.current && !panRef.current.moved) onClearSelection()
     panRef.current = null
   }
@@ -298,12 +329,13 @@ export function KnotMobileGraph({
       onPointerUp={onBgUp}
       onPointerCancel={onBgUp}
     >
-      <g transform={`translate(${pan.x},${pan.y})`}>
+      <g transform={`translate(${pan.x},${pan.y}) translate(${CX},${CY}) scale(${scale}) translate(${-CX},${-CY})`}>
 
-        {/* Dimming overlay when a node is selected */}
+        {/* Dimming overlay when a node is selected — oversized so it covers the
+            viewport regardless of current pan/zoom. */}
         {selectedNodeId && (
           <rect
-            x={-pan.x} y={-pan.y} width={VW} height={VH}
+            x={-VW * 2} y={-VH * 2} width={VW * 5} height={VH * 5}
             fill="rgba(26,24,21,0.18)"
             style={{ pointerEvents: 'none' }}
           />

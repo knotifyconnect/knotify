@@ -70,7 +70,8 @@ export function FeedbackWidget() {
       style={{
         position: 'fixed',
         ...buttonPos,
-        zIndex: 60,
+        // Above the mobile bottom sheet (z 9900) so it stays tappable on the knot page.
+        zIndex: 9990,
         width: 46,
         height: 46,
         borderRadius: 999,
@@ -94,7 +95,8 @@ export function FeedbackWidget() {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 210,
+        // Above the bottom sheet (9900) and node overlay (10000) so the panel is never occluded.
+        zIndex: 10010,
         background: 'rgba(26,24,21,0.42)',
         backdropFilter: 'blur(2px)',
         display: 'flex',
