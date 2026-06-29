@@ -2,7 +2,22 @@ import { supabase } from './supabase'
 import { useSessionStore } from '../store/session'
 
 const EXPLICIT_API_URL = import.meta.env.VITE_API_URL?.trim()
+const IS_DEVELOPMENT = import.meta.env.DEV
 let resolvedApiBase: string | null = EXPLICIT_API_URL ? normalizeBase(EXPLICIT_API_URL) : null
+
+export class ApiError extends Error {
+  readonly status: number
+  readonly code: string | null
+  readonly url: string
+
+  constructor({ status, code, url, message }: { status: number; code: string | null; url: string; message: string }) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.url = url
+  }
+}
 
 function normalizeBase(base: string) {
   return base.endsWith('/') ? base.slice(0, -1) : base
@@ -16,21 +31,26 @@ function candidateApiBases() {
 
   if (typeof window !== 'undefined') {
     const origin = window.location.origin
-    const protocol = window.location.protocol
-    const host = window.location.hostname
-
     bases.push(origin)
-    bases.push(`${protocol}//${host}:3002`)
-    bases.push(`${protocol}//${host}:3001`)
-    if (host !== 'localhost') {
-      bases.push(`${protocol}//localhost:3002`)
-      bases.push(`${protocol}//localhost:3001`)
+
+    // Local-port fallbacks are useful while developing, but must never be
+    // attempted by the production browser on a user's own machine.
+    if (IS_DEVELOPMENT) {
+      const protocol = window.location.protocol
+      const host = window.location.hostname
+
+      bases.push(`${protocol}//${host}:3002`)
+      bases.push(`${protocol}//${host}:3001`)
+      if (host !== 'localhost') {
+        bases.push(`${protocol}//localhost:3002`)
+        bases.push(`${protocol}//localhost:3001`)
+      }
+      if (host !== '127.0.0.1') {
+        bases.push(`${protocol}//127.0.0.1:3002`)
+        bases.push(`${protocol}//127.0.0.1:3001`)
+      }
     }
-    if (host !== '127.0.0.1') {
-      bases.push(`${protocol}//127.0.0.1:3002`)
-      bases.push(`${protocol}//127.0.0.1:3001`)
-    }
-  } else {
+  } else if (IS_DEVELOPMENT) {
     bases.push('http://localhost:3002')
     bases.push('http://localhost:3001')
   }
@@ -115,11 +135,29 @@ async function authHeaders() {
 
 async function buildError(res: Response) {
   const text = await res.text()
+  let code: string | null = null
+  let detail = text.slice(0, 300)
+
+  if (text) {
+    try {
+      const payload = JSON.parse(text) as { error?: unknown; message?: unknown }
+      code = typeof payload.error === 'string' ? payload.error : null
+      if (typeof payload.message === 'string' && payload.message.trim()) {
+        detail = payload.message.trim()
+      } else if (code) {
+        detail = code
+      }
+    } catch {
+      // Non-JSON responses keep their truncated response text as the detail.
+    }
+  }
+
   // Do NOT force sign-out on 401 here, it causes a logout loop right after login
   // because the API call from AppSidebar can race ahead of the session being ready.
   // Token expiry is handled naturally by onAuthStateChange(SIGNED_OUT) from Supabase.
   const prefix = `[${res.status}] ${res.statusText} @ ${res.url}`
-  return new Error(text ? `${prefix}, ${text.slice(0, 300)}` : prefix)
+  const message = detail ? `${prefix}, ${detail}` : prefix
+  return new ApiError({ status: res.status, code, url: res.url, message })
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
