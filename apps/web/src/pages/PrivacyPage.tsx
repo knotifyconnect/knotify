@@ -114,6 +114,11 @@ export function PrivacyPage() {
             Übermittlung erfolgt nur mit ausdrücklicher Zustimmung auf Basis von Standardvertragsklauseln
             (SCCs, Art. 46 DSGVO).
           </p>
+          <p>
+            <strong>PostHog (EU-Region):</strong> Produktanalyse (z. B. besuchte Seiten, genutzte
+            Funktionen), sofern Sie den Analyse-Cookies zugestimmt haben. Verarbeitung auf Grundlage
+            Ihrer Einwilligung (Art. 6 Abs. 1 lit. a DSGVO), jederzeit widerrufbar.
+          </p>
         </Section>
 
         <Section title="5. Ihre Rechte (Art. 15–21 DSGVO)">
@@ -129,8 +134,11 @@ export function PrivacyPage() {
 
         <Section title="6. Cookies">
           <p>
-            Wir verwenden ausschließlich technisch notwendige Session-Cookies zur Authentifizierung.
-            Keine Tracking- oder Marketing-Cookies.
+            Wir verwenden technisch notwendige Session-Cookies zur Authentifizierung. Zusätzlich
+            setzen wir, nur mit Ihrer Einwilligung, Analyse-Cookies (PostHog) ein, um zu verstehen,
+            welche Seiten und Funktionen genutzt werden und die Beta-Version zu verbessern. Sie können
+            Ihre Einwilligung jederzeit über den Cookie-Hinweis widerrufen oder erteilen. Keine
+            Marketing- oder Werbe-Cookies.
           </p>
         </Section>
 

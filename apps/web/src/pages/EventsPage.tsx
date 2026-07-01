@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { ImagePlus } from 'lucide-react'
 import { apiGet, apiPost, apiPostForm } from '@/lib/api'
+import { trackEvent } from '@/lib/analytics'
 import { T, DeskPage, DeskHeader, SectionLabel, Chip, RailCard, accentFor, gradientFor } from '@/lib/desk'
 
 type EventItem = {
@@ -54,7 +55,9 @@ export function EventsPage() {
   useEffect(() => { void load() }, [load])
 
   async function toggleRsvp(id: string) {
+    const wasRsvped = events.find(e => e.id === id)?.rsvped ?? false
     setEvents(evs => evs.map(e => e.id === id ? { ...e, rsvped: !e.rsvped, rsvp_count: e.rsvp_count + (e.rsvped ? -1 : 1) } : e))
+    if (!wasRsvped) trackEvent('event_rsvp')
     try { await apiPost(`/api/events/${id}/rsvp`, {}) } catch { void load() }
   }
 

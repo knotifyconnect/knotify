@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Lock, Star } from 'lucide-react'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api'
+import { trackEvent } from '@/lib/analytics'
 
 // ── Types (mirror /api/gigs responses) ──────────────────────────────────────
 type RewardType = 'coffee' | 'paid' | 'free'
@@ -152,6 +153,7 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
         gigType, title, description: description || null, rewardType,
         priceEur: rewardType === 'paid' && priceEur ? Number(priceEur) : null,
       })
+      trackEvent('gig_created', { gig_type: gigType, reward_type: rewardType })
       setTitle(''); setDescription(''); setPriceEur(''); setShowForm(false)
       await load()
       setTab('mine')
@@ -164,6 +166,7 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
     setBusyId(requestGig.id); setError(null)
     try {
       await apiPost(`/api/gigs/${requestGig.id}/request`, { message: message || null })
+      trackEvent('gig_requested')
       setRequestGig(null)
       await load()
       setTab('requests')

@@ -10,7 +10,9 @@ import { supabase } from './lib/supabase'
 import { useSessionStore } from './store/session'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { ToastContainer } from './components/ui/Toast'
+import { CookieConsentBanner } from './components/CookieConsentBanner'
 import { apiGet } from './lib/api'
+import { identifyUser, initAnalytics, resetAnalyticsUser, trackPageview } from './lib/analytics'
 
 // Everything below is code-split so it does not ship in the landing-page bundle.
 // Logged-out visitors and crawlers only load LandingPage + its deps.
@@ -246,6 +248,10 @@ function AnimatedRoutes({
 }) {
   const location = useLocation()
 
+  useEffect(() => {
+    trackPageview(location.pathname)
+  }, [location.pathname])
+
   return (
     <AnimatePresence mode="wait">
       <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" exit="exit">
@@ -276,6 +282,10 @@ export default function App() {
   })
 
   useEffect(() => {
+    initAnalytics()
+  }, [])
+
+  useEffect(() => {
     // onAuthStateChange fires INITIAL_SESSION immediately on mount with the
     // existing session (or null). This is the single source of truth â€”
     // no separate getSession() call that can race and wipe a valid token.
@@ -286,6 +296,8 @@ export default function App() {
       const emailConfirmed = Boolean(user?.email_confirmed_at || user?.confirmed_at)
       setToken(session && emailConfirmed ? session.access_token : null)
       setHydrating(false)
+      if (user && emailConfirmed) identifyUser(user)
+      else resetAnalyticsUser()
     })
 
     return () => subscription.unsubscribe()
@@ -370,6 +382,7 @@ export default function App() {
           onReentryContinue={onReentryContinue}
         />
         <ToastContainer />
+        <CookieConsentBanner />
       </BrowserRouter>
     </AppErrorBoundary>
   )
