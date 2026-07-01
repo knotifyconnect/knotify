@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
@@ -30,6 +31,7 @@ type JobListItem = {
     logo_url: string | null
     city: string | null
   } | null
+  poster?: { id: string; full_name: string; username: string; avatar_url: string | null } | null
   referral_connections?: Array<{ id: string; full_name: string; username: string; avatar_url: string | null }>
 }
 
@@ -165,6 +167,7 @@ function historyEventTitle(event: ReferralHistoryEvent) {
 }
 
 export function JobsPage() {
+  const navigate = useNavigate()
   const [jobs, setJobs] = useState<JobListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1051,7 +1054,7 @@ export function JobsPage() {
                     <div style={{ display: 'flex', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
                       {!job.company_id && (
                         <span style={{ padding: '2px 7px', borderRadius: 6, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', fontSize: 11, color: 'var(--ink-faint)' }}>
-                          Shared by a member
+                          Shared by {job.poster?.full_name ?? 'a member'}
                         </span>
                       )}
                       {job.employment_type && (
@@ -1272,26 +1275,46 @@ export function JobsPage() {
                     style={{
                       padding: '16px 18px',
                       borderRadius: 14,
-                      background: 'var(--paper-soft)',
-                      border: '0.5px solid var(--rule-soft)',
+                      background: 'var(--verd-soft)',
+                      border: '0.5px solid rgba(31,107,94,0.2)',
                       marginBottom: 16,
                     }}
                   >
-                    <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>
-                      Shared by a member
+                    <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--verd)', marginBottom: 10 }}>
+                      Your contact for this one
                     </div>
+                    {selectedJob.poster && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        <KAvatar name={selectedJob.poster.full_name} src={selectedJob.poster.avatar_url} size={32} />
+                        <div>
+                          <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{selectedJob.poster.full_name}</div>
+                          <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>found and shared this opening</div>
+                        </div>
+                      </div>
+                    )}
                     <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 12px' }}>
-                      This posting was shared from an external site — it's not a knotify-verified employer, so there's no warm-intro flow here. Applying takes you to the original listing.
+                      Ask them what they know before you apply — they can give you context or point you to the right person.
                     </p>
-                    <KBtn
-                      variant="signal"
-                      size="sm"
-                      fullWidth
-                      onClick={() => { trackEvent('job_apply_clicked', { job_id: selectedJob.id, external: true }); window.open(selectedJob.apply_url ?? '#', '_blank', 'noopener,noreferrer') }}
-                      disabled={!selectedJob.apply_url}
-                    >
-                      Apply on original site ↗
-                    </KBtn>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <KBtn
+                        variant="signal"
+                        size="sm"
+                        fullWidth
+                        onClick={() => selectedJob.poster && navigate(`/messages?to=${selectedJob.poster.id}`)}
+                        disabled={!selectedJob.poster}
+                      >
+                        Message {selectedJob.poster?.full_name?.split(' ')[0] ?? 'them'}
+                      </KBtn>
+                      <KBtn
+                        variant="ghost"
+                        size="sm"
+                        fullWidth
+                        onClick={() => { trackEvent('job_apply_clicked', { job_id: selectedJob.id, external: true }); window.open(selectedJob.apply_url ?? '#', '_blank', 'noopener,noreferrer') }}
+                        disabled={!selectedJob.apply_url}
+                      >
+                        Apply on original site ↗
+                      </KBtn>
+                    </div>
                   </div>
                 ) : (
                 <div

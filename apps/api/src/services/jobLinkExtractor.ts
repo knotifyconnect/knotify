@@ -123,9 +123,45 @@ function findJobPostingJsonLd(html: string): RawJobPosting | null {
         : [parsed]
 
     for (const candidate of candidates) {
-      const type = (candidate as RawJobPosting)?.['@type']
-      const isJobPosting = type === 'JobPosting' || (Array.isArray(type) && type.includes('JobPosting'))
-      if (isJobPosting) return candidate as RawJobPosting
+      const isJobPosting = (node: unknown) => {
+        const type = (node as RawJobPosting)?.['@type']
+        return type === 'JobPosting' || (Array.isArray(type) && type.includes('JobPosting'))
+      }
+      if (isJobPosting(candidate)) return candidate as RawJobPosting
+      // Many sites wrap the posting in a generic WebPage node with the actual
+      // JobPosting nested under mainEntity.
+      const mainEntity = (candidate as RawJobPosting)?.mainEntity
+      if (isJobPosting(mainEntity)) return mainEntity as RawJobPosting
+    }
+  }
+  return null
+}
+
+// Some SPAs server-render their initial data as a hydration payload even
+// though the visible page is built client-side — e.g. Next.js's __NEXT_DATA__
+// or a window.__NUXT__/__INITIAL_STATE__ assignment. When present, it often
+// contains the exact job data the page will render, in plain JSON, with zero
+// need to execute anything. This is a best-effort text dump appended to the
+// Claude prompt, not a strict schema — every site shapes this differently.
+function findHydrationJson(html: string): string | null {
+  const nextData = html.match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i)
+  if (nextData) {
+    try {
+      JSON.parse(nextData[1])
+      return nextData[1].slice(0, 20000)
+    } catch {
+      // fall through
+    }
+  }
+
+  for (const varName of ['__NUXT__', '__INITIAL_STATE__', '__APOLLO_STATE__']) {
+    const m = html.match(new RegExp(`window\\.${varName}\\s*=\\s*(\\{[\\s\\S]*?\\})\\s*;?\\s*(?:</script>|\\n)`, 'i'))
+    if (!m) continue
+    try {
+      JSON.parse(m[1])
+      return m[1].slice(0, 20000)
+    } catch {
+      continue
     }
   }
   return null
@@ -215,6 +251,7 @@ async function claudeFullExtraction(html: string, sourceUrl: string): Promise<Jo
   if (!client) return fallback
 
   const text = stripHtmlFlat(html).slice(0, 15000)
+  const hydrationJson = findHydrationJson(html)
 
   const prompt = `You extract structured job posting data from a webpage's text content. Return ONLY a JSON object, no other text, no markdown fences.
 
@@ -232,13 +269,14 @@ Schema:
 }
 
 RULES:
-- Never invent a salary, location, or skill that is not stated in the text.
-- If the page text is too sparse to extract a real description, use the page title as the description.
+- Prefer the ADDITIONAL PAGE DATA block below (if present) over PAGE TEXT — it's the site's own raw data and is more complete than the visible text, which may be a near-empty loading shell on JS-rendered pages.
+- Never invent a salary, location, or skill that is not stated in the text or data.
+- If both are too sparse to extract a real description, use the page title as the description.
 - If a field is not stated, use null (or false for isRemote, or [] for requiredSkills).
 
 PAGE TITLE: ${fallback.title}
 PAGE TEXT:
-${text}`
+${text}${hydrationJson ? `\n\nADDITIONAL PAGE DATA (raw JSON the page uses to render itself):\n${hydrationJson}` : ''}`
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',

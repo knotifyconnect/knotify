@@ -119,7 +119,7 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
 
   let query = supabase
     .from('jobs')
-    .select('id, company_id, company_name, company_logo_url, apply_url, source, title, description, required_skills, location, is_remote, salary_min, salary_max, employment_type, status, is_featured, created_at')
+    .select('id, company_id, company_name, company_logo_url, apply_url, source, posted_by, title, description, required_skills, location, is_remote, salary_min, salary_max, employment_type, status, is_featured, created_at')
     .order('created_at', { ascending: false })
 
   if (status && status !== 'all' && ['open', 'closed', 'draft'].includes(status)) {
@@ -153,6 +153,15 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
 
   const companyMap = new Map((companies.data ?? []).map((c) => [c.id, c]))
 
+  // Link-shared jobs have no verified company — the member who shared it is
+  // the contact/referral point instead, so surface their identity.
+  const posterIds = [...new Set(jobs.filter((j) => !j.company_id).map((j) => j.posted_by).filter(Boolean))]
+  const posters = posterIds.length
+    ? await supabase.from('users').select('id, full_name, username, avatar_url').in('id', posterIds)
+    : { data: [], error: null }
+  if (posters.error) return res.status(500).json({ error: posters.error.message })
+  const posterMap = new Map((posters.data ?? []).map((u) => [u.id, u]))
+
   let verifiedSkillNames = new Set<string>()
   if (req.appUserId) {
     const mySkills = await supabase
@@ -180,10 +189,12 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
     const company = job.company_id
       ? companyMap.get(job.company_id) ?? null
       : { id: null, name: job.company_name, logo_url: job.company_logo_url, city: null }
+    const poster = job.company_id ? null : posterMap.get(job.posted_by) ?? null
 
     return {
       ...job,
       company,
+      poster,
       matchScore,
       matchedRequiredSkills: matched,
       totalRequiredSkills: required.length,
@@ -220,6 +231,13 @@ jobsRouter.get('/:id', requireAuth, async (req, res) => {
     : { data: { id: null, name: job.data.company_name, logo_url: job.data.company_logo_url, website: job.data.apply_url, city: null }, error: null }
   if (company.error) return res.status(500).json({ error: company.error.message })
 
+  // Link-shared jobs have no verified company — the member who shared it is
+  // the contact/referral point instead of a "no warm-intro flow" dead end.
+  const poster = !job.data.company_id
+    ? await supabase.from('users').select('id, full_name, username, avatar_url').eq('id', job.data.posted_by).maybeSingle()
+    : { data: null, error: null }
+  if (poster.error) return res.status(500).json({ error: poster.error.message })
+
   const referralsCount = await supabase
     .from('referrals')
     .select('id', { count: 'exact', head: true })
@@ -247,7 +265,15 @@ jobsRouter.get('/:id', requireAuth, async (req, res) => {
     }
   }
 
-  return res.json({ job: { ...job.data, company: company.data ?? null, submittedReferrals: referralsCount.count ?? 0, referral_connections: referralConnections } })
+  return res.json({
+    job: {
+      ...job.data,
+      company: company.data ?? null,
+      poster: poster.data ?? null,
+      submittedReferrals: referralsCount.count ?? 0,
+      referral_connections: referralConnections,
+    },
+  })
 })
 
 // ── Saved jobs ────────────────────────────────────────────────────────────
