@@ -176,6 +176,7 @@ export function JobsPage() {
   const [filterRemote, setFilterRemote] = useState('')
   const [filterLocation, setFilterLocation] = useState('')
   const [savedOnly, setSavedOnly] = useState(false)
+  const [brokenLogoIds, setBrokenLogoIds] = useState<Set<string>>(new Set())
 
   const [showShareForm, setShowShareForm] = useState(false)
   const [shareUrl, setShareUrl] = useState('')
@@ -1034,8 +1035,13 @@ export function JobsPage() {
                 </button>
                 {/* Company + title */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12, paddingRight: 28 }}>
-                  {job.company?.logo_url ? (
-                    <img src={job.company.logo_url} alt={job.company.name} style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'contain', border: '0.5px solid var(--rule)', flexShrink: 0 }} />
+                  {job.company?.logo_url && !brokenLogoIds.has(job.id) ? (
+                    <img
+                      src={job.company.logo_url}
+                      alt={job.company.name}
+                      style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'contain', border: '0.5px solid var(--rule)', flexShrink: 0 }}
+                      onError={() => setBrokenLogoIds((prev) => new Set(prev).add(job.id))}
+                    />
                   ) : (
                     <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontFamily: "'Fraunces', serif", fontWeight: 500, color: 'var(--ink-muted)', flexShrink: 0 }}>
                       {job.company?.name?.charAt(0) ?? '?'}

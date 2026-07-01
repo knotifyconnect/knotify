@@ -1,4 +1,5 @@
 import AnthropicModule from '@anthropic-ai/sdk'
+import { convert } from 'html-to-text'
 
 export type JobLinkDraft = {
   title: string
@@ -51,27 +52,30 @@ function decodeEntities(text: string): string {
     .replace(/&ndash;/gi, '–')
 }
 
-// Strips tags but keeps paragraph/list structure as newlines, so a job
-// description reads like the original posting instead of one run-on line.
+// Converts HTML to plain text with real paragraph/list structure preserved
+// (blank lines between paragraphs, "* " bullets), instead of a hand-rolled
+// regex that misses plenty of real-world markup variations.
 function htmlToReadableText(html: string): string {
-  return decodeEntities(
-    html
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<!--[\s\S]*?-->/g, ' ')
-      .replace(/<li[^>]*>/gi, '\n• ')
-      .replace(/<\/(p|div|h[1-6]|tr|li|ul|ol)>/gi, '\n')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-  )
-    .replace(/[ \t]+/g, ' ')
-    .replace(/ *\n */g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  return convert(html, {
+    wordwrap: false,
+    selectors: [
+      { selector: 'a', options: { ignoreHref: true } },
+      { selector: 'img', format: 'skip' },
+    ],
+  }).trim()
 }
 
 function stripHtmlFlat(html: string): string {
   return htmlToReadableText(html).replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function resolveUrl(maybeUrl: string | null | undefined, sourceUrl: string): string | null {
+  if (!maybeUrl) return null
+  try {
+    return new URL(maybeUrl, sourceUrl).toString()
+  } catch {
+    return null
+  }
 }
 
 function cleanCompanyFromHostname(sourceUrl: string): string {
@@ -170,7 +174,10 @@ function findHydrationJson(html: string): string | null {
 function draftFromJsonLd(job: RawJobPosting, html: string, sourceUrl: string): JobLinkDraft {
   const org = job.hiringOrganization as RawJobPosting | string | undefined
   const orgName = typeof org === 'string' ? org : (org?.name as string | undefined)
-  const orgLogo = typeof org === 'object' ? (org?.logo as string | undefined) : undefined
+  // schema.org allows `logo` to be a bare URL string OR an ImageObject { url: "..." }.
+  const rawOrgLogo = typeof org === 'object' ? org?.logo : undefined
+  const orgLogo =
+    typeof rawOrgLogo === 'string' ? rawOrgLogo : typeof rawOrgLogo === 'object' ? (rawOrgLogo as RawJobPosting)?.url as string | undefined : undefined
 
   const rawLocations = job.jobLocation
   const locations: RawJobPosting[] = Array.isArray(rawLocations)
@@ -198,10 +205,13 @@ function draftFromJsonLd(job: RawJobPosting, html: string, sourceUrl: string): J
   const rawDescription = typeof job.description === 'string' ? job.description : ''
   const description = htmlToReadableText(rawDescription).slice(0, 6000)
 
+  const rawTitle = typeof job.title === 'string' ? decodeEntities(job.title).trim() : ''
+  const rawOrgName = orgName ? decodeEntities(orgName).trim() : ''
+
   return {
-    title: (typeof job.title === 'string' && job.title.trim()) || fallbackDraft(html, sourceUrl).title,
-    companyName: (orgName && orgName.trim()) || cleanCompanyFromHostname(sourceUrl),
-    companyLogoUrl: orgLogo ?? getMeta(html, 'og:image'),
+    title: rawTitle || fallbackDraft(html, sourceUrl).title,
+    companyName: rawOrgName || cleanCompanyFromHostname(sourceUrl),
+    companyLogoUrl: resolveUrl(orgLogo, sourceUrl) ?? resolveUrl(getMeta(html, 'og:image'), sourceUrl),
     location,
     isRemote: Boolean(isRemote),
     salaryMin: Number.isFinite(salaryMin) && salaryMin! > 0 ? Math.round(salaryMin!) : singleValue,
@@ -221,7 +231,7 @@ function fallbackDraft(html: string, sourceUrl: string): JobLinkDraft {
   return {
     title: ogTitle ?? (titleTagMatch ? decodeEntities(titleTagMatch[1].trim()) : 'Job opportunity'),
     companyName: getMeta(html, 'og:site_name') ?? cleanCompanyFromHostname(sourceUrl),
-    companyLogoUrl: getMeta(html, 'og:image'),
+    companyLogoUrl: resolveUrl(getMeta(html, 'og:image'), sourceUrl),
     location: null,
     isRemote: false,
     salaryMin: null,
