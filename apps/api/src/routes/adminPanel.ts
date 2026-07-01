@@ -2,7 +2,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { supabase } from '../lib.js'
 import { invalidateAccessCache } from '../lib/access.js'
-import { sendBetaApprovalEmail, sendWaitlistWelcomeEmail, sendInsiderUpdateEmail } from '../lib/email.js'
+import { sendBetaApprovalEmail } from '../lib/email.js'
 
 export const adminPanelRouter = Router()
 
@@ -77,62 +77,6 @@ adminPanelRouter.patch('/beta-signups/:id', async (req, res) => {
   }
 
   return res.json({ signup: data })
-})
-
-// Send Email 1 ("You were there") to all pending waitlist signups with marketing consent
-adminPanelRouter.post('/beta-signups/send-welcome', async (req, res) => {
-  const { data, error } = await supabase
-    .from('beta_signups')
-    .select('email, name')
-    .eq('status', 'pending')
-    .eq('marketing_consent', true)
-
-  if (error) return res.status(500).json({ error: error.message })
-
-  const results: { email: string; status: 'sent' | 'failed'; error?: string }[] = []
-
-  for (const signup of data ?? []) {
-    const firstName = (signup.name as string | null)?.split(' ')[0] ?? 'there'
-    try {
-      await sendWaitlistWelcomeEmail(signup.email, firstName)
-      results.push({ email: signup.email, status: 'sent' })
-    } catch (e: any) {
-      results.push({ email: signup.email, status: 'failed', error: e.message })
-    }
-  }
-
-  return res.json({ sent: results.filter(r => r.status === 'sent').length, results })
-})
-
-// Send Email 2 ("You're shaping this") to all pending signups with marketing consent
-// Body: { highlights: string[] }
-adminPanelRouter.post('/beta-signups/send-update', async (req, res) => {
-  const { highlights } = req.body
-  if (!Array.isArray(highlights) || highlights.length === 0) {
-    return res.status(422).json({ error: 'highlights must be a non-empty array of strings.' })
-  }
-
-  const { data, error } = await supabase
-    .from('beta_signups')
-    .select('email, name')
-    .eq('status', 'pending')
-    .eq('marketing_consent', true)
-
-  if (error) return res.status(500).json({ error: error.message })
-
-  const results: { email: string; status: 'sent' | 'failed'; error?: string }[] = []
-
-  for (const signup of data ?? []) {
-    const firstName = (signup.name as string | null)?.split(' ')[0] ?? 'there'
-    try {
-      await sendInsiderUpdateEmail(signup.email, firstName, highlights)
-      results.push({ email: signup.email, status: 'sent' })
-    } catch (e: any) {
-      results.push({ email: signup.email, status: 'failed', error: e.message })
-    }
-  }
-
-  return res.json({ sent: results.filter(r => r.status === 'sent').length, results })
 })
 
 // ── Events ────────────────────────────────────────────────────────────────────
