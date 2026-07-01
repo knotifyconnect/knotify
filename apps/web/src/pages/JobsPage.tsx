@@ -839,8 +839,13 @@ export function JobsPage() {
 
       {/* ── Jobs board ─────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginBottom: 12 }}>
-          Open positions · warm referral required
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+          <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
+            Open positions · warm referral required
+          </div>
+          <KBtn variant="signal" size="sm" onClick={() => setShowShareForm((p) => !p)}>
+            {showShareForm ? 'Close' : 'Share a job'}
+          </KBtn>
         </div>
 
         {/* Search + Filters */}
@@ -874,12 +879,6 @@ export function JobsPage() {
             />
             <button onClick={() => setSavedOnly((p) => !p)} style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${savedOnly ? 'var(--signal)' : 'var(--rule)'}`, background: savedOnly ? 'rgba(216,68,43,0.08)' : 'var(--paper-soft)', color: savedOnly ? 'var(--signal)' : 'var(--ink)', cursor: 'pointer', fontSize: 13, fontFamily: "'IBM Plex Sans'" }}>
               🔖 Saved
-            </button>
-            <button
-              onClick={() => setShowShareForm((p) => !p)}
-              style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${showShareForm ? 'var(--signal)' : 'var(--rule)'}`, background: showShareForm ? 'rgba(216,68,43,0.08)' : 'var(--paper-soft)', color: showShareForm ? 'var(--signal)' : 'var(--ink)', cursor: 'pointer', fontSize: 13, fontFamily: "'IBM Plex Sans'", marginLeft: 'auto' }}
-            >
-              🔗 Share a job
             </button>
           </div>
         </div>
@@ -1052,7 +1051,7 @@ export function JobsPage() {
                     <div style={{ display: 'flex', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
                       {!job.company_id && (
                         <span style={{ padding: '2px 7px', borderRadius: 6, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', fontSize: 11, color: 'var(--ink-faint)' }}>
-                          🔗 Shared by a member
+                          Shared by a member
                         </span>
                       )}
                       {job.employment_type && (

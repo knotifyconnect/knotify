@@ -41,14 +41,25 @@ async function assertSafeExternalUrl(rawUrl: string): Promise<URL> {
 }
 
 const MAX_BODY_BYTES = 3_000_000
-const FETCH_TIMEOUT_MS = 8000
+// Kept tight because the whole handler (fetch + redirects + Claude extraction)
+// has to finish inside Vercel's function execution limit. A slow ATS site or a
+// long redirect chain used to be able to blow past that limit, which kills the
+// function mid-request — the browser then reports a bare "Failed to fetch"
+// instead of a clean error message.
+const FETCH_TIMEOUT_MS = 6000
 
-export async function fetchUrlSafely(rawUrl: string, maxRedirects = 3): Promise<{ html: string; finalUrl: string }> {
+// Many corporate ATS pages (SuccessFactors, Workday, etc.) block obvious bot
+// user-agents outright. A normal browser UA gets us the same page a human
+// pasting the link would see.
+const FETCH_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+export async function fetchUrlSafely(rawUrl: string, maxRedirects = 2): Promise<{ html: string; finalUrl: string }> {
   let current = await assertSafeExternalUrl(rawUrl)
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const response = await fetch(current.toString(), {
-      headers: { 'User-Agent': 'NodeNet-Bot/1.0 (+https://knotify.pro)' },
+      headers: { 'User-Agent': FETCH_USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       redirect: 'manual',
     })
@@ -69,4 +80,16 @@ export async function fetchUrlSafely(rawUrl: string, maxRedirects = 3): Promise<
   }
 
   throw new Error('Too many redirects')
+}
+
+export async function withDeadline<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms)
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    clearTimeout(timer!)
+  }
 }

@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
-import { fetchUrlSafely } from '../lib/safeFetchUrl.js'
+import { fetchUrlSafely, withDeadline } from '../lib/safeFetchUrl.js'
 import { extractJobFromHtml } from '../services/jobLinkExtractor.js'
 
 const createJobSchema = z
@@ -90,13 +90,17 @@ jobsRouter.post('/parse-link', requireAuth, async (req, res) => {
 
   let fetched: { html: string; finalUrl: string }
   try {
-    fetched = await fetchUrlSafely(parsed.data.url)
+    fetched = await withDeadline(fetchUrlSafely(parsed.data.url), 12000, 'That page took too long to load')
   } catch (e) {
     return res.status(422).json({ error: e instanceof Error ? e.message : 'Could not fetch that link' })
   }
 
   try {
-    const draft = await extractJobFromHtml(fetched.html, fetched.finalUrl)
+    const draft = await withDeadline(
+      extractJobFromHtml(fetched.html, fetched.finalUrl),
+      12000,
+      'Reading that job posting took too long'
+    )
     return res.json({ draft, sourceUrl: fetched.finalUrl })
   } catch (e) {
     return res.status(502).json({ error: e instanceof Error ? e.message : 'Could not read that job posting' })
