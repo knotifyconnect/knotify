@@ -983,9 +983,9 @@ export function JobsPage() {
                   <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Description</div>
                   <textarea
                     value={shareDraft.description}
-                    onChange={(e) => updateShareDraft({ description: e.target.value.slice(0, 2000) })}
-                    rows={4}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--rule)', background: 'white', fontSize: 13.5, color: 'var(--ink)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif" }}
+                    onChange={(e) => updateShareDraft({ description: e.target.value.slice(0, 6000) })}
+                    rows={10}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--rule)', background: 'white', fontSize: 13.5, color: 'var(--ink)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
                   />
                 </div>
 
@@ -1244,7 +1244,7 @@ export function JobsPage() {
                       </div>
                     </div>
                   </div>
-                  <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', lineHeight: 1.55, margin: 0 }}>
+                  <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>
                     {selectedJob.description}
                   </p>
                 </div>
