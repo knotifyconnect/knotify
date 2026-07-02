@@ -1,6 +1,17 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Lazy init: the Resend constructor throws on a missing key, which would crash
+// the whole API at import time in environments without email configured.
+let resendClient: Resend | null = null
+function getResend(): Resend {
+  if (!resendClient) resendClient = new Resend(process.env.RESEND_API_KEY)
+  return resendClient
+}
+const resend = {
+  emails: {
+    send: (...args: Parameters<Resend['emails']['send']>) => getResend().emails.send(...args),
+  },
+}
 
 const FROM = 'knotify <hello@knotify.pro>'
 const WEB_URL = process.env.PUBLIC_WEB_URL || 'https://knotify.pro'

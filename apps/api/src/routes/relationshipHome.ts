@@ -51,7 +51,25 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
     )
 
     if (!peerIds.length) {
-      return res.json({ ranked: [], milestones: [], openAsks: [], pendingForMe: [], sharedEvents: [] })
+      // No accepted connections yet — but incoming requests must still surface.
+      let pendingOnly: Array<{ id: string; peer: unknown; created_at: string }> = []
+      if (pendingRaw.length) {
+        try {
+          const { data: pendingUsers } = await supabase
+            .from('users')
+            .select('id, full_name, username, avatar_url, headline, current_company')
+            .in('id', pendingRaw.map((c) => c.requester_id))
+          const byId = new Map(((pendingUsers ?? []) as Array<{ id: string }>).map((u) => [u.id, u]))
+          pendingOnly = pendingRaw
+            .filter((c) => byId.has(c.requester_id))
+            .map((c) => ({ id: c.id, peer: byId.get(c.requester_id)!, created_at: c.created_at }))
+        } catch { /* non-critical */ }
+      }
+      return res.json({
+        ranked: [], milestones: [], openAsks: [], pendingForMe: pendingOnly, sharedEvents: [],
+        upcomingMeetings: [],
+        stats: { total: 0, warm: 0, cooling: 0, cold: 0, fresh: 0, needsFollowUp: 0, upcomingMeetings: 0, handled: 0 },
+      })
     }
 
     // 3. Current user profile
@@ -126,6 +144,75 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
         }
       }
     } catch { /* fall back — engine works without message history */ }
+
+    // 5b. Meetings — the engine treats past meetings as real interactions,
+    //     surfaces follow-ups, and mutes nudges when a coffee is already booked.
+    const nowMs = Date.now()
+    const lastInteractionByPeer = new Map<string, string>()
+    // messageDatesByPeer is ordered newest-first (query sorts descending)
+    for (const [peerId, dates] of messageDatesByPeer) {
+      if (dates.length) lastInteractionByPeer.set(peerId, dates[0])
+    }
+
+    const upcomingMeetingByPeer = new Map<string, { id: string; scheduled_at: string }>()
+    const followUpByPeer = new Map<string, { id: string; scheduled_at: string }>()
+    type UpcomingMeeting = {
+      id: string; scheduled_at: string; status: string; location_text: string | null
+      peerId: string; peer: PeerProfile | null; am_initiator: boolean
+    }
+    let upcomingMeetings: UpcomingMeeting[] = []
+    try {
+      const { data: meetingsData } = await supabase
+        .from('meetings')
+        .select('id, initiator_id, invitee_id, scheduled_at, status, location_text')
+        .or(`initiator_id.eq.${userId},invitee_id.eq.${userId}`)
+        .in('status', ['proposed', 'confirmed', 'completed'])
+        .order('scheduled_at', { ascending: false })
+        .limit(100)
+
+      const FOLLOW_UP_WINDOW_DAYS = 14
+      for (const m of (meetingsData ?? []) as Array<{
+        id: string; initiator_id: string; invitee_id: string
+        scheduled_at: string; status: string; location_text: string | null
+      }>) {
+        const peerId = m.initiator_id === userId ? m.invitee_id : m.initiator_id
+        const when = new Date(m.scheduled_at).getTime()
+
+        if (when > nowMs && (m.status === 'proposed' || m.status === 'confirmed')) {
+          // Soonest upcoming meeting per peer (list is newest-first, so keep overwriting)
+          upcomingMeetingByPeer.set(peerId, { id: m.id, scheduled_at: m.scheduled_at })
+          upcomingMeetings.push({
+            id: m.id, scheduled_at: m.scheduled_at, status: m.status,
+            location_text: m.location_text, peerId,
+            peer: peerProfiles.get(peerId) ?? null,
+            am_initiator: m.initiator_id === userId,
+          })
+          continue
+        }
+        if (when > nowMs) continue
+
+        // Past confirmed/completed meeting = a real interaction
+        if (m.status === 'confirmed' || m.status === 'completed') {
+          const prev = lastInteractionByPeer.get(peerId)
+          if (!prev || prev < m.scheduled_at) lastInteractionByPeer.set(peerId, m.scheduled_at)
+
+          // Follow-up: met recently and nobody has messaged since
+          const daysAgo = (nowMs - when) / 86400000
+          const lastMsg = (messageDatesByPeer.get(peerId) ?? [])[0]
+          const messagedSince = !!lastMsg && lastMsg > m.scheduled_at
+          if (daysAgo <= FOLLOW_UP_WINDOW_DAYS && !messagedSince && !followUpByPeer.has(peerId)) {
+            followUpByPeer.set(peerId, { id: m.id, scheduled_at: m.scheduled_at })
+          }
+        }
+      }
+
+      // Keep only the soonest meeting per peer, soonest first
+      const keptIds = new Set([...upcomingMeetingByPeer.values()].map((m) => m.id))
+      upcomingMeetings = upcomingMeetings
+        .filter((m) => keptIds.has(m.id))
+        .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
+        .slice(0, 5)
+    } catch { /* non-critical — engine works without meetings */ }
 
     // 6. Milestones (recent updates from connections)
     const peerIdsWithMilestone = new Set<string>()
@@ -220,6 +307,14 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       }
     } catch { /* non-critical */ }
 
+    // 8b. Soonest shared event per peer — feeds the engine's occasion fusion
+    const sharedEventByPeer = new Map<string, { eventId: string; title: string; starts_at: string; location: string | null }>()
+    for (const ev of [...sharedEvents].sort((a, b) => a.starts_at.localeCompare(b.starts_at))) {
+      if (!sharedEventByPeer.has(ev.peerId)) {
+        sharedEventByPeer.set(ev.peerId, { eventId: ev.eventId, title: ev.title, starts_at: ev.starts_at, location: ev.location })
+      }
+    }
+
     // 10. Mutual connection counts (lightweight)
     const mutualConnectionCounts = new Map<string, number>()
     try {
@@ -279,8 +374,29 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       } catch { /* non-critical */ }
     }
 
-    // 13. Run Layer 1 engine
-    const ranked = rankConnections({
+    // 13. Durable suppression — respect what the user already handled or waved off.
+    //     Dismissed/snoozed cards stay gone for 7 days on every device; acted
+    //     cards rest for 2 days (the message itself also resets the cadence).
+    const suppressedConnectionIds = new Set<string>()
+    try {
+      const since = new Date(nowMs - 7 * 86400000).toISOString()
+      const { data: fbData } = await supabase
+        .from('relationship_feedback')
+        .select('connection_id, outcome, created_at')
+        .eq('user_id', userId)
+        .gte('created_at', since)
+        .in('outcome', ['dismissed', 'snoozed', 'acted'])
+
+      for (const fb of (fbData ?? []) as Array<{ connection_id: string; outcome: string; created_at: string }>) {
+        const ageDays = (nowMs - new Date(fb.created_at).getTime()) / 86400000
+        if (fb.outcome === 'acted' ? ageDays <= 2 : ageDays <= 7) {
+          suppressedConnectionIds.add(fb.connection_id)
+        }
+      }
+    } catch { /* non-critical — falls back to showing everything */ }
+
+    // 14. Run Layer 1 engine
+    const rankedAll = rankConnections({
       userId,
       userProfile,
       connections:           accepted,
@@ -293,19 +409,43 @@ relationshipHomeRouter.get('/', requireAuth, async (req, res) => {
       mutualConnectionCounts,
       totalConnectionCount:  peerIds.length,
       cachedInsights,
+      lastInteractionByPeer,
+      sharedEventByPeer,
+      upcomingMeetingByPeer,
+      followUpByPeer,
     })
 
-    // 14. Send response immediately
-    res.json({ ranked, milestones, openAsks, pendingForMe, sharedEvents })
+    // Time-critical occasions (follow-up, booked coffee, shared event) resurface
+    // even if the card was snoozed — the moment beats the mute.
+    const ranked = rankedAll.filter((r) =>
+      !suppressedConnectionIds.has(r.connectionId)
+      || r.signals.needsFollowUp
+      || r.signals.hasUpcomingMeeting
+    )
 
-    // 15. Fire Layer 2 refresh in background (after response sent)
+    // 15. Network health stats — computed over ALL relationships, not just visible cards
+    const stats = {
+      total:            rankedAll.length,
+      warm:             rankedAll.filter((r) => r.state === 'warm').length,
+      cooling:          rankedAll.filter((r) => r.state === 'cooling').length,
+      cold:             rankedAll.filter((r) => r.state === 'cold').length,
+      fresh:            rankedAll.filter((r) => r.state === 'new').length,
+      needsFollowUp:    followUpByPeer.size,
+      upcomingMeetings: upcomingMeetings.length,
+      handled:          suppressedConnectionIds.size,
+    }
+
+    // 16. Send response immediately
+    res.json({ ranked, stats, upcomingMeetings, milestones, openAsks, pendingForMe, sharedEvents })
+
+    // 17. Fire Layer 2 refresh in background (after response sent)
     setImmediate(() => {
       refreshLayer2InBackground({
         userId,
         userProfile,
         connections: accepted,
         peerProfiles,
-        ranked,
+        ranked: rankedAll,
       }).catch((e) => console.error('[engine] Layer 2 background refresh failed', e))
     })
   } catch (err) {
@@ -320,6 +460,9 @@ relationshipHomeRouter.post('/feedback', requireAuth, async (req, res) => {
 
   const { connectionId, priorityScore, dominantFactor, suggestedAction, signals, outcome } = req.body
   if (!connectionId || !outcome) return res.status(400).json({ error: 'connectionId and outcome are required' })
+  if (!['acted', 'dismissed', 'snoozed', 'ignored'].includes(outcome)) {
+    return res.status(400).json({ error: 'Invalid outcome' })
+  }
 
   await logFeedback({ userId, connectionId, priorityScore, dominantFactor, suggestedAction, signals, outcome })
   return res.json({ ok: true })

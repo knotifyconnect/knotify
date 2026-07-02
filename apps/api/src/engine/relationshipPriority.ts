@@ -70,8 +70,19 @@ export type SuggestedAction =
   | 'welcome'
   | 'meet'
   | 'ask'
+  | 'follow_up'
 
 export type DominantFactor = 'maintenance' | 'opportunity' | 'milestone' | 'new'
+
+/** A concrete, dated reason this person surfaces today. The UI renders these as chips. */
+export type Occasion =
+  | { type: 'shared_event'; label: string; eventId: string; title: string; starts_at: string; location: string | null }
+  | { type: 'milestone'; label: string }
+  | { type: 'open_ask'; label: string }
+  | { type: 'follow_up'; label: string; meetingId: string; met_at: string }
+  | { type: 'upcoming_meeting'; label: string; meetingId: string; scheduled_at: string }
+  | { type: 'new_connection'; label: string }
+  | { type: 'overdue'; label: string }
 
 export interface Layer1Signals {
   tieStrength:        number   // 0..1
@@ -84,6 +95,10 @@ export interface Layer1Signals {
   newBoost:           number   // 0..1, decays over NEW_CONNECTION_WINDOW_DAYS
   hasMilestone:       boolean
   hasOpenAsk:         boolean
+  hasSharedEvent:     boolean
+  needsFollowUp:      boolean
+  hasUpcomingMeeting: boolean
+  lastInteractionAt:  string | null
 }
 
 export interface RankedConnection {
@@ -96,6 +111,7 @@ export interface RankedConnection {
   reason:          string
   suggestedAction: SuggestedAction
   draftOpener?:    string
+  occasions:       Occasion[]
   signals:         Layer1Signals
 }
 
@@ -228,12 +244,25 @@ function computeRelevance(user: UserProfile, peer: PeerProfile): number {
 function computeTimeliness(peer: PeerProfile, opts: {
   hasMilestone:   boolean
   hasOpenAsk:     boolean
+  hasSharedEvent: boolean
+  needsFollowUp:  boolean
 }): number {
   let score = 0
   if (peer.open_to_roles)    score += 0.30  // they're available now
   if (opts.hasMilestone)     score += 0.40  // recent milestone (congratulate window)
   if (opts.hasOpenAsk)       score += 0.30  // they have an open ask we might answer
+  if (opts.hasSharedEvent)   score += 0.35  // you'll both be in the same room soon
+  if (opts.needsFollowUp)    score += 0.50  // you just met — the follow-up window is short
   return Math.min(score, 1)
+}
+
+/** "today" / "yesterday" / "in 2d" / "3d ago" style label for occasion chips. */
+function relativeDays(iso: string, now: number): string {
+  const diff = Math.round((new Date(iso).getTime() - now) / 86400000)
+  if (diff === 0)  return 'today'
+  if (diff === 1)  return 'tomorrow'
+  if (diff === -1) return 'yesterday'
+  return diff > 0 ? `in ${diff}d` : `${-diff}d ago`
 }
 
 function deriveState(overdueRatio: number, connectionAgeDays: number): RelationshipState {
@@ -248,11 +277,17 @@ function deterministicReason(state: RelationshipState, signals: Layer1Signals, p
   const d = signals.daysSince
   const ei = Math.round(signals.expectedInterval)
 
+  if (signals.needsFollowUp) {
+    return `You and ${firstName} met for coffee recently. A quick follow-up now turns a meeting into a relationship.`
+  }
+  if (signals.hasUpcomingMeeting) {
+    return `You have a coffee booked with ${firstName}. Nothing to do, maybe confirm the details.`
+  }
   if (state === 'new') {
     return `You connected with ${firstName} recently. Send a note while the connection is fresh.`
   }
   if (signals.hasMilestone) {
-    return `${firstName} shared a recent update — a great moment to reach out and congratulate them.`
+    return `${firstName} shared a recent update. A great moment to reach out and congratulate them.`
   }
   if (signals.hasOpenAsk) {
     return `${firstName} has an open ask you might be able to help with.`
@@ -263,7 +298,7 @@ function deterministicReason(state: RelationshipState, signals: Layer1Signals, p
   if (state === 'cooling') {
     return `It's been ${d} days since you last spoke with ${firstName}. Based on your history, now is a good time to check in.`
   }
-  return `${firstName} is warm. Stay in touch — your last contact was ${d} day${d === 1 ? '' : 's'} ago.`
+  return `${firstName} is warm. Stay in touch, your last contact was ${d} day${d === 1 ? '' : 's'} ago.`
 }
 
 function determineSuggestedAction(
@@ -271,8 +306,12 @@ function determineSuggestedAction(
   signals: Layer1Signals,
   dominantFactor: DominantFactor
 ): SuggestedAction {
-  if (state === 'new')              return 'welcome'
+  if (signals.needsFollowUp)       return 'follow_up'
+  if (signals.hasUpcomingMeeting)  return 'meet'
   if (signals.hasMilestone)        return 'congratulate'
+  if (state === 'new')             return 'welcome'
+  if (signals.hasOpenAsk)          return 'ask'
+  if (signals.hasSharedEvent)      return 'meet'
   if (dominantFactor === 'opportunity' && signals.relevance > 0.5) return 'meet'
   if (state === 'cold')            return 'reconnect'
   if (state === 'cooling')         return 'message'
@@ -301,6 +340,9 @@ function hashSignals(signals: Layer1Signals): string {
     tim: Math.round(signals.timeliness * 100),
     ms: signals.hasMilestone,
     ask: signals.hasOpenAsk,
+    ev: signals.hasSharedEvent,
+    fu: signals.needsFollowUp,
+    um: signals.hasUpcomingMeeting,
   })
   return crypto.createHash('sha1').update(key).digest('hex').slice(0, 16)
 }
@@ -392,13 +434,16 @@ RELATIONSHIP SIGNALS:
 - Relevance score: ${(signals.relevance * 100).toFixed(0)}/100
 - Has recent milestone: ${signals.hasMilestone}
 - Has open ask: ${signals.hasOpenAsk}
+- Both attending an upcoming event: ${signals.hasSharedEvent}
+- Recently met in person, follow-up pending: ${signals.needsFollowUp}
+- Coffee meeting already booked: ${signals.hasUpcomingMeeting}
 - Connection age: ${signals.connectionAgeDays} days
 
 Return ONLY valid JSON, no markdown, no prose:
 {
   "relationshipType": "mentor|peer|collaborator|recruiter-contact|acquaintance|dormant-lead",
   "whyNow": "one specific sentence about why reaching out NOW makes sense, referencing real details from both profiles — NEVER generic",
-  "suggestedAction": "reconnect|message|congratulate|welcome|ask|meet",
+  "suggestedAction": "reconnect|message|congratulate|welcome|ask|meet|follow_up",
   "toneGuidance": "short description of tone",
   "draftOpener": "optional first sentence for a message, leave blank string if not confident"
 }
@@ -438,7 +483,7 @@ export async function logFeedback(opts: {
   dominantFactor:  DominantFactor
   suggestedAction: SuggestedAction
   signals:         Layer1Signals
-  outcome:         'acted' | 'dismissed' | 'ignored'
+  outcome:         'acted' | 'dismissed' | 'snoozed' | 'ignored'
 }): Promise<void> {
   try {
     await supabase.from('relationship_feedback').insert({
@@ -477,6 +522,14 @@ export interface RankInput {
   totalConnectionCount: number
   /** Cached Layer 2 insights keyed by connectionId */
   cachedInsights: Map<string, Layer2Result>
+  /** Most recent real interaction (message or past meeting) per peer, ISO timestamp */
+  lastInteractionByPeer: Map<string, string>
+  /** Upcoming event both the user and the peer RSVPed to, keyed by peer ID */
+  sharedEventByPeer: Map<string, { eventId: string; title: string; starts_at: string; location: string | null }>
+  /** Upcoming proposed/confirmed meeting per peer */
+  upcomingMeetingByPeer: Map<string, { id: string; scheduled_at: string }>
+  /** Recent past meeting with no message exchanged since, per peer */
+  followUpByPeer: Map<string, { id: string; scheduled_at: string }>
 }
 
 export function rankConnections(input: RankInput): RankedConnection[] {
@@ -489,7 +542,17 @@ export function rankConnections(input: RankInput): RankedConnection[] {
     if (!peer) continue
 
     const connectionAgeDays = Math.floor((now - new Date(conn.created_at).getTime()) / 86400000)
-    const daysSince = Math.floor((now - new Date(conn.updated_at).getTime()) / 86400000)
+
+    // Last contact = most recent REAL interaction (message sent either way, or a
+    // meeting that happened), falling back to the connection acceptance date.
+    // connections.updated_at alone is wrong: it never moves when people talk.
+    const lastInteractionIso = (() => {
+      const candidates = [conn.updated_at]
+      const li = input.lastInteractionByPeer.get(peerId)
+      if (li) candidates.push(li)
+      return candidates.sort()[candidates.length - 1]
+    })()
+    const daysSince = Math.max(0, Math.floor((now - new Date(lastInteractionIso).getTime()) / 86400000))
 
     const messageDates  = input.messageDatesByPeer.get(peerId) ?? []
     const sentByPeer    = input.messagesSentByPeer.get(peerId) ?? 0
@@ -498,9 +561,12 @@ export function rankConnections(input: RankInput): RankedConnection[] {
       return (now - new Date(d).getTime()) / 86400000 <= 90
     }).length
 
-    const hasMilestone  = input.peerIdsWithMilestone.has(peerId)
-    const hasOpenAsk    = input.peerIdsWithOpenAsk.has(peerId)
-    const mutualConns   = input.mutualConnectionCounts.get(peerId) ?? 0
+    const hasMilestone    = input.peerIdsWithMilestone.has(peerId)
+    const hasOpenAsk      = input.peerIdsWithOpenAsk.has(peerId)
+    const mutualConns     = input.mutualConnectionCounts.get(peerId) ?? 0
+    const sharedEvent     = input.sharedEventByPeer.get(peerId)
+    const upcomingMeeting = input.upcomingMeetingByPeer.get(peerId)
+    const followUp        = input.followUpByPeer.get(peerId)
 
     // ── Layer 1 ──────────────────────────────────────────────────────────────
     const cachedInsight = input.cachedInsights.get(conn.id)
@@ -524,7 +590,11 @@ export function rankConnections(input: RankInput): RankedConnection[] {
 
     const overdueRatio = expectedInterval > 0 ? daysSince / expectedInterval : 1
     const relevance    = computeRelevance(input.userProfile, peer)
-    const timeliness   = computeTimeliness(peer, { hasMilestone, hasOpenAsk })
+    const timeliness   = computeTimeliness(peer, {
+      hasMilestone, hasOpenAsk,
+      hasSharedEvent: !!sharedEvent,
+      needsFollowUp:  !!followUp,
+    })
 
     const newBoost = connectionAgeDays <= NEW_CONNECTION_WINDOW_DAYS
       ? 1 - (connectionAgeDays / NEW_CONNECTION_WINDOW_DAYS)
@@ -541,11 +611,21 @@ export function rankConnections(input: RankInput): RankedConnection[] {
       newBoost,
       hasMilestone,
       hasOpenAsk,
+      hasSharedEvent:     !!sharedEvent,
+      needsFollowUp:      !!followUp,
+      hasUpcomingMeeting: !!upcomingMeeting,
+      lastInteractionAt:  lastInteractionIso,
     }
 
     // ── Composite score ───────────────────────────────────────────────────────
-    const maintenanceTerm  = (Math.min(overdueRatio, OVERDUE_CAP) / OVERDUE_CAP) * tieStrength
-    const opportunityTerm  = relevance * timeliness
+    // A booked meeting means this relationship is already being handled:
+    // no point nagging "reconnect" about someone you see on Thursday.
+    const effectiveOverdue = upcomingMeeting ? 0 : overdueRatio
+    // Floor both multipliers: on a young network, tieStrength and relevance are
+    // often 0 (no message history, sparse profiles) and would otherwise zero out
+    // genuinely overdue or occasion-driven relationships.
+    const maintenanceTerm  = (Math.min(effectiveOverdue, OVERDUE_CAP) / OVERDUE_CAP) * (0.3 + 0.7 * tieStrength)
+    const opportunityTerm  = timeliness * (0.4 + 0.6 * relevance)
     const newTerm          = newBoost
 
     const rawScore =
@@ -566,16 +646,42 @@ export function rankConnections(input: RankInput): RankedConnection[] {
       connectionAgeDays <= NEW_CONNECTION_WINDOW_DAYS ? 'new' :
       terms.maintenance >= terms.opportunity ? 'maintenance' : 'opportunity'
 
-    const state = deriveState(overdueRatio, connectionAgeDays)
+    const state = deriveState(effectiveOverdue, connectionAgeDays)
+
+    // ── Occasions: every concrete, dated reason this person surfaces today ───
+    const occasions: Occasion[] = []
+    if (followUp) {
+      occasions.push({ type: 'follow_up', label: `Met ${relativeDays(followUp.scheduled_at, now)}`, meetingId: followUp.id, met_at: followUp.scheduled_at })
+    }
+    if (upcomingMeeting) {
+      occasions.push({ type: 'upcoming_meeting', label: `Coffee ${relativeDays(upcomingMeeting.scheduled_at, now)}`, meetingId: upcomingMeeting.id, scheduled_at: upcomingMeeting.scheduled_at })
+    }
+    if (sharedEvent) {
+      occasions.push({ type: 'shared_event', label: `Both going · ${sharedEvent.title}`, eventId: sharedEvent.eventId, title: sharedEvent.title, starts_at: sharedEvent.starts_at, location: sharedEvent.location })
+    }
+    if (hasMilestone) occasions.push({ type: 'milestone', label: 'Shared an update' })
+    if (hasOpenAsk)   occasions.push({ type: 'open_ask', label: 'Has an open ask' })
+    if (state === 'new') occasions.push({ type: 'new_connection', label: 'New connection' })
+    else if (state === 'cold' || state === 'cooling') occasions.push({ type: 'overdue', label: `${daysSince}d since contact` })
 
     // ── Reason + action (Layer 2 if cached, else deterministic) ──────────────
-    const fallbackReason = deterministicReason(state, signals, peer)
-    const reason = (cachedInsight?.whyNow && cachedInsight.whyNow !== fallbackReason)
-      ? cachedInsight.whyNow
-      : fallbackReason
+    let fallbackReason = deterministicReason(state, signals, peer)
+    if (sharedEvent && !followUp && !upcomingMeeting && !hasMilestone && state !== 'new') {
+      fallbackReason = `You and ${peer.full_name.split(' ')[0]} are both going to ${sharedEvent.title}. Break the ice before you're in the same room.`
+    }
+    const timeCritical = signals.needsFollowUp || signals.hasUpcomingMeeting || signals.hasSharedEvent
+    const reason = timeCritical
+      ? fallbackReason
+      : (cachedInsight?.whyNow && cachedInsight.whyNow !== fallbackReason)
+        ? cachedInsight.whyNow
+        : fallbackReason
+    // Meeting-driven actions are time-critical: they beat any cached Layer 2
+    // suggestion, which may predate the meeting.
+    const deterministicAction = determineSuggestedAction(state, signals, dominantFactor)
     const suggestedAction: SuggestedAction =
-      (cachedInsight?.suggestedAction as SuggestedAction | undefined)
-      ?? determineSuggestedAction(state, signals, dominantFactor)
+      (signals.needsFollowUp || signals.hasUpcomingMeeting)
+        ? deterministicAction
+        : (cachedInsight?.suggestedAction as SuggestedAction | undefined) ?? deterministicAction
     const draftOpener = cachedInsight?.draftOpener || undefined
 
     results.push({
@@ -588,6 +694,7 @@ export function rankConnections(input: RankInput): RankedConnection[] {
       reason,
       suggestedAction,
       draftOpener,
+      occasions,
       signals,
     })
   }

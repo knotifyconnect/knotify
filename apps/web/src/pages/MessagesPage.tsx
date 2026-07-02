@@ -285,6 +285,8 @@ export function MessagesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const deepLinkUserId = searchParams.get('to')
   const deepLinkAction = searchParams.get('action')
+  const deepLinkConversationId = searchParams.get('conversation')
+  const deepLinkDraft = searchParams.get('draft')
 
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
@@ -638,28 +640,45 @@ export function MessagesPage() {
     }
   }, [selectedId, latestDisplayMessage?.id, latestDisplayMessage?.is_mine, displayMessages.length])
 
-  // Honor ?to=USER_ID&action=coffee deep links from elsewhere in the app.
+  // Honor deep links from elsewhere in the app:
+  //   ?to=USER_ID[&action=coffee]      — open (or create) the direct chat, optionally the coffee planner
+  //   ?conversation=CONV_ID            — open a specific conversation
+  //   &draft=TEXT                      — prefill the composer (Relationship OS smart openers)
   // React dev mode can run effects twice, so guard by the exact deep-link key.
   useEffect(() => {
-    if (!deepLinkUserId) return
+    if (!deepLinkUserId && !deepLinkConversationId) return
 
-    const deepLinkKey = `${deepLinkUserId}:${deepLinkAction ?? ''}`
+    const deepLinkKey = `${deepLinkUserId ?? ''}:${deepLinkConversationId ?? ''}:${deepLinkAction ?? ''}:${deepLinkDraft ?? ''}`
     if (handledDeepLinkRef.current === deepLinkKey) return
     handledDeepLinkRef.current = deepLinkKey
 
     void (async () => {
       const wantsCoffee = deepLinkAction === 'coffee'
-      const conversationId = await openOrCreate(deepLinkUserId)
+      let conversationId: string | null = null
+      if (deepLinkConversationId) {
+        conversationId = deepLinkConversationId
+        scrollIntentRef.current = 'open'
+        scrollStateRef.current = { conversationId: null, lastMessageId: null }
+        setSelectedId(deepLinkConversationId)
+        await loadMsgs(deepLinkConversationId, true)
+        await markRead(deepLinkConversationId)
+      } else if (deepLinkUserId) {
+        conversationId = await openOrCreate(deepLinkUserId)
+      }
+
+      if (conversationId && deepLinkDraft) setComposer(deepLinkDraft)
 
       const next = new URLSearchParams(searchParams)
       next.delete('to')
       next.delete('action')
+      next.delete('conversation')
+      next.delete('draft')
       setSearchParams(next, { replace: true })
 
       if (conversationId && wantsCoffee) setTimeout(() => setCoffeeOpen(true), 200)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deepLinkUserId, deepLinkAction])
+  }, [deepLinkUserId, deepLinkAction, deepLinkConversationId, deepLinkDraft])
 
   async function openOrCreate(userId: string): Promise<string | null> {
     const existingConversation = conversations.find((conv) => conv.peer?.id === userId)
