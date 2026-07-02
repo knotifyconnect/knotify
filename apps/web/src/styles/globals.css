@@ -45,6 +45,21 @@ body {
   letter-spacing: -0.01em;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  /* Numbers line up in stats, timestamps and counters */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Keyboard focus: a visible, on-brand ring. Pointer clicks stay clean. */
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Buttons settle rather than snap. (No transform here: graph nodes position
+   themselves with translate(-50%,-50%) and must not be overridden.) */
+button {
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
 }
 
 * {
@@ -168,6 +183,18 @@ body::before {
 @media (min-width: 1920px) {
   .k-page-content { max-width: 1600px !important; }
   .k-rail { width: 400px !important; }
+}
+
+/* ── Mobile-only stacked rail sections (home) ─────────────────────────────── */
+/* Flex column with real gaps below lg; fully hidden once the desktop rail shows. */
+.k-mobile-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+@media (min-width: 1024px) {
+  .k-mobile-stack { display: none; }
 }
 
 /* ── Mobile HomeHub grid ───────────────────────────────────────────────────── */

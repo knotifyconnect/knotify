@@ -1143,7 +1143,6 @@ export function MessagesPage() {
                 <button
                   type="button"
                   onClick={() => setCoffeeOpen(true)}
-                  className="hidden sm:none"
                   style={{
                     flexShrink: 0,
                     padding: '6px 12px',
@@ -1161,22 +1160,25 @@ export function MessagesPage() {
                   <span className="hidden sm:inline">☕ Plan coffee</span>
                   <span className="sm:hidden">☕</span>
                 </button>
-                {/* IRL context strip — hidden on very small screens */}
-                <div
-                  className="hidden sm:block"
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: 999,
-                    background: 'var(--ochre-soft)',
-                    border: '0.5px solid rgba(200,148,31,0.2)',
-                    fontSize: 11,
-                    color: 'var(--ochre)',
-                    fontFamily: "'IBM Plex Sans'",
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  1st connection
-                </div>
+                {/* Live coffee status — only when a meeting actually exists */}
+                {selectedMeeting && (
+                  <div
+                    className="hidden sm:block"
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 999,
+                      background: 'var(--verd-soft)',
+                      border: '0.5px solid rgba(31,107,94,0.24)',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: 'var(--verd)',
+                      fontFamily: "'IBM Plex Sans'",
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    ☕ {formatMeetingTime(selectedMeeting.scheduled_at)}{selectedMeeting.status === 'proposed' ? ' · proposed' : ''}
+                  </div>
+                )}
                 <div style={{ position: 'relative', flexShrink: 0 }}>
                   <button
                     type="button"
@@ -1308,13 +1310,35 @@ export function MessagesPage() {
               </p>
             ) : displayMessages.length === 0 ? (
               <div style={{ maxWidth: 360, margin: 'auto', textAlign: 'center' }}>
-                <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 14, color: 'var(--ink-faint)', margin: 0 }}>
-                  {selectedHistoryCleared ? 'History cleared. New messages will appear here.' : 'No messages yet. Break the ice.'}
+                {selectedConv?.peer && !selectedHistoryCleared && (
+                  <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={52} style={{ margin: '0 auto 12px' }} />
+                )}
+                <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink-muted)', margin: 0 }}>
+                  {selectedHistoryCleared
+                    ? 'History cleared. New messages will appear here.'
+                    : `Start the conversation with ${selectedConv?.peer?.full_name?.split(' ')[0] ?? 'them'}.`}
                 </p>
-                {selectedHistoryCleared && (
+                {selectedHistoryCleared ? (
                   <p style={{ marginTop: 7, fontSize: 12, lineHeight: 1.45, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
                     This only affects your side of the conversation.
                   </p>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => setComposer(`Hi ${selectedConv?.peer?.full_name?.split(' ')[0] ?? ''}, great to be connected! What are you working on at the moment?`)}
+                      style={{ padding: '8px 15px', borderRadius: 999, border: 'none', background: 'var(--ink)', color: 'var(--paper)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}
+                    >
+                      👋 Say hi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCoffeeOpen(true)}
+                      style={{ padding: '8px 15px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}
+                    >
+                      ☕ Plan coffee
+                    </button>
+                  </div>
                 )}
               </div>
             ) : (

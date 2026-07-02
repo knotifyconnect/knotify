@@ -9,6 +9,32 @@ const HEALTH: Record<KnotHealthState, string> = {
   warm: '#4caf7d',
   cooling: '#c9922a',
   cold: '#D84428',
+  new: '#1F6B5E',
+}
+
+/** SVG badge cluster at a node's top-right: booked coffee / open ask / follow-up. */
+function SvgNodeBadges({ node, r }: { node: KnotGraphNode; r: number }) {
+  const badges: Array<{ key: string; bg: string; glyph: string }> = []
+  if (node.hasCoffee) badges.push({ key: 'coffee', bg: '#1F6B5E', glyph: '☕' })
+  if (node.hasOpenAsk) badges.push({ key: 'ask', bg: '#C8941F', glyph: '?' })
+  if (node.needsFollowUp) badges.push({ key: 'followup', bg: '#D8442B', glyph: '↩' })
+  if (!badges.length) return null
+  const br = 6.5
+  const bx = r * 0.72
+  const by = -r * 0.72
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      {badges.slice(0, 2).map((b, i) => (
+        <g key={b.key} transform={`translate(${bx - i * (br * 2 + 1.5)}, ${by})`}>
+          <circle r={br} fill={b.bg} stroke="rgba(255,252,246,0.95)" strokeWidth={1.2} />
+          <text textAnchor="middle" dominantBaseline="central" fontSize={b.glyph === '☕' ? 6.5 : 8}
+            fontFamily="'IBM Plex Sans', sans-serif" fontWeight={700} fill="#fff" y={0.5}>
+            {b.glyph}
+          </text>
+        </g>
+      ))}
+    </g>
+  )
 }
 
 function tabColor(tab: string) {
@@ -445,6 +471,8 @@ export function KnotMobileGraph({
                 strokeDasharray={n.degree === 'second' && !sel ? '4 3' : undefined}
                 opacity={n.degree === 'second' && !sel ? 0.6 : 1}
               />
+
+              <SvgNodeBadges node={n} r={r} />
 
               {/* Name label — rect behind text */}
               <rect

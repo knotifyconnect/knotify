@@ -81,6 +81,15 @@ type ConnectionMutationResponse = {
   alreadyConnected?: boolean
 }
 
+/** Per-connection signals from the Relationship OS engine, rendered on graph nodes. */
+type KnotSignals = {
+  health: KnotHealthState
+  daysSince: number
+  hasOpenAsk: boolean
+  hasCoffee: boolean
+  needsFollowUp: boolean
+}
+
 type RelationshipTab = 'Connected' | 'Incoming' | 'Sent'
 type StatusFilter = 'All' | 'open_to_work' | 'studying' | 'employed'
 
@@ -264,7 +273,7 @@ export function MapPage() {
     mq.addEventListener('change', h)
     return () => mq.removeEventListener('change', h)
   }, [])
-  const [healthByUserId, setHealthByUserId] = useState<Map<string, KnotHealthState>>(new Map())
+  const [signalsByUserId, setSignalsByUserId] = useState<Map<string, KnotSignals>>(new Map())
   const [accepting, setAccepting] = useState<Record<string, boolean>>({})
   const [removing, setRemoving] = useState<Record<string, boolean>>({})
 
@@ -284,16 +293,30 @@ export function MapPage() {
       setConnections(connectionResult.connections ?? [])
       setPeerEdges(mapResult.peerEdges ?? [])
 
-      // Load health data separately, never blocks knot from rendering
-      apiGet<{ connections: Array<{ peer: { id: string }; daysSince: number; health: KnotHealthState }> }>('/api/relationship-home')
+      // Load engine signals separately, never blocks knot from rendering.
+      // The graph reflects the Relationship OS: warmth, open asks, booked
+      // coffees and pending follow-ups all render on the nodes.
+      apiGet<{
+        ranked: Array<{
+          peerId: string
+          state: 'warm' | 'cooling' | 'cold' | 'new'
+          signals: { daysSince: number; hasOpenAsk?: boolean; hasUpcomingMeeting?: boolean; needsFollowUp?: boolean }
+        }>
+      }>('/api/relationship-home')
         .then((homeResult) => {
-          const healthMap = new Map<string, KnotHealthState>()
-          for (const entry of homeResult.connections ?? []) {
-            healthMap.set(entry.peer.id, entry.health)
+          const map = new Map<string, KnotSignals>()
+          for (const entry of homeResult.ranked ?? []) {
+            map.set(entry.peerId, {
+              health:        entry.state,
+              daysSince:     entry.signals?.daysSince ?? 0,
+              hasOpenAsk:    !!entry.signals?.hasOpenAsk,
+              hasCoffee:     !!entry.signals?.hasUpcomingMeeting,
+              needsFollowUp: !!entry.signals?.needsFollowUp,
+            })
           }
-          setHealthByUserId(healthMap)
+          setSignalsByUserId(map)
         })
-        .catch(() => { /* health colors are non-critical */ })
+        .catch(() => { /* engine signals are non-critical */ })
       setExpandedRootUserId(null)
       setExpandedSecondDegreeNodes([])
       setExpandedSecondDegreeEdges([])
@@ -840,7 +863,7 @@ export function MapPage() {
           requestFeedback={requestFeedback}
           onResetGraphState={resetGraphState}
           onCollapseExpanded={clearExpandedKnot}
-          healthByUserId={healthByUserId}
+          signalsByUserId={signalsByUserId}
         />
 
         {/* Network list — bottom sheet on mobile, inline section on desktop */}
@@ -997,7 +1020,7 @@ function KnotStage({
   onRemove,
   onViewProfile,
   onMessage,
-  healthByUserId,
+  signalsByUserId,
   onInviteCoffee,
   selectedSecondDegreeUser,
   expandedRootName,
@@ -1043,7 +1066,7 @@ function KnotStage({
   requestFeedback: string | null
   onResetGraphState: () => void
   onCollapseExpanded: () => void
-  healthByUserId: Map<string, KnotHealthState>
+  signalsByUserId: Map<string, KnotSignals>
 }) {
   const normalizedGraphQuery = query.trim().toLowerCase()
   const hasGraphQuery = normalizedGraphQuery.length > 0
@@ -1082,7 +1105,8 @@ function KnotStage({
       const user = connection.user
       const name = clean(user?.full_name) || 'Unknown person'
       const userId = otherUserId(connection, meId)
-      const health = tab === 'Connected' ? (healthByUserId.get(userId) ?? 'warm') : undefined
+      const signals = tab === 'Connected' ? signalsByUserId.get(userId) : undefined
+      const health = tab === 'Connected' ? (signals?.health ?? 'warm') : undefined
 
       return {
         id: `person:${userId}`,
@@ -1096,6 +1120,9 @@ function KnotStage({
         context: userContext(user),
         matchesQuery: !normalizedGraphQuery || searchableText(connection).includes(normalizedGraphQuery),
         healthState: health,
+        hasOpenAsk: signals?.hasOpenAsk,
+        hasCoffee: signals?.hasCoffee,
+        needsFollowUp: signals?.needsFollowUp,
       }
     })
 
@@ -1138,7 +1165,7 @@ function KnotStage({
       })
 
     return [...directNodes, ...secondDegreeNodes]
-  }, [connected, expandedRootUserId, expandedSecondDegreeNodes, healthByUserId, incoming, meId, normalizedGraphQuery, sent])
+  }, [connected, expandedRootUserId, expandedSecondDegreeNodes, signalsByUserId, incoming, meId, normalizedGraphQuery, sent])
 
   const selectedNode =
     selectedConnection
@@ -1146,6 +1173,11 @@ function KnotStage({
       : null
 
   const nodesByUserId = useMemo(() => new Map(nodes.map((node) => [node.userId, node])), [nodes])
+
+  const knotColdCount = useMemo(
+    () => connected.filter((c) => signalsByUserId.get(otherUserId(c, meId))?.health === 'cold').length,
+    [connected, signalsByUserId, meId]
+  )
 
   const visiblePeerEdges = useMemo(() => {
     const combinedEdges = [...peerEdges, ...expandedSecondDegreeEdges, ...expandedPeerEdges]
@@ -1291,6 +1323,7 @@ function KnotStage({
                     onRemove={() => onRemove(selectedConnection)}
                     onMessage={() => onMessage(otherUserId(selectedConnection, meId))}
                     onInviteCoffee={() => onInviteCoffee(otherUserId(selectedConnection, meId))}
+                    signals={signalsByUserId.get(otherUserId(selectedConnection, meId))}
                     onViewProfile={() => onViewProfile(otherUserId(selectedConnection, meId))}
                   />
                 ) : selectedSecondDegreeUser ? (
@@ -1326,7 +1359,7 @@ function KnotStage({
                 onClearSelection={onClear}
               />
               <div className="k-knot-stats-bar">
-                {connected.length} connected · {visiblePeerEdges.length} inner ties · {expandedSecondDegreeNodes.length} expanded · {incoming.length} decisions · {sent.length} waiting
+                {connected.length} connected{knotColdCount > 0 ? ` · ${knotColdCount} going cold` : ''} · {visiblePeerEdges.length} inner ties · {expandedSecondDegreeNodes.length} expanded · {incoming.length} decisions · {sent.length} waiting
               </div>
               <div className="k-knot-legend-box">
                 <WebLegendRow />
@@ -1350,6 +1383,7 @@ function KnotStage({
                       onRemove={() => onRemove(selectedConnection)}
                       onMessage={() => onMessage(otherUserId(selectedConnection, meId))}
                       onInviteCoffee={() => onInviteCoffee(otherUserId(selectedConnection, meId))}
+                      signals={signalsByUserId.get(otherUserId(selectedConnection, meId))}
                       onViewProfile={() => onViewProfile(otherUserId(selectedConnection, meId))}
                     />
                   ) : selectedSecondDegreeUser ? (
@@ -1377,18 +1411,28 @@ function KnotStage({
 function WebLegendRow() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
-      <WebLegend label="Knot" color="var(--ink)" />
-      <WebLegend label="Tie" color="rgba(84,72,58,0.45)" />
-      <WebLegend label="Decide" color="var(--verd)" />
-      <WebLegend label="Waiting" color="var(--signal)" />
+      <WebLegend label="Warm" color="#4caf7d" />
+      <WebLegend label="Cooling" color="#d4a017" />
+      <WebLegend label="Cold" color="#e05c3a" />
+      <span style={{ width: 1, height: 10, background: 'var(--rule)' }} />
+      <WebLegend label="Coffee" glyph="☕" color="#1F6B5E" />
+      <WebLegend label="Ask" glyph="?" color="#C8941F" />
     </div>
   )
 }
 
-function WebLegend({ label, color }: { label: string; color: string }) {
+function WebLegend({ label, color, glyph }: { label: string; color: string; glyph?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.8, color: 'var(--ink-muted)' }}>
-      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+      {glyph ? (
+        <span style={{
+          width: 12, height: 12, borderRadius: '50%', background: color, color: '#fff',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 7.5, fontWeight: 700, lineHeight: 1,
+        }}>{glyph}</span>
+      ) : (
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+      )}
       {label}
     </div>
   )
@@ -1539,6 +1583,7 @@ function SelectedRelationshipPanel({
   onInviteCoffee,
   onViewProfile,
   expandLabel,
+  signals,
 }: {
   connection: Connection
   tab: RelationshipTab
@@ -1558,6 +1603,8 @@ function SelectedRelationshipPanel({
   onViewProfile: () => void
   // Optional custom labels for the expand toggle button (mobile vs desktop wording)
   expandLabel?: { open: string; close: string }
+  // Live Relationship OS signals for this person (warmth, asks, coffees)
+  signals?: KnotSignals
 }) {
   const user = connection.user
   const name = clean(user?.full_name) || 'Unknown person'
@@ -1606,20 +1653,65 @@ function SelectedRelationshipPanel({
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'inline-flex',
-          marginTop: 12,
-          padding: '5px 9px',
-          borderRadius: 999,
-          background: tone.background,
-          color: tone.color,
-          border: `0.5px solid ${tone.border}`,
-          fontSize: 11,
-          fontWeight: 700,
-        }}
-      >
-        {relationLabel(tab)}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+        <div
+          style={{
+            display: 'inline-flex',
+            padding: '5px 9px',
+            borderRadius: 999,
+            background: tone.background,
+            color: tone.color,
+            border: `0.5px solid ${tone.border}`,
+            fontSize: 11,
+            fontWeight: 700,
+          }}
+        >
+          {relationLabel(tab)}
+        </div>
+        {signals && tab === 'Connected' && (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '5px 9px',
+              borderRadius: 999,
+              background: 'var(--paper-soft)',
+              border: '0.5px solid var(--rule)',
+              fontSize: 11,
+              fontWeight: 700,
+              color:
+                signals.health === 'cold' ? '#c04a2c' :
+                signals.health === 'cooling' ? '#9a7314' :
+                'var(--verd)',
+            }}
+          >
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background:
+                signals.health === 'cold' ? '#e05c3a' :
+                signals.health === 'cooling' ? '#d4a017' :
+                signals.health === 'new' ? '#1F6B5E' : '#4caf7d',
+            }} />
+            {signals.health === 'new' ? 'New' : signals.health === 'cold' ? 'Cold' : signals.health === 'cooling' ? 'Cooling' : 'Warm'}
+            {' · '}{signals.daysSince}d since contact
+          </div>
+        )}
+        {signals?.hasCoffee && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 999, background: 'var(--verd-soft)', border: '0.5px solid rgba(31,107,94,0.28)', fontSize: 11, fontWeight: 700, color: 'var(--verd)' }}>
+            ☕ Coffee booked
+          </div>
+        )}
+        {signals?.hasOpenAsk && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 999, background: 'var(--ochre-soft)', border: '0.5px solid rgba(200,148,31,0.4)', fontSize: 11, fontWeight: 700, color: '#7A5A0F' }}>
+            Has an open ask
+          </div>
+        )}
+        {signals?.needsFollowUp && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 999, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.28)', fontSize: 11, fontWeight: 700, color: 'var(--signal-deep)' }}>
+            Follow-up pending
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 14, fontSize: 13.5, lineHeight: 1.5, color: 'var(--ink)' }}>

@@ -883,7 +883,7 @@ export function RelationshipHomePage() {
       )}
 
       {/* Mobile-only: coffees + asks (the desktop rail is hidden under lg) */}
-      <div className="lg:hidden" style={{ flexDirection: 'column', gap: 20, marginBottom: 20 }}>
+      <div className="k-mobile-stack">
         {coffeesBlock}
         {asksBlock}
       </div>
