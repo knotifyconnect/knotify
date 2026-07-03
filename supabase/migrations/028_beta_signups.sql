@@ -10,6 +10,6 @@ create table if not exists beta_signups (
   created_at timestamptz not null default now()
 );
 
-create index beta_signups_email_idx on beta_signups(email);
-create index beta_signups_status_idx on beta_signups(status);
-create index beta_signups_created_at_idx on beta_signups(created_at desc);
+create index if not exists beta_signups_email_idx on beta_signups(email);
+create index if not exists beta_signups_status_idx on beta_signups(status);
+create index if not exists beta_signups_created_at_idx on beta_signups(created_at desc);
