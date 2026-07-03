@@ -1,4 +1,4 @@
-﻿-- Link backend-owned coffee receipt messages to meeting rows.
+-- Link backend-owned coffee receipt messages to meeting rows.
 -- This gives Supabase Realtime a deterministic meeting UPDATE after the receipt message exists.
 
 alter table public.meetings

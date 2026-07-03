@@ -1,0 +1,31 @@
+[Unit]
+Description=Knotify API
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=knotify
+Group=knotify
+WorkingDirectory=/opt/knotify/current
+EnvironmentFile=/etc/knotify/api.env
+ExecStartPre=/usr/bin/test -f /opt/knotify/current/apps/api/dist/index.js
+ExecStart=/usr/bin/node /opt/knotify/current/apps/api/dist/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

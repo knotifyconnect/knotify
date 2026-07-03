@@ -1,4 +1,4 @@
-﻿-- Message soft delete + per-user conversation archive.
+-- Message soft delete + per-user conversation archive.
 -- Do not hard-delete message history or whole conversations.
 
 alter table public.messages

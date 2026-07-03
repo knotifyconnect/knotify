@@ -18,40 +18,56 @@
     }
   },
   "scripts": {
+    "smoke:cv-candidates": "tsx src/scripts/smokeCvCandidates.ts",
     "dev": "tsx src/index.ts",
     "seed:test-users": "tsx src/scripts/seedTestUsers.ts",
     "seed:demo-auth-users": "tsx src/scripts/seedDemoAuthUsers.ts",
     "seed:hr-demo-data": "tsx src/scripts/seedHrDemoData.ts",
     "smoke:referral-flow": "tsx src/scripts/smokeReferralFlow.ts",
+    "smoke:cv-parser": "tsx src/scripts/smokeCvParser.ts",
+    "smoke:local-model": "tsx src/scripts/smokeLocalModel.ts",
+    "smoke:document-extraction": "tsx src/scripts/smokeDocumentExtraction.ts",
+    "smoke:model-gateway": "tsx src/scripts/smokeModelGateway.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'No lint configured for api'",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "smoke:cv-model-reconciliation": "tsx src/scripts/smokeCvModelReconciliation.ts",
+    "evaluate:cv": "tsx src/scripts/evaluateCvExtraction.ts",
+    "smoke:cv-evaluation": "tsx src/scripts/smokeCvEvaluation.ts",
+    "smoke:cv-profile-preview": "tsx src/scripts/smokeCvProfilePreview.ts",
+    "smoke:cv-profile-preview:local-model": "tsx src/scripts/smokeCvProfilePreviewLocalModel.ts",
+    "smoke:cv-real-layout": "tsx src/scripts/smokeCvRealLayoutRegression.ts",
+    "smoke:cv-preview-review": "tsx src/scripts/smokeCvPreviewReview.ts",
+    "smoke:cv-hierarchy": "tsx src/scripts/smokeCvHierarchy.ts",
+    "smoke:cv-continuations": "tsx src/scripts/smokeCvContinuations.ts",
+    "smoke:deployment-config": "tsx src/scripts/smokeDeploymentConfig.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",
     "@nodenet/shared": "file:../../packages/shared",
-    "@supabase/supabase-js": "^2.50.0",
+    "@supabase/supabase-js": "2.110.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^4.21.1",
+    "express": "4.22.2",
     "express-rate-limit": "^7.4.1",
-    "html-to-text": "^9.0.5",
-    "multer": "^1.4.5-lts.1",
+    "multer": "2.2.0",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "5.7.284",
     "pg": "^8.13.1",
     "resend": "^6.14.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "html-to-text": "^9.0.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "@types/html-to-text": "^9.0.4",
-    "@types/multer": "^1.4.12",
+    "@types/multer": "2.2.0",
     "@types/node": "^22.10.1",
     "@types/pdf-parse": "^1.1.4",
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "@types/html-to-text": "^9.0.4"
   }
 }

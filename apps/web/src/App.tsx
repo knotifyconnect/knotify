@@ -12,7 +12,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { CelebrationLayer } from './components/celebrations/CelebrationLayer'
 import { ToastContainer } from './components/ui/Toast'
 import { CookieConsentBanner } from './components/CookieConsentBanner'
-import { apiGet } from './lib/api'
+import { ApiError, apiGet } from './lib/api'
 import { identifyUser, initAnalytics, resetAnalyticsUser, trackPageview } from './lib/analytics'
 
 // Everything below is code-split so it does not ship in the landing-page bundle.
@@ -92,12 +92,14 @@ type OnboardingStatus = {
 function ProfileCompletionGate({ children }: { children: ReactNode }) {
   const location = useLocation()
   const [status, setStatus] = useState<'loading' | 'complete' | 'incomplete' | 'beta_closed' | 'error'>('loading')
+  const [blockedEmail, setBlockedEmail] = useState<string | null>(null)
 
   useEffect(() => {
     let mounted = true
 
     async function checkProfileCompletion() {
       setStatus('loading')
+      setBlockedEmail(null)
 
       try {
         const result = await apiGet<OnboardingStatus>('/api/users/me/onboarding-status')
@@ -105,12 +107,16 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
         setStatus(result.complete ? 'complete' : 'incomplete')
       } catch (err) {
         if (!mounted) return
-        const msg = err instanceof Error ? err.message : ''
-        if (msg.includes('beta_closed') || msg.includes('[403]')) {
+
+        if (err instanceof ApiError && err.status === 403 && err.code === 'beta_closed') {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!mounted) return
+          setBlockedEmail(session?.user.email ?? null)
           setStatus('beta_closed')
-        } else {
-          setStatus('error')
+          return
         }
+
+        setStatus('error')
       }
     }
 
@@ -131,7 +137,7 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
             You're on the list.
           </div>
           <p style={{ fontSize: 15, color: '#6B6358', lineHeight: 1.6, marginBottom: 24 }}>
-            knotify is currently invite-only. We'll reach out to <strong style={{ color: '#1a1815' }}>terminasyan99@gmail.com</strong> when your spot opens up.
+            knotify is currently invite-only. We'll reach out {blockedEmail ? <>to <strong style={{ color: '#1a1815' }}>{blockedEmail}</strong></> : 'by email'} when your spot opens up.
           </p>
           <p style={{ fontSize: 13, color: '#A29A8C' }}>
             Know someone already inside? Ask them to share their invite link with you.
@@ -152,7 +158,30 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
   }
 
   if (status === 'error') {
-    return <Navigate to="/profile" replace />
+    return (
+      <div style={{ minHeight: '100vh', background: '#f5f0e8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        <div style={{ maxWidth: 420, textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 30, fontWeight: 700, color: '#1a1815', marginBottom: 12 }}>
+            We couldn't verify your access.
+          </div>
+          <p style={{ fontSize: 15, color: '#6B6358', lineHeight: 1.6, marginBottom: 24 }}>
+            This is a temporary verification problem, not a rejection. Try again before changing any account details.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ background: '#1a1815', border: 0, borderRadius: 8, padding: '11px 20px', fontSize: 13, color: '#fff', cursor: 'pointer' }}
+          >
+            Try again
+          </button>
+          <button
+            onClick={() => { void supabase.auth.signOut().then(() => { window.location.href = '/' }) }}
+            style={{ marginLeft: 8, background: 'none', border: '0.5px solid #D9D1BF', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#6B6358', cursor: 'pointer' }}
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return <>{children}</>

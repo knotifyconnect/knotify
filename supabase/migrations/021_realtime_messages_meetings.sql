@@ -1,4 +1,4 @@
-﻿-- Enable realtime events for relationship-action flows.
+-- Enable realtime events for relationship-action flows.
 -- Messages need INSERT events for live threads.
 -- Meetings need INSERT/UPDATE events for pinned coffee action cards.
 

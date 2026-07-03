@@ -1,0 +1,15 @@
+{
+  "id": "icons-and-proficiency",
+  "coverage": ["one-column", "english", "icons", "language-proficiency", "role-before-company"],
+  "expected": {
+    "experience": [
+      { "company": "Example Institute", "role": "Researcher", "startDate": "2020", "endDate": "2023" }
+    ],
+    "education": [],
+    "skills": ["Research", "Facilitation"],
+    "languages": [
+      { "name": "French", "proficiency": "C1" },
+      { "name": "Spanish", "proficiency": "intermediate" }
+    ]
+  }
+}

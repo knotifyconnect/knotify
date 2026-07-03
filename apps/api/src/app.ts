@@ -5,6 +5,7 @@ import { authRouter } from './routes/auth.js'
 import { usersRouter } from './routes/users.js'
 import { connectionsRouter } from './routes/connections.js'
 import { cvRouter } from './routes/cv.js'
+import { cvProfileImportRouter } from './routes/cvProfileImport.js'
 import { jobsRouter } from './routes/jobs.js'
 import { companiesRouter } from './routes/companies.js'
 import { referralsRouter } from './routes/referrals.js'
@@ -26,14 +27,28 @@ import { eventsRouter } from './routes/events.js'
 import { gigsRouter } from './routes/gigs.js'
 import { invitesRouter } from './routes/invites.js'
 import { feedbackRouter } from './routes/feedback.js'
+import { intelligenceHealthRouter } from './routes/intelligenceHealth.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { supabase } from './lib.js'
 import { getAccessConfig, resolveInviteCode } from './lib/access.js'
+import {
+  deploymentConfig,
+  isRequestOriginAllowed,
+} from './config/deployment.js'
 
 export const app = express()
 
+if (deploymentConfig.nodeEnv === 'production') {
+  app.set('trust proxy', 1)
+}
+
 app.use(cors({
-  origin: true,
+  origin(origin, callback) {
+    callback(
+      null,
+      isRequestOriginAllowed(origin, deploymentConfig)
+    )
+  },
   allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-secret'],
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
 }))
@@ -87,9 +102,12 @@ app.get('/health/db', async (_req, res) => {
   }
 })
 
+app.use('/health/ai', intelligenceHealthRouter)
+
 app.use('/api/auth', authRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/connections', connectionsRouter)
+app.use('/api/cv', cvProfileImportRouter)
 app.use('/api/cv', cvRouter)
 app.use('/api/skills', skillsRouter)
 app.use('/api/jobs', jobsRouter)

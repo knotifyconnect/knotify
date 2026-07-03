@@ -1,0 +1,18 @@
+{
+  "id": "english-one-column",
+  "coverage": ["one-column", "english", "role-before-company", "language-proficiency"],
+  "expected": {
+    "experience": [
+      { "company": "Acme GmbH", "role": "Product Analyst", "startDate": "2023-01", "endDate": "current" },
+      { "company": "Beta AG", "role": "Business Analyst", "startDate": "2021", "endDate": "2022" }
+    ],
+    "education": [
+      { "institution": "Technical University of Munich", "degree": "M.Sc.", "field": "Consumer Science", "startDate": "2019", "endDate": "2021" }
+    ],
+    "skills": ["SQL", "Python", "Tableau"],
+    "languages": [
+      { "name": "English", "proficiency": "C1" },
+      { "name": "German", "proficiency": "B2" }
+    ]
+  }
+}

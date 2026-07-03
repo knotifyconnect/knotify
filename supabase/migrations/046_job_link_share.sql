@@ -16,9 +16,31 @@ alter table jobs add column if not exists source           text not null default
   check (source in ('employer','link_share'));
 
 -- Either a real company row, or a scraped company name — never neither.
-alter table jobs add constraint jobs_company_identified_chk
-  check (company_id is not null or company_name is not null);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'jobs_company_identified_chk'
+      and conrelid = 'public.jobs'::regclass
+  ) then
+    alter table jobs add constraint jobs_company_identified_chk
+      check (company_id is not null or company_name is not null);
+  end if;
+end;
+$$;
 
 -- Link-shared jobs always carry an apply_url (external application target).
-alter table jobs add constraint jobs_link_share_apply_url_chk
-  check (source <> 'link_share' or apply_url is not null);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'jobs_link_share_apply_url_chk'
+      and conrelid = 'public.jobs'::regclass
+  ) then
+    alter table jobs add constraint jobs_link_share_apply_url_chk
+      check (source <> 'link_share' or apply_url is not null);
+  end if;
+end;
+$$;

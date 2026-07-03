@@ -1,0 +1,14 @@
+{
+  "id": "unusual-headings-undated",
+  "coverage": ["one-column", "english", "unusual-section-name", "company-before-role", "undated-entry"],
+  "expected": {
+    "experience": [
+      { "company": "Independent", "role": "Freelance Consultant", "startDate": null, "endDate": null }
+    ],
+    "education": [
+      { "institution": "Example College", "degree": "B.A.", "field": "Economics", "startDate": null, "endDate": null }
+    ],
+    "skills": [],
+    "languages": []
+  }
+}

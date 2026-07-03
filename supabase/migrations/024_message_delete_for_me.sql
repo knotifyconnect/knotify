@@ -1,4 +1,4 @@
-﻿-- Per-user message hiding for "Delete for me".
+-- Per-user message hiding for "Delete for me".
 -- Global soft delete remains messages.deleted_at / deleted_by for "Delete for everyone".
 
 create table if not exists public.message_deletions (
