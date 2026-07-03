@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost, apiPostForm, apiPut } from '../lib/api'
+import { trackEvent } from '../lib/analytics'
 import { CareerPathCard } from '../components/profile/CareerPathCard'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '../lib/knotify'
@@ -402,6 +403,7 @@ function OwnProfileView() {
     setAsksError(null)
     try {
       await apiPost('/api/asks', { content })
+      trackEvent('ask_created')
       setAskDraft('')
       await loadMyAsks()
     } catch (err) {
@@ -662,6 +664,7 @@ function OwnProfileView() {
     setUpdatesError(null)
     try {
       await apiPost('/api/updates', { content })
+      trackEvent('update_posted')
       setUpdateDraft('')
       await loadMyUpdates()
     } catch (err) {
@@ -1617,6 +1620,7 @@ function PublicProfileView({ userId }: { userId: string }) {
     setPending(true)
     try {
       await apiPost('/api/connections', { addresseeId: userId })
+      trackEvent('connection_requested')
       setRelation('pending_out')
     } catch { /* ignore */ }
     finally { setPending(false) }

@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '../lib/api'
+import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
 import { GigsPage } from './GigsPage'
 
 type JobListItem = {
   id: string
-  company_id: string
+  company_id: string | null
+  apply_url?: string | null
+  source?: 'employer' | 'link_share'
   title: string
   description: string
   required_skills: string[]
@@ -22,12 +26,26 @@ type JobListItem = {
   totalRequiredSkills: number
   saved: boolean
   company: {
-    id: string
+    id: string | null
     name: string
     logo_url: string | null
     city: string | null
   } | null
+  poster?: { id: string; full_name: string; username: string; avatar_url: string | null } | null
   referral_connections?: Array<{ id: string; full_name: string; username: string; avatar_url: string | null }>
+}
+
+type JobLinkDraft = {
+  title: string
+  companyName: string
+  companyLogoUrl: string | null
+  location: string | null
+  isRemote: boolean
+  salaryMin: number | null
+  salaryMax: number | null
+  employmentType: 'full_time' | 'part_time' | 'contract' | 'internship' | 'freelance' | null
+  requiredSkills: string[]
+  description: string
 }
 
 type JobDetail = JobListItem & {
@@ -149,6 +167,7 @@ function historyEventTitle(event: ReferralHistoryEvent) {
 }
 
 export function JobsPage() {
+  const navigate = useNavigate()
   const [jobs, setJobs] = useState<JobListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -157,6 +176,14 @@ export function JobsPage() {
   const [filterRemote, setFilterRemote] = useState('')
   const [filterLocation, setFilterLocation] = useState('')
   const [savedOnly, setSavedOnly] = useState(false)
+  const [brokenLogoIds, setBrokenLogoIds] = useState<Set<string>>(new Set())
+
+  const [showShareForm, setShowShareForm] = useState(false)
+  const [shareUrl, setShareUrl] = useState('')
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareError, setShareError] = useState<string | null>(null)
+  const [shareDraft, setShareDraft] = useState<JobLinkDraft | null>(null)
+  const [sharePosting, setSharePosting] = useState(false)
 
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -300,6 +327,61 @@ export function JobsPage() {
     } catch { /* ignore */ }
   }
 
+  async function fetchJobDraft() {
+    const url = shareUrl.trim()
+    if (!url) return
+    setShareLoading(true)
+    setShareError(null)
+    setShareDraft(null)
+    try {
+      const data = await apiPost<{ draft: JobLinkDraft; sourceUrl: string }>('/api/jobs/parse-link', { url })
+      setShareDraft(data.draft)
+      setShareUrl(data.sourceUrl)
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : 'Could not read that job posting')
+    } finally {
+      setShareLoading(false)
+    }
+  }
+
+  async function postSharedJob() {
+    if (!shareDraft) return
+    if (shareDraft.title.trim().length < 2 || shareDraft.companyName.trim().length < 1 || shareDraft.description.trim().length < 20) {
+      setShareError('Title, company and a description of at least 20 characters are required.')
+      return
+    }
+    setSharePosting(true)
+    setShareError(null)
+    try {
+      await apiPost('/api/jobs', {
+        source: 'link_share',
+        applyUrl: shareUrl,
+        companyName: shareDraft.companyName.trim(),
+        companyLogoUrl: shareDraft.companyLogoUrl ?? undefined,
+        title: shareDraft.title.trim(),
+        description: shareDraft.description.trim(),
+        requiredSkills: shareDraft.requiredSkills,
+        location: shareDraft.location ?? undefined,
+        isRemote: shareDraft.isRemote,
+        salaryMin: shareDraft.salaryMin ?? undefined,
+        salaryMax: shareDraft.salaryMax ?? undefined,
+      })
+      trackEvent('job_link_shared')
+      setShowShareForm(false)
+      setShareUrl('')
+      setShareDraft(null)
+      await loadJobs()
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : 'Could not post this job')
+    } finally {
+      setSharePosting(false)
+    }
+  }
+
+  function updateShareDraft(patch: Partial<JobLinkDraft>) {
+    setShareDraft((prev) => (prev ? { ...prev, ...patch } : prev))
+  }
+
   function employmentTypeLabel(type: string | null) {
     if (!type) return null
     const labels: Record<string, string> = { full_time: 'Full-time', part_time: 'Part-time', contract: 'Contract', internship: 'Internship', freelance: 'Freelance' }
@@ -318,10 +400,12 @@ export function JobsPage() {
       setSelectedJob(detail.job)
 
       const companyId = detail.job.company_id
-      const check = await apiGet<{ users: CompanyConnection[] }>(`/api/referrals/check?companyId=${companyId}`)
-      const users = check.users ?? []
-      setConnectionsAtCompany(users)
-      if (users.length) setSelectedReferrerId(users[0].id)
+      if (companyId) {
+        const check = await apiGet<{ users: CompanyConnection[] }>(`/api/referrals/check?companyId=${companyId}`)
+        const users = check.users ?? []
+        setConnectionsAtCompany(users)
+        if (users.length) setSelectedReferrerId(users[0].id)
+      }
     } catch (err) {
       setRequestError(err instanceof Error ? err.message : 'Failed to load job details')
     } finally {
@@ -759,8 +843,13 @@ export function JobsPage() {
 
       {/* ── Jobs board ─────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginBottom: 12 }}>
-          Open positions · warm referral required
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+          <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
+            Open positions · warm referral required
+          </div>
+          <KBtn variant="signal" size="sm" onClick={() => setShowShareForm((p) => !p)}>
+            {showShareForm ? 'Close' : 'Share a job'}
+          </KBtn>
         </div>
 
         {/* Search + Filters */}
@@ -798,6 +887,129 @@ export function JobsPage() {
           </div>
         </div>
 
+        {showShareForm && (
+          <KCard style={{ padding: '18px 20px', marginBottom: 14 }}>
+            <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginBottom: 4 }}>
+              Share a job you found
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--ink-muted)', margin: '0 0 12px' }}>
+              Paste the link to a job posting. We'll pull in the details — you can edit before posting. "Apply" sends people to the original link.
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: shareError ? 8 : 0 }}>
+              <input
+                type="url"
+                placeholder="https://company.com/careers/role"
+                value={shareUrl}
+                onChange={(e) => setShareUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void fetchJobDraft() }}
+                style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--rule)', background: 'var(--paper-soft)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
+              />
+              <KBtn variant="signal" size="sm" onClick={fetchJobDraft} disabled={shareLoading || !shareUrl.trim()}>
+                {shareLoading ? 'Reading…' : 'Fetch'}
+              </KBtn>
+            </div>
+            {shareError && <div style={{ fontSize: 12.5, color: 'var(--signal)', marginTop: 8 }}>{shareError}</div>}
+
+            {shareDraft && (
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '0.5px solid var(--rule-soft)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Title</div>
+                    <input
+                      value={shareDraft.title}
+                      onChange={(e) => updateShareDraft({ title: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--rule)', background: 'white', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Company</div>
+                    <input
+                      value={shareDraft.companyName}
+                      onChange={(e) => updateShareDraft({ companyName: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--rule)', background: 'white', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Location</div>
+                    <input
+                      value={shareDraft.location ?? ''}
+                      onChange={(e) => updateShareDraft({ location: e.target.value })}
+                      placeholder="Munich"
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--rule)', background: 'white', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Type</div>
+                    <select
+                      value={shareDraft.employmentType ?? ''}
+                      onChange={(e) => updateShareDraft({ employmentType: (e.target.value || null) as JobLinkDraft['employmentType'] })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--rule)', background: 'white', fontSize: 13.5, color: 'var(--ink)' }}
+                    >
+                      <option value="">Not specified</option>
+                      <option value="full_time">Full-time</option>
+                      <option value="part_time">Part-time</option>
+                      <option value="contract">Contract</option>
+                      <option value="internship">Internship</option>
+                      <option value="freelance">Freelance</option>
+                    </select>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap', paddingTop: 18 }}>
+                    <input type="checkbox" checked={shareDraft.isRemote} onChange={(e) => updateShareDraft({ isRemote: e.target.checked })} />
+                    Remote
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Salary min</div>
+                    <input
+                      type="number"
+                      value={shareDraft.salaryMin ?? ''}
+                      onChange={(e) => updateShareDraft({ salaryMin: e.target.value ? Number(e.target.value) : null })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--rule)', background: 'white', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Salary max</div>
+                    <input
+                      type="number"
+                      value={shareDraft.salaryMax ?? ''}
+                      onChange={(e) => updateShareDraft({ salaryMax: e.target.value ? Number(e.target.value) : null })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--rule)', background: 'white', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Description</div>
+                  <textarea
+                    value={shareDraft.description}
+                    onChange={(e) => updateShareDraft({ description: e.target.value.slice(0, 6000) })}
+                    rows={10}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--rule)', background: 'white', fontSize: 13.5, color: 'var(--ink)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: "'IBM Plex Sans', sans-serif", lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+                  />
+                </div>
+
+                <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                  Applicants will be sent to: {shareUrl}
+                </div>
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <KBtn variant="ghost" size="sm" onClick={() => { setShareDraft(null); setShareUrl(''); setShareError(null) }} style={{ flex: 1 }}>
+                    Cancel
+                  </KBtn>
+                  <KBtn variant="signal" size="sm" onClick={postSharedJob} disabled={sharePosting} style={{ flex: 1 }}>
+                    {sharePosting ? 'Posting…' : 'Post job'}
+                  </KBtn>
+                </div>
+              </div>
+            )}
+          </KCard>
+        )}
+
         {loading ? (
           <KCard style={{ padding: 32 }}>
             <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink-muted)', textAlign: 'center', margin: 0 }}>
@@ -823,8 +1035,13 @@ export function JobsPage() {
                 </button>
                 {/* Company + title */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12, paddingRight: 28 }}>
-                  {job.company?.logo_url ? (
-                    <img src={job.company.logo_url} alt={job.company.name} style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'contain', border: '0.5px solid var(--rule)', flexShrink: 0 }} />
+                  {job.company?.logo_url && !brokenLogoIds.has(job.id) ? (
+                    <img
+                      src={job.company.logo_url}
+                      alt={job.company.name}
+                      style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'contain', border: '0.5px solid var(--rule)', flexShrink: 0 }}
+                      onError={() => setBrokenLogoIds((prev) => new Set(prev).add(job.id))}
+                    />
                   ) : (
                     <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontFamily: "'Fraunces', serif", fontWeight: 500, color: 'var(--ink-muted)', flexShrink: 0 }}>
                       {job.company?.name?.charAt(0) ?? '?'}
@@ -841,6 +1058,11 @@ export function JobsPage() {
                     </div>
                     {/* Employment type + salary */}
                     <div style={{ display: 'flex', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
+                      {!job.company_id && (
+                        <span style={{ padding: '2px 7px', borderRadius: 6, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', fontSize: 11, color: 'var(--ink-faint)' }}>
+                          Shared by {job.poster?.full_name ?? 'a member'}
+                        </span>
+                      )}
                       {job.employment_type && (
                         <span style={{ padding: '2px 7px', borderRadius: 6, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', fontSize: 11, color: 'var(--ink-muted)' }}>
                           {employmentTypeLabel(job.employment_type)}
@@ -906,7 +1128,7 @@ export function JobsPage() {
                     size="sm"
                     onClick={() => openJob(job.id)}
                   >
-                    Ask for intro
+                    {job.company_id ? 'Ask for intro' : 'View & apply'}
                   </KBtn>
                 </div>
               </KCard>
@@ -1031,7 +1253,7 @@ export function JobsPage() {
                       </div>
                     </div>
                   </div>
-                  <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', lineHeight: 1.55, margin: 0 }}>
+                  <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>
                     {selectedJob.description}
                   </p>
                 </div>
@@ -1054,6 +1276,53 @@ export function JobsPage() {
                   </div>
                 )}
 
+                {!selectedJob.company_id ? (
+                  <div
+                    style={{
+                      padding: '16px 18px',
+                      borderRadius: 14,
+                      background: 'var(--verd-soft)',
+                      border: '0.5px solid rgba(31,107,94,0.2)',
+                      marginBottom: 16,
+                    }}
+                  >
+                    <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--verd)', marginBottom: 10 }}>
+                      Your contact for this one
+                    </div>
+                    {selectedJob.poster && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        <KAvatar name={selectedJob.poster.full_name} src={selectedJob.poster.avatar_url} size={32} />
+                        <div>
+                          <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{selectedJob.poster.full_name}</div>
+                          <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>found and shared this opening</div>
+                        </div>
+                      </div>
+                    )}
+                    <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 12px' }}>
+                      Ask them what they know before you apply — they can give you context or point you to the right person.
+                    </p>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <KBtn
+                        variant="signal"
+                        size="sm"
+                        fullWidth
+                        onClick={() => selectedJob.poster && navigate(`/messages?to=${selectedJob.poster.id}`)}
+                        disabled={!selectedJob.poster}
+                      >
+                        Message {selectedJob.poster?.full_name?.split(' ')[0] ?? 'them'}
+                      </KBtn>
+                      <KBtn
+                        variant="ghost"
+                        size="sm"
+                        fullWidth
+                        onClick={() => { trackEvent('job_apply_clicked', { job_id: selectedJob.id, external: true }); window.open(selectedJob.apply_url ?? '#', '_blank', 'noopener,noreferrer') }}
+                        disabled={!selectedJob.apply_url}
+                      >
+                        Apply on original site ↗
+                      </KBtn>
+                    </div>
+                  </div>
+                ) : (
                 <div
                   style={{
                     padding: '16px 18px',
@@ -1125,6 +1394,7 @@ export function JobsPage() {
                     </p>
                   )}
                 </div>
+                )}
               </>
             )}
           </div>

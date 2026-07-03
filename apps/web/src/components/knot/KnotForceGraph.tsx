@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 
 export type KnotGraphTab = 'Connected' | 'Incoming' | 'Sent'
 
-export type KnotHealthState = 'warm' | 'cooling' | 'cold'
+export type KnotHealthState = 'warm' | 'cooling' | 'cold' | 'new'
 
 export type KnotGraphNode = {
   id: string
@@ -17,6 +17,10 @@ export type KnotGraphNode = {
   degree?: 'direct' | 'second'
   expandedViaUserId?: string
   healthState?: KnotHealthState
+  /** Live engine signals — rendered as small badges on the node */
+  hasOpenAsk?: boolean
+  hasCoffee?: boolean
+  needsFollowUp?: boolean
 }
 
 export type KnotGraphPeerEdge = {
@@ -110,7 +114,37 @@ function healthColor(health?: KnotHealthState) {
   if (health === 'cold') return '#e05c3a'
   if (health === 'cooling') return '#d4a017'
   if (health === 'warm') return '#4caf7d'
+  if (health === 'new') return '#1F6B5E'
   return null
+}
+
+/** Small badge cluster pinned to a node corner: open ask (ochre) and booked coffee. */
+function NodeBadges({ node, size = 13 }: { node: KnotGraphNode; size?: number }) {
+  const badges: Array<{ key: string; bg: string; fg: string; glyph: string; title: string }> = []
+  if (node.hasCoffee) badges.push({ key: 'coffee', bg: '#1F6B5E', fg: '#fff', glyph: '☕', title: 'Coffee booked' })
+  if (node.hasOpenAsk) badges.push({ key: 'ask', bg: '#C8941F', fg: '#fff', glyph: '?', title: 'Has an open ask' })
+  if (node.needsFollowUp) badges.push({ key: 'followup', bg: '#D8442B', fg: '#fff', glyph: '↩', title: 'Follow-up pending' })
+  if (!badges.length) return null
+  return (
+    <span style={{ position: 'absolute', top: -4, right: -4, display: 'flex', gap: 2, pointerEvents: 'none' }}>
+      {badges.map((b) => (
+        <span
+          key={b.key}
+          title={b.title}
+          style={{
+            width: size, height: size, borderRadius: 999, background: b.bg, color: b.fg,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: size * 0.62, fontWeight: 700, lineHeight: 1,
+            border: '1.5px solid rgba(255,252,246,0.95)',
+            boxShadow: '0 2px 6px rgba(26,24,21,0.18)',
+            fontFamily: "'IBM Plex Sans', sans-serif",
+          }}
+        >
+          {b.glyph}
+        </span>
+      ))}
+    </span>
+  )
 }
 
 function tabLabel(tab: KnotGraphTab) {
@@ -308,34 +342,37 @@ function StageCard({
           pointerEvents: 'none',
         }}
       >
-        <button
-          type="button"
-          onClick={onSelect}
-          onPointerDown={onPointerDown}
-          title={node.name}
-          aria-label={node.name}
-          style={{
-            width: sz,
-            height: sz,
-            padding: 0,
-            border: 'none',
-            borderRadius: 999,
-            overflow: 'hidden',
-            cursor: 'grab',
-            touchAction: 'none',
-            flexShrink: 0,
-            outline: hc ? `2px solid ${hc}` : secondDegree ? undefined : '2px solid rgba(255,252,246,0.90)',
-            outlineOffset: secondDegree ? 0 : 1,
-            boxShadow: secondDegree
-              ? 'none'
-              : related
-                ? '0 4px 14px rgba(26,24,21,0.18), 0 0 0 3px rgba(84,72,58,0.09)'
-                : '0 3px 10px rgba(26,24,21,0.14)',
-            pointerEvents: 'auto',
-          }}
-        >
-          <Avatar name={node.name} src={node.avatarUrl} size={sz} rounded={999} />
-        </button>
+        <span style={{ position: 'relative', display: 'inline-flex', pointerEvents: 'none' }}>
+          <button
+            type="button"
+            onClick={onSelect}
+            onPointerDown={onPointerDown}
+            title={node.name}
+            aria-label={node.name}
+            style={{
+              width: sz,
+              height: sz,
+              padding: 0,
+              border: 'none',
+              borderRadius: 999,
+              overflow: 'hidden',
+              cursor: 'grab',
+              touchAction: 'none',
+              flexShrink: 0,
+              outline: hc ? `2px solid ${hc}` : secondDegree ? undefined : '2px solid rgba(255,252,246,0.90)',
+              outlineOffset: secondDegree ? 0 : 1,
+              boxShadow: secondDegree
+                ? 'none'
+                : related
+                  ? '0 4px 14px rgba(26,24,21,0.18), 0 0 0 3px rgba(84,72,58,0.09)'
+                  : '0 3px 10px rgba(26,24,21,0.14)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <Avatar name={node.name} src={node.avatarUrl} size={sz} rounded={999} />
+          </button>
+          <NodeBadges node={node} size={12} />
+        </span>
         <span style={{
           fontSize: 8.5,
           fontWeight: 600,
@@ -421,6 +458,7 @@ function StageCard({
         <span style={{ minWidth: 0, fontSize: 11.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {node.name}
         </span>
+        <NodeBadges node={node} />
       </button>
     )
   }
@@ -549,6 +587,7 @@ function StageCard({
           {clampText(subtitle, 22)}
         </span>
       </span>
+      <NodeBadges node={node} />
     </button>
   )
 }

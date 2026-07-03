@@ -62,4 +62,26 @@
   --map-bg:     #EBE5D9;
   --node-ring:  rgba(216,68,43,0.40);
   --node-pulse: rgba(200,148,31,0.50);
+
+  /* ── Knotcraft: journal artifacts & seals ── */
+  --stain:        rgba(139, 94, 60, 0.30);   /* coffee ring */
+  --stain-faint:  rgba(139, 94, 60, 0.14);
+  --foil:         #C8941F;                    /* seal gold */
+  --foil-bright:  #E8B84A;
+  --foil-soft:    rgba(200, 148, 31, 0.16);
+  --seal-bronze:  #9A6B3F;
+  --seal-silver:  #8C8C8C;
+  --seal-gold:    #C8941F;
+
+  /* ── Depth (layered ink shadows, warm not gray) ── */
+  --lift-1: 0 1px 2px rgba(26,24,21,0.05), 0 2px 8px rgba(26,24,21,0.04);
+  --lift-2: 0 2px 4px rgba(26,24,21,0.06), 0 10px 24px rgba(26,24,21,0.07);
+  --lift-3: 0 6px 16px rgba(26,24,21,0.10), 0 24px 60px rgba(26,24,21,0.14);
+
+  /* ── Motion ── */
+  --dur-fast: 120ms;
+  --dur-base: 240ms;
+  --dur-slow: 480ms;
+  --ease-out:       cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-overshoot: cubic-bezier(0.2, 1.4, 0.4, 1);
 }

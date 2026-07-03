@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '../lib/api'
+import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { supabase } from '../lib/supabase'
 
@@ -284,6 +285,8 @@ export function MessagesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const deepLinkUserId = searchParams.get('to')
   const deepLinkAction = searchParams.get('action')
+  const deepLinkConversationId = searchParams.get('conversation')
+  const deepLinkDraft = searchParams.get('draft')
 
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
@@ -637,28 +640,45 @@ export function MessagesPage() {
     }
   }, [selectedId, latestDisplayMessage?.id, latestDisplayMessage?.is_mine, displayMessages.length])
 
-  // Honor ?to=USER_ID&action=coffee deep links from elsewhere in the app.
+  // Honor deep links from elsewhere in the app:
+  //   ?to=USER_ID[&action=coffee]      — open (or create) the direct chat, optionally the coffee planner
+  //   ?conversation=CONV_ID            — open a specific conversation
+  //   &draft=TEXT                      — prefill the composer (Relationship OS smart openers)
   // React dev mode can run effects twice, so guard by the exact deep-link key.
   useEffect(() => {
-    if (!deepLinkUserId) return
+    if (!deepLinkUserId && !deepLinkConversationId) return
 
-    const deepLinkKey = `${deepLinkUserId}:${deepLinkAction ?? ''}`
+    const deepLinkKey = `${deepLinkUserId ?? ''}:${deepLinkConversationId ?? ''}:${deepLinkAction ?? ''}:${deepLinkDraft ?? ''}`
     if (handledDeepLinkRef.current === deepLinkKey) return
     handledDeepLinkRef.current = deepLinkKey
 
     void (async () => {
       const wantsCoffee = deepLinkAction === 'coffee'
-      const conversationId = await openOrCreate(deepLinkUserId)
+      let conversationId: string | null = null
+      if (deepLinkConversationId) {
+        conversationId = deepLinkConversationId
+        scrollIntentRef.current = 'open'
+        scrollStateRef.current = { conversationId: null, lastMessageId: null }
+        setSelectedId(deepLinkConversationId)
+        await loadMsgs(deepLinkConversationId, true)
+        await markRead(deepLinkConversationId)
+      } else if (deepLinkUserId) {
+        conversationId = await openOrCreate(deepLinkUserId)
+      }
+
+      if (conversationId && deepLinkDraft) setComposer(deepLinkDraft)
 
       const next = new URLSearchParams(searchParams)
       next.delete('to')
       next.delete('action')
+      next.delete('conversation')
+      next.delete('draft')
       setSearchParams(next, { replace: true })
 
       if (conversationId && wantsCoffee) setTimeout(() => setCoffeeOpen(true), 200)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deepLinkUserId, deepLinkAction])
+  }, [deepLinkUserId, deepLinkAction, deepLinkConversationId, deepLinkDraft])
 
   async function openOrCreate(userId: string): Promise<string | null> {
     const existingConversation = conversations.find((conv) => conv.peer?.id === userId)
@@ -736,6 +756,7 @@ export function MessagesPage() {
 
     try {
       const res = await apiPost<{ message: Message }>(`/api/conversations/${selectedId}/messages`, { content: trimmed })
+      trackEvent('message_sent')
       setOptimistic((prev) => ({ ...prev, [selectedId]: (prev[selectedId] ?? []).filter((m) => m.id !== tempId) }))
       setMessages((prev) => [...prev, res.message])
       await loadConvs(true)
@@ -1122,7 +1143,6 @@ export function MessagesPage() {
                 <button
                   type="button"
                   onClick={() => setCoffeeOpen(true)}
-                  className="hidden sm:none"
                   style={{
                     flexShrink: 0,
                     padding: '6px 12px',
@@ -1140,22 +1160,25 @@ export function MessagesPage() {
                   <span className="hidden sm:inline">☕ Plan coffee</span>
                   <span className="sm:hidden">☕</span>
                 </button>
-                {/* IRL context strip — hidden on very small screens */}
-                <div
-                  className="hidden sm:block"
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: 999,
-                    background: 'var(--ochre-soft)',
-                    border: '0.5px solid rgba(200,148,31,0.2)',
-                    fontSize: 11,
-                    color: 'var(--ochre)',
-                    fontFamily: "'IBM Plex Sans'",
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  1st connection
-                </div>
+                {/* Live coffee status — only when a meeting actually exists */}
+                {selectedMeeting && (
+                  <div
+                    className="hidden sm:block"
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 999,
+                      background: 'var(--verd-soft)',
+                      border: '0.5px solid rgba(31,107,94,0.24)',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: 'var(--verd)',
+                      fontFamily: "'IBM Plex Sans'",
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    ☕ {formatMeetingTime(selectedMeeting.scheduled_at)}{selectedMeeting.status === 'proposed' ? ' · proposed' : ''}
+                  </div>
+                )}
                 <div style={{ position: 'relative', flexShrink: 0 }}>
                   <button
                     type="button"
@@ -1287,13 +1310,35 @@ export function MessagesPage() {
               </p>
             ) : displayMessages.length === 0 ? (
               <div style={{ maxWidth: 360, margin: 'auto', textAlign: 'center' }}>
-                <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 14, color: 'var(--ink-faint)', margin: 0 }}>
-                  {selectedHistoryCleared ? 'History cleared. New messages will appear here.' : 'No messages yet. Break the ice.'}
+                {selectedConv?.peer && !selectedHistoryCleared && (
+                  <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={52} style={{ margin: '0 auto 12px' }} />
+                )}
+                <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink-muted)', margin: 0 }}>
+                  {selectedHistoryCleared
+                    ? 'History cleared. New messages will appear here.'
+                    : `Start the conversation with ${selectedConv?.peer?.full_name?.split(' ')[0] ?? 'them'}.`}
                 </p>
-                {selectedHistoryCleared && (
+                {selectedHistoryCleared ? (
                   <p style={{ marginTop: 7, fontSize: 12, lineHeight: 1.45, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
                     This only affects your side of the conversation.
                   </p>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => setComposer(`Hi ${selectedConv?.peer?.full_name?.split(' ')[0] ?? ''}, great to be connected! What are you working on at the moment?`)}
+                      style={{ padding: '8px 15px', borderRadius: 999, border: 'none', background: 'var(--ink)', color: 'var(--paper)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}
+                    >
+                      👋 Say hi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCoffeeOpen(true)}
+                      style={{ padding: '8px 15px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}
+                    >
+                      ☕ Plan coffee
+                    </button>
+                  </div>
                 )}
               </div>
             ) : (

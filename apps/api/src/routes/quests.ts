@@ -2,6 +2,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { MUNICH_DISTRICTS, districtForPoint, districtForText } from '../lib/districts.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } })
 const QUEST_PHOTOS_BUCKET = 'quest-photos'
@@ -94,12 +95,13 @@ const VERIFIED: VerifiedQuest[] = [
   },
 ]
 
-// Credibility tiers. Reaching "Trusted" unlocks offering gigs.
+// Credibility ranks are real knots. The Bowline is the knot sailors trust
+// with weight — reaching it unlocks offering gigs.
 const TIERS = [
-  { min: 0,   name: 'Newcomer' },
-  { min: 30,  name: 'Connected' },
-  { min: 70,  name: 'Trusted' },
-  { min: 120, name: 'Pillar' },
+  { min: 0,   name: 'Loose end' },
+  { min: 30,  name: 'Overhand' },
+  { min: 70,  name: 'Bowline' },
+  { min: 120, name: 'Masthead' },
 ]
 const GIG_UNLOCK_AT = 70
 
@@ -186,7 +188,7 @@ async function activeDbQuests() {
 }
 
 async function completedRows(userId: string) {
-  return (await supabase.from('user_quests').select('quest_key, points_awarded, completed_at').eq('user_id', userId)).data ?? []
+  return (await supabase.from('user_quests').select('quest_key, points_awarded, completed_at, photo_url').eq('user_id', userId)).data ?? []
 }
 
 // Distinct-day streak: consecutive calendar days (ending today or yesterday)
@@ -228,15 +230,52 @@ async function computePercentile(score: number): Promise<number | null> {
   return Math.max(1, Math.round((higher / total) * 100))
 }
 
+// Countersignatures for the requester's quests + requests waiting on me.
+// Fail-soft: if the table does not exist yet, quests still load.
+async function signatureContext(userId: string) {
+  try {
+    const [mineR, incomingR] = await Promise.all([
+      supabase
+        .from('quest_signatures')
+        .select('id, quest_key, status, signer_id, signed_at')
+        .eq('requester_id', userId),
+      supabase
+        .from('quest_signatures')
+        .select('id, quest_key, requester_id, created_at')
+        .eq('signer_id', userId)
+        .eq('status', 'pending'),
+    ])
+    const mine = mineR.data ?? []
+    const incoming = incomingR.data ?? []
+    const peopleIds = [...new Set([...mine.map((s: any) => s.signer_id), ...incoming.map((s: any) => s.requester_id)])]
+    const people = peopleIds.length
+      ? (await supabase.from('users').select('id, full_name, username, avatar_url').in('id', peopleIds)).data ?? []
+      : []
+    const byId = new Map(people.map((p: any) => [p.id, p]))
+    return {
+      mine: new Map(mine.map((s: any) => [s.quest_key, { id: s.id, status: s.status, signed_at: s.signed_at, signer: byId.get(s.signer_id) ?? null }])),
+      incoming: incoming.map((s: any) => ({ id: s.id, quest_key: s.quest_key, created_at: s.created_at, requester: byId.get(s.requester_id) ?? null })),
+    }
+  } catch {
+    return { mine: new Map(), incoming: [] as any[] }
+  }
+}
+
+function questTitleFor(key: string, dbQuests: any[]): string {
+  return VERIFIED.find((q) => q.key === key)?.title ?? dbQuests.find((q: any) => q.key === key)?.title ?? key
+}
+
 questsRouter.get('/', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
 
-  const [evalMap, dbQuests, doneRows] = await Promise.all([
+  const [evalMap, dbQuests, doneRows, signatures] = await Promise.all([
     evaluate(req.appUserId),
     activeDbQuests(),
     completedRows(req.appUserId),
+    signatureContext(req.appUserId),
   ])
   const completed = new Set(doneRows.map((r: any) => r.quest_key))
+  const doneByKey = new Map(doneRows.map((r: any) => [r.quest_key, r]))
   const score = doneRows.reduce((s: number, r: any) => s + (r.points_awarded ?? 0), 0)
 
   // Weekly delta + streak from completion timestamps; percentile across users.
@@ -251,10 +290,13 @@ questsRouter.get('/', requireAuth, async (req, res) => {
   const verified = VERIFIED.map((q) => {
     const st = evalMap[q.key] ?? { done: false }
     const status = completed.has(q.key) ? 'completed' : st.done ? 'claimable' : 'locked'
+    const done = doneByKey.get(q.key) as any
     return {
       ...q, type: 'verified' as const, progress: st.progress, target: st.target, status,
       how_to: q.how_to, where_to_go: q.where_to_go,
       estimated_minutes: q.estimated_minutes, difficulty: q.difficulty, partner_required: q.partner_required,
+      completed_at: done?.completed_at ?? null, photo_url: done?.photo_url ?? null, ends_at: null,
+      signature: q.partner_required ? signatures.mine.get(q.key) ?? null : null,
     }
   })
 
@@ -274,6 +316,11 @@ questsRouter.get('/', requireAuth, async (req, res) => {
     estimated_minutes: q.estimated_minutes ?? null,
     difficulty: q.difficulty ?? null,
     partner_required: q.partner_required ?? false,
+    completed_at: (doneByKey.get(q.key) as any)?.completed_at ?? null,
+    photo_url: (doneByKey.get(q.key) as any)?.photo_url ?? null,
+    // Scheduled window turns a quest into a time-limited "chapter" entry.
+    ends_at: q.ends_at ?? null,
+    signature: q.partner_required ? signatures.mine.get(q.key) ?? null : null,
   }))
 
   const tier = tierFor(score)
@@ -289,7 +336,146 @@ questsRouter.get('/', requireAuth, async (req, res) => {
     percentile,
     streak,
     quests: [...verified, ...self],
+    incoming_signature_requests: signatures.incoming.map((s: any) => ({
+      ...s,
+      quest_title: questTitleFor(s.quest_key, dbQuests),
+    })),
   })
+})
+
+// ── Fog of war: Munich districts ─────────────────────────────────────────────
+// A district clears when the user genuinely showed up there. Derived from real
+// activity (café check-ins, meetings at cafés, RSVP'd past events) — never
+// self-reported, so the map cannot be gamed.
+
+questsRouter.get('/districts', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const uid = req.appUserId
+
+  const [checkinsR, meetingsR, rsvpsR] = await Promise.all([
+    supabase.from('cafe_checkins').select('cafe_id, cafes(lat, lng, address, name)').eq('user_id', uid),
+    supabase
+      .from('meetings')
+      .select('cafe_id, location_text, status, cafes(lat, lng, address, name)')
+      .or(`initiator_id.eq.${uid},invitee_id.eq.${uid}`)
+      .in('status', ['confirmed', 'completed']),
+    supabase
+      .from('event_rsvps')
+      .select('event_id, events(location, starts_at)')
+      .eq('user_id', uid),
+  ])
+
+  const visited = new Map<string, string>() // district key -> how
+
+  const markPoint = (lat: unknown, lng: unknown, how: string) => {
+    const la = typeof lat === 'string' ? parseFloat(lat) : (lat as number)
+    const ln = typeof lng === 'string' ? parseFloat(lng) : (lng as number)
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) return
+    const d = districtForPoint(la, ln)
+    if (d && !visited.has(d.key)) visited.set(d.key, how)
+  }
+  const markText = (text: string | null | undefined, how: string) => {
+    const d = districtForText(text)
+    if (d && !visited.has(d.key)) visited.set(d.key, how)
+  }
+
+  for (const row of checkinsR.data ?? []) {
+    const cafe = (row as any).cafes
+    if (cafe) {
+      markPoint(cafe.lat, cafe.lng, `Café check-in at ${cafe.name ?? 'a partner café'}`)
+      if (cafe.lat == null) markText(cafe.address, `Café check-in at ${cafe.name ?? 'a partner café'}`)
+    }
+  }
+  for (const row of meetingsR.data ?? []) {
+    const cafe = (row as any).cafes
+    if (cafe) markPoint(cafe.lat, cafe.lng, `A meeting at ${cafe.name ?? 'a café'}`)
+    else markText((row as any).location_text, 'A meeting there')
+  }
+  const now = Date.now()
+  for (const row of rsvpsR.data ?? []) {
+    const ev = (row as any).events
+    if (ev && ev.starts_at && new Date(ev.starts_at).getTime() <= now) {
+      markText(ev.location, 'An event you attended')
+    }
+  }
+
+  return res.json({
+    total: MUNICH_DISTRICTS.length,
+    visited_count: visited.size,
+    districts: MUNICH_DISTRICTS.map((d) => ({
+      key: d.key,
+      name: d.name,
+      visited: visited.has(d.key),
+      via: visited.get(d.key) ?? null,
+    })),
+  })
+})
+
+// ── Countersignatures ────────────────────────────────────────────────────────
+// Ask a connection to countersign a partner quest you completed. Their signed
+// name renders on your journal card — a human vouching, in ink.
+
+questsRouter.post('/:key/signature-request', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const key = req.params.key
+  const signerId = typeof req.body?.signer_id === 'string' ? req.body.signer_id : null
+  if (!signerId) return res.status(422).json({ error: 'signer_id is required' })
+  if (signerId === req.appUserId) return res.status(422).json({ error: 'You cannot countersign your own quest.' })
+
+  const verified = VERIFIED.find((q) => q.key === key)
+  const dbQuest = verified ? null : (await activeDbQuests()).find((q: any) => q.key === key)
+  const quest = verified ?? dbQuest
+  if (!quest) return res.status(404).json({ error: 'Unknown quest' })
+  if (!quest.partner_required) return res.status(422).json({ error: 'This quest does not take a countersignature.' })
+
+  const done = await supabase
+    .from('user_quests')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', req.appUserId)
+    .eq('quest_key', key)
+  if (!done.count) return res.status(400).json({ error: 'Complete the quest before asking for a signature.' })
+
+  const conn = await supabase
+    .from('connections')
+    .select('id', { count: 'exact', head: true })
+    .or(
+      `and(requester_id.eq.${req.appUserId},addressee_id.eq.${signerId}),and(requester_id.eq.${signerId},addressee_id.eq.${req.appUserId})`
+    )
+    .eq('status', 'accepted')
+  if (!conn.count) return res.status(403).json({ error: 'You can only ask people in your knot.' })
+
+  const up = await supabase
+    .from('quest_signatures')
+    .upsert(
+      { quest_key: key, requester_id: req.appUserId, signer_id: signerId, status: 'pending', signed_at: null },
+      { onConflict: 'quest_key,requester_id' }
+    )
+  if (up.error) return res.status(500).json({ error: up.error.message })
+  return res.json({ ok: true })
+})
+
+questsRouter.post('/signatures/:id/respond', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const action = req.body?.action
+  if (action !== 'sign' && action !== 'decline') {
+    return res.status(422).json({ error: 'action must be "sign" or "decline"' })
+  }
+
+  const row = await supabase
+    .from('quest_signatures')
+    .select('id, signer_id, status')
+    .eq('id', req.params.id)
+    .maybeSingle()
+  if (!row.data) return res.status(404).json({ error: 'Signature request not found' })
+  if (row.data.signer_id !== req.appUserId) return res.status(403).json({ error: 'This request is not yours to sign.' })
+  if (row.data.status !== 'pending') return res.status(400).json({ error: 'Already answered.' })
+
+  const upd = await supabase
+    .from('quest_signatures')
+    .update({ status: action === 'sign' ? 'signed' : 'declined', signed_at: action === 'sign' ? new Date().toISOString() : null })
+    .eq('id', req.params.id)
+  if (upd.error) return res.status(500).json({ error: upd.error.message })
+  return res.json({ ok: true })
 })
 
 questsRouter.post('/:key/claim', requireAuth, upload.single('photo'), async (req, res) => {

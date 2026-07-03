@@ -2,17 +2,32 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { fetchUrlSafely, withDeadline } from '../lib/safeFetchUrl.js'
+import { extractJobFromHtml } from '../services/jobLinkExtractor.js'
 
-const createJobSchema = z.object({
-  companyId: z.string().uuid(),
-  title: z.string().min(2),
-  description: z.string().min(20),
-  requiredSkills: z.array(z.string().min(1)).default([]),
-  location: z.string().max(120).optional(),
-  isRemote: z.boolean().optional(),
-  salaryMin: z.number().int().nonnegative().optional(),
-  salaryMax: z.number().int().nonnegative().optional(),
-  status: z.enum(['open', 'closed', 'draft']).optional(),
+const createJobSchema = z
+  .object({
+    companyId: z.string().uuid().optional(),
+    companyName: z.string().trim().min(1).max(120).optional(),
+    companyLogoUrl: z.string().url().optional(),
+    applyUrl: z.string().url().optional(),
+    source: z.enum(['employer', 'link_share']).default('employer'),
+    title: z.string().min(2),
+    description: z.string().min(20),
+    requiredSkills: z.array(z.string().min(1)).default([]),
+    location: z.string().max(120).optional(),
+    isRemote: z.boolean().optional(),
+    salaryMin: z.number().int().nonnegative().optional(),
+    salaryMax: z.number().int().nonnegative().optional(),
+    status: z.enum(['open', 'closed', 'draft']).optional(),
+  })
+  .refine(
+    (data) => (data.source === 'link_share' ? Boolean(data.companyName && data.applyUrl) : Boolean(data.companyId)),
+    { message: 'employer jobs require companyId; link_share jobs require companyName and applyUrl' }
+  )
+
+const parseJobLinkSchema = z.object({
+  url: z.string().url(),
 })
 
 const patchJobSchema = z.object({
@@ -66,6 +81,32 @@ async function canManageCompany(companyId: string, userId: string) {
 
 export const jobsRouter = Router()
 
+// Paste a job posting URL, get back an editable draft (title/company/location/
+// salary/description). Nothing is persisted here — the client shows a preview
+// and posts the confirmed fields via POST / with source: 'link_share'.
+jobsRouter.post('/parse-link', requireAuth, async (req, res) => {
+  const parsed = parseJobLinkSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+
+  let fetched: { html: string; finalUrl: string }
+  try {
+    fetched = await withDeadline(fetchUrlSafely(parsed.data.url), 12000, 'That page took too long to load')
+  } catch (e) {
+    return res.status(422).json({ error: e instanceof Error ? e.message : 'Could not fetch that link' })
+  }
+
+  try {
+    const draft = await withDeadline(
+      extractJobFromHtml(fetched.html, fetched.finalUrl),
+      12000,
+      'Reading that job posting took too long'
+    )
+    return res.json({ draft, sourceUrl: fetched.finalUrl })
+  } catch (e) {
+    return res.status(502).json({ error: e instanceof Error ? e.message : 'Could not read that job posting' })
+  }
+})
+
 jobsRouter.get('/', requireAuth, async (req, res) => {
   const queryParams = jobsQuerySchema.safeParse(req.query)
   if (!queryParams.success) {
@@ -78,7 +119,7 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
 
   let query = supabase
     .from('jobs')
-    .select('id, company_id, title, description, required_skills, location, is_remote, salary_min, salary_max, employment_type, status, is_featured, created_at')
+    .select('id, company_id, company_name, company_logo_url, apply_url, source, posted_by, title, description, required_skills, location, is_remote, salary_min, salary_max, employment_type, status, is_featured, created_at')
     .order('created_at', { ascending: false })
 
   if (status && status !== 'all' && ['open', 'closed', 'draft'].includes(status)) {
@@ -104,13 +145,22 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
 
   const jobs = jobsResult.data ?? []
 
-  const companyIds = [...new Set(jobs.map((j) => j.company_id))]
+  const companyIds = [...new Set(jobs.map((j) => j.company_id).filter((id): id is string => Boolean(id)))]
   const companies = companyIds.length
     ? await supabase.from('companies').select('id, name, logo_url, city').in('id', companyIds)
     : { data: [], error: null }
   if (companies.error) return res.status(500).json({ error: companies.error.message })
 
   const companyMap = new Map((companies.data ?? []).map((c) => [c.id, c]))
+
+  // Link-shared jobs have no verified company — the member who shared it is
+  // the contact/referral point instead, so surface their identity.
+  const posterIds = [...new Set(jobs.filter((j) => !j.company_id).map((j) => j.posted_by).filter(Boolean))]
+  const posters = posterIds.length
+    ? await supabase.from('users').select('id, full_name, username, avatar_url').in('id', posterIds)
+    : { data: [], error: null }
+  if (posters.error) return res.status(500).json({ error: posters.error.message })
+  const posterMap = new Map((posters.data ?? []).map((u) => [u.id, u]))
 
   let verifiedSkillNames = new Set<string>()
   if (req.appUserId) {
@@ -136,9 +186,15 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
     const matched = required.filter((s: string) => verifiedSkillNames.has(s)).length
     const matchScore = required.length ? Math.round((matched / required.length) * 100) : 0
 
+    const company = job.company_id
+      ? companyMap.get(job.company_id) ?? null
+      : { id: null, name: job.company_name, logo_url: job.company_logo_url, city: null }
+    const poster = job.company_id ? null : posterMap.get(job.posted_by) ?? null
+
     return {
       ...job,
-      company: companyMap.get(job.company_id) ?? null,
+      company,
+      poster,
       matchScore,
       matchedRequiredSkills: matched,
       totalRequiredSkills: required.length,
@@ -163,15 +219,24 @@ jobsRouter.get('/:id', requireAuth, async (req, res) => {
 
   const job = await supabase
     .from('jobs')
-    .select('id, company_id, posted_by, title, description, required_skills, location, is_remote, salary_min, salary_max, status, is_featured, created_at, updated_at')
+    .select('id, company_id, company_name, company_logo_url, apply_url, source, posted_by, title, description, required_skills, location, is_remote, salary_min, salary_max, status, is_featured, created_at, updated_at')
     .eq('id', params.data.id)
     .maybeSingle()
 
   if (job.error) return res.status(500).json({ error: job.error.message })
   if (!job.data) return res.status(404).json({ error: 'Job not found' })
 
-  const company = await supabase.from('companies').select('id, name, logo_url, website, city').eq('id', job.data.company_id).maybeSingle()
+  const company = job.data.company_id
+    ? await supabase.from('companies').select('id, name, logo_url, website, city').eq('id', job.data.company_id).maybeSingle()
+    : { data: { id: null, name: job.data.company_name, logo_url: job.data.company_logo_url, website: job.data.apply_url, city: null }, error: null }
   if (company.error) return res.status(500).json({ error: company.error.message })
+
+  // Link-shared jobs have no verified company — the member who shared it is
+  // the contact/referral point instead of a "no warm-intro flow" dead end.
+  const poster = !job.data.company_id
+    ? await supabase.from('users').select('id, full_name, username, avatar_url').eq('id', job.data.posted_by).maybeSingle()
+    : { data: null, error: null }
+  if (poster.error) return res.status(500).json({ error: poster.error.message })
 
   const referralsCount = await supabase
     .from('referrals')
@@ -200,7 +265,15 @@ jobsRouter.get('/:id', requireAuth, async (req, res) => {
     }
   }
 
-  return res.json({ job: { ...job.data, company: company.data ?? null, submittedReferrals: referralsCount.count ?? 0, referral_connections: referralConnections } })
+  return res.json({
+    job: {
+      ...job.data,
+      company: company.data ?? null,
+      poster: poster.data ?? null,
+      submittedReferrals: referralsCount.count ?? 0,
+      referral_connections: referralConnections,
+    },
+  })
 })
 
 // ── Saved jobs ────────────────────────────────────────────────────────────
@@ -241,13 +314,43 @@ jobsRouter.post('/', requireAuth, async (req, res) => {
 
   const parsed = createJobSchema.safeParse(req.body)
   if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+  const data = parsed.data
+
+  // Peer-to-peer: any member can share a job link they found elsewhere. No
+  // company row, no HR gate — it posts as its own listing with an external
+  // apply_url, since we have no insiders at an arbitrary scraped company.
+  if (data.source === 'link_share') {
+    const insert = await supabase
+      .from('jobs')
+      .insert({
+        company_id: null,
+        company_name: data.companyName!.trim(),
+        company_logo_url: data.companyLogoUrl ?? null,
+        apply_url: data.applyUrl,
+        source: 'link_share',
+        posted_by: req.appUserId,
+        title: data.title.trim(),
+        description: data.description.trim(),
+        required_skills: sanitizeSkills(data.requiredSkills),
+        location: data.location?.trim() || 'Munich',
+        is_remote: data.isRemote ?? false,
+        salary_min: data.salaryMin ?? null,
+        salary_max: data.salaryMax ?? null,
+        status: data.status ?? 'open',
+      })
+      .select('*')
+      .single()
+
+    if (insert.error) return res.status(500).json({ error: insert.error.message })
+    return res.status(201).json({ job: insert.data })
+  }
 
   const user = await supabase.from('users').select('id, is_hr').eq('id', req.appUserId).single()
   if (user.error) return res.status(500).json({ error: user.error.message })
   if (!user.data?.is_hr) return res.status(403).json({ error: 'Only HR users can create jobs' })
 
   try {
-    const allowed = await canManageCompany(parsed.data.companyId, req.appUserId)
+    const allowed = await canManageCompany(data.companyId!, req.appUserId)
     if (!allowed) return res.status(403).json({ error: 'Not allowed to post for this company' })
   } catch (e) {
     return res.status(500).json({ error: e instanceof Error ? e.message : 'Permission check failed' })
@@ -256,16 +359,17 @@ jobsRouter.post('/', requireAuth, async (req, res) => {
   const insert = await supabase
     .from('jobs')
     .insert({
-      company_id: parsed.data.companyId,
+      company_id: data.companyId,
+      source: 'employer',
       posted_by: req.appUserId,
-      title: parsed.data.title.trim(),
-      description: parsed.data.description.trim(),
-      required_skills: sanitizeSkills(parsed.data.requiredSkills),
-      location: parsed.data.location?.trim() || 'Munich',
-      is_remote: parsed.data.isRemote ?? false,
-      salary_min: parsed.data.salaryMin ?? null,
-      salary_max: parsed.data.salaryMax ?? null,
-      status: parsed.data.status ?? 'open',
+      title: data.title.trim(),
+      description: data.description.trim(),
+      required_skills: sanitizeSkills(data.requiredSkills),
+      location: data.location?.trim() || 'Munich',
+      is_remote: data.isRemote ?? false,
+      salary_min: data.salaryMin ?? null,
+      salary_max: data.salaryMax ?? null,
+      status: data.status ?? 'open',
     })
     .select('*')
     .single()

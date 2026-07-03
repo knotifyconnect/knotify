@@ -19,6 +19,7 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { KAvatar, KnotifyLogoImg } from '@/lib/knotify'
+import { nextRankForScore, rankForScore } from '@/lib/knots'
 import { supabase } from '@/lib/supabase'
 import { useSessionStore } from '@/store/session'
 import { apiGet } from '@/lib/api'
@@ -33,6 +34,7 @@ type Me = {
   avatar_url: string | null
   is_hr: boolean
   is_admin: boolean
+  credibility_score?: number | null
 }
 
 type NavItem = {
@@ -52,6 +54,37 @@ const BASE_ITEMS: NavItem[] = [
   { title: 'Cafes',        sub: 'IRL',        href: '/cafes',          icon: <Coffee            size={15} /> },
   { title: 'Messages',     href: '/messages', icon: <MessageSquare     size={15} />, badge: 'messages' },
 ]
+
+// Thin credibility ring around the avatar: progress toward the next knot rank.
+function RankRing({ score, children }: { score: number; children: React.ReactNode }) {
+  const rank = rankForScore(score)
+  const next = nextRankForScore(score)
+  const pct = next ? Math.min(1, Math.max(0.04, (score - rank.min) / (next.min - rank.min))) : 1
+  const R = 19
+  const C = 2 * Math.PI * R
+  return (
+    <div
+      title={next ? `${rank.name} · ${next.min - score} to ${next.name}` : rank.name}
+      style={{ position: 'relative', width: 42, height: 42, flexShrink: 0, display: 'grid', placeItems: 'center' }}
+    >
+      <svg width={42} height={42} style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }} aria-hidden>
+        <circle cx={21} cy={21} r={R} fill="none" stroke="var(--rule)" strokeWidth={2} />
+        <circle
+          cx={21}
+          cy={21}
+          r={R}
+          fill="none"
+          stroke="var(--foil)"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeDasharray={`${C * pct} ${C}`}
+          style={{ transition: 'stroke-dasharray 0.8s cubic-bezier(0.16,1,0.3,1)' }}
+        />
+      </svg>
+      {children}
+    </div>
+  )
+}
 
 export function AppSidebar() {
   const setToken = useSessionStore((s) => s.setToken)
@@ -242,7 +275,9 @@ export function AppSidebar() {
               ;(e.currentTarget as HTMLDivElement).style.background = 'transparent'
             }}
           >
-            <KAvatar name={me.full_name} src={me.avatar_url} size={32} />
+            <RankRing score={me.credibility_score ?? 0}>
+              <KAvatar name={me.full_name} src={me.avatar_url} size={32} />
+            </RankRing>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
@@ -262,9 +297,12 @@ export function AppSidebar() {
                   fontSize: 10.5,
                   color: 'var(--ink-muted)',
                   fontFamily: "'IBM Plex Mono', monospace",
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                @{me.username}
+                {rankForScore(me.credibility_score ?? 0).name} · @{me.username}
               </div>
             </div>
             <ChevronRight size={11} color="var(--ink-muted)" />

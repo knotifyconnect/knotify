@@ -43,22 +43,31 @@ export function DeskPage({ children, rail, maxWidth = 1100 }: { children: ReactN
 }
 
 // ── Header: uppercase kicker + italic serif title + right slot ───────────────
+// Finished with a newspaper masthead rule: one strong ink line over a hairline.
 export function DeskHeader({ kicker, title, right }: { kicker: ReactNode; title: ReactNode; right?: ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 22 }}>
-      <div>
-        <div style={{ fontSize: 10, color: T.inkMuted, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: T.text }}>{kicker}</div>
-        <div style={{ fontFamily: T.display, fontSize: 'clamp(24px, 3vw, 30px)', fontWeight: 400, letterSpacing: '-0.02em', marginTop: 4, lineHeight: 1.05 }}>{title}</div>
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 10, color: T.inkMuted, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: T.text }}>{kicker}</div>
+          <div style={{ fontFamily: T.display, fontSize: 'clamp(24px, 3vw, 30px)', fontWeight: 400, letterSpacing: '-0.02em', marginTop: 4, lineHeight: 1.05 }}>{title}</div>
+        </div>
+        {right && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>{right}</div>}
       </div>
-      {right && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>{right}</div>}
+      <div aria-hidden style={{ borderTop: `2px solid ${T.ink}`, marginBottom: 2 }} />
+      <div aria-hidden style={{ borderTop: `0.5px solid ${T.rule}` }} />
     </div>
   )
 }
 
+// Editorial section label: small caps, then a hairline leader running to the
+// right slot — the newspaper "section rule" instead of a floating caption.
 export function SectionLabel({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
-    <div style={{ fontSize: 11, color: T.inkMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 600, fontFamily: T.text, gap: 8 }}>
-      <span>{children}</span>{right}
+    <div style={{ fontSize: 11, color: T.inkMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', fontWeight: 600, fontFamily: T.text, gap: 10 }}>
+      <span style={{ flexShrink: 0 }}>{children}</span>
+      <span aria-hidden style={{ flex: 1, minWidth: 12, height: 1, background: T.ruleSoft }} />
+      {right && <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>{right}</span>}
     </div>
   )
 }

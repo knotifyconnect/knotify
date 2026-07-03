@@ -11,7 +11,7 @@
 ## Database
 
 - [ ] Capture the remote Supabase migration list.
-- [ ] Confirm migrations `046_cv_profile_import.sql` and `047_service_role_data_access.sql` are not already represented remotely under different names.
+- [ ] Confirm migrations `048_cv_profile_import.sql` and `049_service_role_data_access.sql` are not already represented remotely under different names.
 - [ ] Create a backup or confirm the available restore path.
 - [ ] Apply migrations separately from the application deployment.
 - [ ] Verify RLS and the CV import RPC after migration.
