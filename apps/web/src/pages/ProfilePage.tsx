@@ -215,6 +215,20 @@ const fieldStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 }
 
+// Read-first "add" affordance: a quiet full-width prompt that opens a composer.
+const ghostAddStyle: React.CSSProperties = {
+  width: '100%',
+  textAlign: 'left',
+  padding: '11px 14px',
+  borderRadius: 10,
+  border: '1px dashed var(--rule)',
+  background: 'transparent',
+  color: 'var(--ink-muted)',
+  fontSize: 13.5,
+  fontFamily: "'IBM Plex Sans', sans-serif",
+  cursor: 'pointer',
+}
+
 function fieldLabel(text: string) {
   return (
     <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>
@@ -287,6 +301,10 @@ function OwnProfileView() {
   const [expEditing, setExpEditing] = useState(false)
   const [expDraft, setExpDraft] = useState<ExperienceEntry[]>([])
   const [extSaving, setExtSaving] = useState(false)
+
+  // Progressive-disclosure composers (read-first: forms appear only on demand)
+  const [composingUpdate, setComposingUpdate] = useState(false)
+  const [composingAsk, setComposingAsk] = useState(false)
 
 
   // CV preview/import. Preview data remains in component memory only.
@@ -732,21 +750,15 @@ function OwnProfileView() {
   }, {})
 
   return (
-    <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 16 }}>
+    <div style={{ maxWidth: 780, margin: '0 auto', display: 'grid', gap: 22 }}>
 
-      <DeskHeader
-        kicker="Your profile"
-        title="Profile"
-        right={
-          <div style={{ display: 'flex', gap: 8 }}>
-            <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
-            <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
-            <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
-              {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
-            </KBtn>
-          </div>
-        }
-      />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+        <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
+        <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
+        <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
+          {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
+        </KBtn>
+      </div>
 
       {/* ─── Profile header (flat, sits on the page) ─────────────────────── */}
       <div style={{ display: 'flex', gap: isMobile ? 16 : 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -887,69 +899,81 @@ function OwnProfileView() {
 
       {/* ─── Working on now ─────────────────────────────────────────────────── */}
       <div ref={updatesSectionRef} style={{ scrollMarginTop: 96 }}>
-      <KCard style={{ padding: '18px 20px', marginBottom: 16, outline: highlightedProfileSection === 'updates' ? '3px solid rgba(216,68,43,0.32)' : 'none', boxShadow: highlightedProfileSection === 'updates' ? '0 0 0 8px rgba(216,68,43,0.08)' : undefined }}>
-        <SectionHead label="Working on now" />
-        {updates[0] ? (
-          <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
-            <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--ink)', margin: '0 0 6px' }}>{updates[0].content}</p>
-            <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>{relativeTime(updates[0].created_at)}</div>
+      <KCard style={{ padding: '20px 22px', outline: highlightedProfileSection === 'updates' ? '3px solid rgba(216,68,43,0.32)' : 'none', boxShadow: highlightedProfileSection === 'updates' ? '0 0 0 8px rgba(216,68,43,0.08)' : undefined }}>
+        <SectionHead label="Working on now" action={updates[0] && !composingUpdate ? 'Post update' : undefined} onAction={() => setComposingUpdate(true)} />
+        {composingUpdate ? (
+          <div>
+            <textarea
+              autoFocus
+              value={updateDraft}
+              onChange={(e) => setUpdateDraft(e.target.value.slice(0, 280))}
+              placeholder="New project, certification, internship update…"
+              rows={2}
+              style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>{updateDraft.length}/280</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <KBtn variant="ghost" size="sm" onClick={() => setComposingUpdate(false)}>Cancel</KBtn>
+                <KBtn variant="signal" size="sm" disabled={!updateDraft.trim() || postingUpdate} onClick={() => { void postUpdate(); setComposingUpdate(false) }}>
+                  {postingUpdate ? 'Posting…' : 'Post update'}
+                </KBtn>
+              </div>
+            </div>
+            {updatesError && <p style={{ fontSize: 12, color: 'var(--signal)', marginTop: 6 }}>{updatesError}</p>}
+          </div>
+        ) : updates[0] ? (
+          <div>
+            <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--ink)', margin: '0 0 6px' }}>{updates[0].content}</p>
+            <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>{relativeTime(updates[0].created_at)}</div>
           </div>
         ) : (
-          <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0, fontStyle: 'italic' }}>
-            Nothing posted yet. Share what you're building.
-          </p>
+          <button type="button" onClick={() => setComposingUpdate(true)} style={ghostAddStyle}>
+            + Share what you're working on
+          </button>
         )}
-        <div style={{ marginTop: 14 }}>
-          <textarea
-            value={updateDraft}
-            onChange={(e) => setUpdateDraft(e.target.value.slice(0, 280))}
-            placeholder="New project, certification, internship update…"
-            rows={2}
-            style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-            <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>{updateDraft.length}/280</span>
-            <KBtn variant="signal" size="sm" disabled={!updateDraft.trim() || postingUpdate} onClick={postUpdate}>
-              {postingUpdate ? 'Posting…' : 'Post update'}
-            </KBtn>
-          </div>
-          {updatesError && <p style={{ fontSize: 12, color: 'var(--signal)', marginTop: 6 }}>{updatesError}</p>}
-        </div>
       </KCard>
       </div>
 
       {/* ─── Open asks ──────────────────────────────────────────────────────── */}
-      <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
-        <SectionHead label="Open asks" />
+      <KCard style={{ padding: '20px 22px' }}>
+        <SectionHead label="Open asks" action={myAsks.length > 0 && !composingAsk ? 'Post ask' : undefined} onAction={() => setComposingAsk(true)} />
         {myAsks.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-            {myAsks.map((a) => (
-              <div key={a.id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
-                <p style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--ink)', margin: '0 0 4px' }}>{a.content}</p>
-                <div style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>{relativeTime(a.created_at)}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: composingAsk ? 16 : 0 }}>
+            {myAsks.map((a, i) => (
+              <div key={a.id} style={{ padding: '12px 0', borderTop: i === 0 ? 'none' : '0.5px solid var(--rule-soft)' }}>
+                <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--ink)', margin: '0 0 4px' }}>{a.content}</p>
+                <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>{relativeTime(a.created_at)}</div>
               </div>
             ))}
           </div>
         )}
-        {myAsks.length === 0 && (
-          <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: '0 0 14px', fontStyle: 'italic' }}>
-            No open asks yet. Let your network know what you need.
-          </p>
-        )}
-        <textarea
-          value={askDraft}
-          onChange={(e) => setAskDraft(e.target.value.slice(0, 300))}
-          placeholder="Looking for intros to fintech investors, a senior designer, an advisor…"
-          rows={2}
-          style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-          <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>{askDraft.length}/300</span>
-          <KBtn variant="signal" size="sm" disabled={!askDraft.trim() || postingAsk} onClick={postAsk}>
-            {postingAsk ? 'Posting…' : 'Post ask'}
-          </KBtn>
-        </div>
-        {asksError && <p style={{ fontSize: 12, color: 'var(--signal)', marginTop: 6 }}>{asksError}</p>}
+        {composingAsk ? (
+          <div style={{ marginTop: myAsks.length > 0 ? 0 : 0 }}>
+            <textarea
+              autoFocus
+              value={askDraft}
+              onChange={(e) => setAskDraft(e.target.value.slice(0, 300))}
+              placeholder="Looking for intros to fintech investors, a senior designer, an advisor…"
+              rows={2}
+              style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>{askDraft.length}/300</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <KBtn variant="ghost" size="sm" onClick={() => setComposingAsk(false)}>Cancel</KBtn>
+                <KBtn variant="signal" size="sm" disabled={!askDraft.trim() || postingAsk} onClick={() => { void postAsk(); setComposingAsk(false) }}>
+                  {postingAsk ? 'Posting…' : 'Post ask'}
+                </KBtn>
+              </div>
+            </div>
+            {asksError && <p style={{ fontSize: 12, color: 'var(--signal)', marginTop: 6 }}>{asksError}</p>}
+          </div>
+        ) : myAsks.length === 0 ? (
+          <button type="button" onClick={() => setComposingAsk(true)} style={ghostAddStyle}>
+            + Let your network know what you need
+          </button>
+        ) : null}
       </KCard>
 
       {/* ─── Experience ─────────────────────────────────────────────────────── */}

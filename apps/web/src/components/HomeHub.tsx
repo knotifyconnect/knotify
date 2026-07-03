@@ -847,41 +847,41 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
             </div>
 
             {/* Side quests mini (top 3 claimable, tap to open detail) */}
-            <div style={{ padding: 20, borderRadius: 18, background: T.ochreSoft, border: `0.5px solid ${T.ochre}` }}>
-              <SectionLabel right={<button onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.ochre, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>All <ChevronRight size={11} /></button>}>Side quests · earn cred</SectionLabel>
+            <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
+              <SectionLabel right={<button onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 12.5, color: T.ochre, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>All <ChevronRight size={12} /></button>}>Side quests</SectionLabel>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {claimable.slice(0, 3).map((q, i) => (
                   <motion.div key={q.key} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}>
-                    <button onClick={() => setSelectedQuest(q)} style={{ width: '100%', background: 'none', border: 'none', padding: '10px 0', borderBottom: `0.5px solid rgba(200,148,31,0.3)`, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}>
-                      <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.18)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A5A0F' }}>
+                    <button onClick={() => setSelectedQuest(q)} style={{ width: '100%', background: 'none', border: 'none', padding: '10px 0', borderBottom: `0.5px solid var(--rule-soft)`, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.18)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ochre)' }}>
                         <QuestIcon name={q.icon} size={15} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, color: '#5A3F0E', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
-                        <div style={{ fontSize: 11, color: '#8A6A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {q.type === 'self' ? 'Tap to see how to complete' : q.description}
                         </div>
                       </div>
-                      <span style={{ flexShrink: 0, fontFamily: T.display, fontStyle: 'italic', fontSize: 15, color: '#7A5A0F' }}>+{q.points}</span>
+                      <span style={{ flexShrink: 0, fontFamily: T.display, fontStyle: 'italic', fontSize: 15, color: 'var(--ochre)' }}>+{q.points}</span>
                     </button>
                   </motion.div>
                 ))}
                 {claimable.length < 3 && inProgress.slice(0, 3 - claimable.length).map((q) => (
-                  <button key={q.key} onClick={() => setSelectedQuest(q)} style={{ width: '100%', background: 'none', border: 'none', padding: '10px 0', borderBottom: `0.5px solid rgba(200,148,31,0.3)`, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', opacity: 0.85, textAlign: 'left' }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.1)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9A7A2A' }}>
+                  <button key={q.key} onClick={() => setSelectedQuest(q)} style={{ width: '100%', background: 'none', border: 'none', padding: '10px 0', borderBottom: `0.5px solid var(--rule-soft)`, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', opacity: 0.85, textAlign: 'left' }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.1)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-faint)' }}>
                       <QuestIcon name={q.icon} size={15} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, color: '#5A3F0E', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
-                      <div style={{ height: 4, borderRadius: 999, background: 'rgba(200,148,31,0.2)', marginTop: 5 }}>
+                      <div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
+                      <div style={{ height: 4, borderRadius: 999, background: 'var(--rule-soft)', marginTop: 5 }}>
                         <div style={{ width: `${Math.round(((q.progress ?? 0) / (q.target || 1)) * 100)}%`, height: '100%', borderRadius: 999, background: T.ochre }} />
                       </div>
                     </div>
-                    <span style={{ flexShrink: 0, fontSize: 11, color: '#8A6A1A', fontFamily: T.text }}>{q.progress}/{q.target}</span>
+                    <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--ink-muted)', fontFamily: T.text }}>{q.progress}/{q.target}</span>
                   </button>
                 ))}
                 {claimable.length === 0 && inProgress.length === 0 && (
-                  <div style={{ fontSize: 13, color: '#9A7020', fontStyle: 'italic', fontFamily: T.display, padding: '8px 0' }}>Complete quests to earn credibility.</div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-muted)', fontStyle: 'italic', fontFamily: T.display, padding: '8px 0' }}>Complete quests to earn credibility.</div>
                 )}
               </div>
             </div>
