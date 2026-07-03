@@ -817,7 +817,7 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <CredRing score={score} max={next?.at ?? 120} />
                   <div>
-                    <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, fontWeight: 500, letterSpacing: -0.3, lineHeight: 1.1 }}>{quests?.tier ?? 'Newcomer'}</div>
+                    <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, fontWeight: 500, letterSpacing: -0.3, lineHeight: 1.1 }}>{quests?.tier ?? 'Loose end'}</div>
                     <div style={{ fontSize: 11, color: 'rgba(250,246,238,0.55)', marginTop: 3, fontFamily: T.text }}>Credibility{quests?.percentile != null ? ` · top ${quests.percentile}%` : ''}</div>
                   </div>
                 </div>

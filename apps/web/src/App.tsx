@@ -9,6 +9,7 @@ import { LandingPage } from './pages/LandingPage'
 import { supabase } from './lib/supabase'
 import { useSessionStore } from './store/session'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { CelebrationLayer } from './components/celebrations/CelebrationLayer'
 import { ToastContainer } from './components/ui/Toast'
 import { CookieConsentBanner } from './components/CookieConsentBanner'
 import { apiGet } from './lib/api'
@@ -382,6 +383,7 @@ export default function App() {
           onReentryContinue={onReentryContinue}
         />
         <ToastContainer />
+        <CelebrationLayer />
         <CookieConsentBanner />
       </BrowserRouter>
     </AppErrorBoundary>

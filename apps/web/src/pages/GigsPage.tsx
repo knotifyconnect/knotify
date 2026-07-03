@@ -254,7 +254,7 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
       {elig && !elig.can_offer && tab === 'browse' && (
         <div style={{ marginBottom: 18, background: 'var(--paper-soft,#ede8df)', border: '0.5px solid var(--rule)', borderRadius: 12, padding: '14px 16px', fontSize: 13.5, color: 'var(--ink-muted)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <Lock size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-          <span>You can request gigs now. To <strong>offer</strong> gigs, reach <strong>{elig.unlock_at} credibility</strong> (Trusted). You're at {elig.credibility_score}. Complete quests to get there.</span>
+          <span>You can request gigs now. To <strong>offer</strong> gigs, reach <strong>{elig.unlock_at} credibility</strong> (the Bowline rank, the knot that holds weight). You're at {elig.credibility_score}. Complete quests to get there.</span>
         </div>
       )}
 
@@ -406,7 +406,7 @@ function MyGigsTab({ gigs, busyId, onAccept, onDecline, onComplete, onChat, onCl
       <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 20, marginBottom: 8 }}>You haven't offered any gigs.</div>
       {canOffer
         ? <button style={{ ...btn('var(--signal)'), marginTop: 6 }} onClick={onOffer}>Offer a gig</button>
-        : <div style={{ fontSize: 13.5 }}>Reach Trusted credibility to start offering.</div>}
+        : <div style={{ fontSize: 13.5 }}>Reach the Bowline rank to start offering.</div>}
     </div>
   )
   return (

@@ -6,7 +6,7 @@ import { ensureDirectConversation, postMessage } from '../services/conversation.
 
 export const gigsRouter = Router()
 
-const GIG_UNLOCK_AT = 70 // must match quests.ts tier threshold ("Trusted")
+const GIG_UNLOCK_AT = 70 // must match quests.ts rank threshold ("Bowline")
 const CREDIBILITY_PER_5_STAR = 3 // small bump per great review, scaled by rating
 
 const GIG_TYPES = ['cv_review', 'referral', 'mentorship', 'tour', 'advice', 'other'] as const
@@ -229,7 +229,7 @@ gigsRouter.post('/', requireAuth, async (req, res) => {
   const me = await supabase.from('users').select('credibility_score').eq('id', req.appUserId).maybeSingle()
   const score = me.data?.credibility_score ?? 0
   if (score < GIG_UNLOCK_AT) {
-    return res.status(403).json({ error: `Reach ${GIG_UNLOCK_AT} credibility (Trusted) to offer gigs. You have ${score}.` })
+    return res.status(403).json({ error: `Reach ${GIG_UNLOCK_AT} credibility (Bowline rank) to offer gigs. You have ${score}.` })
   }
 
   const parsed = createSchema.safeParse(req.body)
