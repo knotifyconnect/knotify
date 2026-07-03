@@ -219,14 +219,11 @@ export function QuestsPage() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 22 }}>
         <div>
-          <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            Field journal
-          </div>
-          <h1 style={{ fontFamily: serif, fontSize: 'clamp(30px, 4vw, 40px)', fontWeight: 400, letterSpacing: '-0.03em', margin: '6px 0 4px' }}>
-            Your Munich, in ink.
+          <h1 style={{ fontFamily: serif, fontSize: 'clamp(28px, 4vw, 38px)', fontWeight: 500, letterSpacing: '-0.02em', margin: '0 0 6px' }}>
+            Quests
           </h1>
           <p style={{ color: 'var(--ink-muted)', fontSize: 14.5, lineHeight: 1.55, margin: 0, maxWidth: 560 }}>
-            Quests are things worth doing in real life. Each one you complete leaves a mark here and ties your knot a little tighter.
+            Real-world things worth doing. Each one you complete builds your credibility and ties your knot a little tighter.
           </p>
         </div>
         <button
@@ -299,7 +296,7 @@ export function QuestsPage() {
           animate={{ opacity: 1, y: 0 }}
           style={{ margin: '18px 0 0', fontSize: 13.5, color: 'var(--verd)', fontWeight: 600 }}
         >
-          {claimableCount} stamp{claimableCount === 1 ? '' : 's'} waiting for you
+          {claimableCount} quest{claimableCount === 1 ? '' : 's'} ready to complete
         </motion.div>
       )}
 
@@ -502,10 +499,10 @@ function ChapterSection({ quests, ...rest }: SectionProps) {
 
   return (
     <section style={{ marginTop: 30 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, borderBottom: '1px dashed var(--rule)', paddingBottom: 8, marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingBottom: 8, marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Hourglass size={14} color="var(--signal)" />
-          <span style={{ fontFamily: serif, fontStyle: 'italic', fontSize: 19 }}>Open chapter</span>
+          <Hourglass size={15} color="var(--signal)" />
+          <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 500 }}>Limited time</span>
         </div>
         {daysLeft != null && (
           <span style={{ fontSize: 12, color: 'var(--signal)', fontWeight: 600 }}>
@@ -514,7 +511,7 @@ function ChapterSection({ quests, ...rest }: SectionProps) {
         )}
       </div>
       <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--ink-muted)' }}>
-        These pages close when the season ends. Stamps earned here can never be earned again.
+        These quests close when the season ends and can't be earned again.
       </p>
       <QuestGrid quests={quests} {...rest} />
     </section>
@@ -527,8 +524,8 @@ function CategorySection({ category, quests, ...rest }: SectionProps & { categor
 
   return (
     <section style={{ marginTop: 30 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderBottom: '1px dashed var(--rule)', paddingBottom: 8, marginBottom: 14 }}>
-        <span style={{ fontFamily: serif, fontStyle: 'italic', fontSize: 19 }}>{CATEGORY_LABEL[category]}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingBottom: 8, marginBottom: 14 }}>
+        <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 500 }}>{CATEGORY_LABEL[category]}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
             {done} of {quests.length}
@@ -618,8 +615,6 @@ function QuestCard({
       }}
     >
       <div onClick={onToggle} style={{ cursor: 'pointer', padding: 16, position: 'relative', transformStyle: 'preserve-3d', height: '100%', display: 'flex', flexDirection: 'column' }}>
-        {completed && <Artifact category={q.category} />}
-
         {/* top row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, transform: 'translateZ(18px)' }}>
           <div
@@ -706,17 +701,15 @@ function QuestCard({
                   style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', border: '2px solid var(--paper)', boxShadow: 'var(--lift-1)', transform: 'rotate(-3deg)' }}
                 />
               )}
-              <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
-                Stamped {q.completed_at ? new Date(q.completed_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }) : ''}
+              <span style={{ fontSize: 12, color: 'var(--verd)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Check size={13} /> Completed {q.completed_at ? new Date(q.completed_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }) : ''}
               </span>
               {q.partner_required && (
                 q.signature?.status === 'signed' ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
-                    <span style={{ fontFamily: "'Caveat', cursive", fontSize: 21, color: 'var(--ink-soft)', transform: 'rotate(-2deg)', display: 'inline-block' }}>
-                      {q.signature.signer?.full_name ?? 'A friend'}
-                    </span>
-                    <span style={{ fontSize: 10.5, color: 'var(--verd)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                      countersigned
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Check size={12} color="var(--verd)" />
+                    <span style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 500 }}>
+                      Verified by {q.signature.signer?.full_name ?? 'a friend'}
                     </span>
                   </span>
                 ) : q.signature?.status === 'pending' ? (
@@ -753,7 +746,7 @@ function QuestCard({
                 fontFamily: 'var(--font-text)', boxShadow: 'var(--lift-1)',
               }}
             >
-              {busy ? 'Stamping…' : q.type === 'self' ? 'Stamp it (photo)' : 'Claim stamp'}
+              {busy ? 'Completing…' : q.type === 'self' ? 'Add photo & complete' : 'Complete'}
             </motion.button>
           ) : (
             <span style={{ fontSize: 12, color: 'var(--ink-faint)', minHeight: 34, display: 'inline-flex', alignItems: 'center' }}>
@@ -762,23 +755,20 @@ function QuestCard({
           )}
         </div>
 
-        {/* claim stamp */}
+        {/* completed badge */}
         {completed && (
           <motion.div
-            initial={justClaimed ? { scale: 2.6, opacity: 0, rotate: -12 } : false}
-            animate={{ scale: 1, opacity: 1, rotate: -12 }}
+            initial={justClaimed ? { scale: 1.8, opacity: 0 } : false}
+            animate={{ scale: 1, opacity: 1 }}
             transition={spring.stamp}
             aria-hidden
             style={{
-              position: 'absolute', top: 10, right: 10, width: 58, height: 58,
-              border: '2px solid var(--verd)', borderRadius: '50%', color: 'var(--verd)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-              fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
-              lineHeight: 1.25, transform: 'rotate(-12deg)', background: 'rgba(250,246,238,0.75)',
+              position: 'absolute', top: 12, right: 12, width: 30, height: 30,
+              borderRadius: '50%', background: 'var(--verd)', color: '#fff',
+              display: 'grid', placeItems: 'center', boxShadow: 'var(--lift-1)',
             }}
           >
-            Done
-            <br />+{q.points}
+            <Check size={16} />
           </motion.div>
         )}
       </div>
@@ -786,69 +776,7 @@ function QuestCard({
   )
 }
 
-/* ── Artifacts: the physical evidence a quest leaves on the page ─────────── */
-
-function Artifact({ category }: { category: Quest['category'] }) {
-  switch (category) {
-    case 'social':
-      // coffee ring
-      return (
-        <div aria-hidden>
-          <div style={{ position: 'absolute', bottom: 14, right: 20, width: 58, height: 48, border: '3px solid var(--stain)', borderRadius: '50%', transform: 'rotate(-7deg)' }} />
-          <div style={{ position: 'absolute', bottom: 18, right: 14, width: 58, height: 48, border: '2px solid var(--stain-faint)', borderRadius: '50%', transform: 'rotate(5deg)' }} />
-        </div>
-      )
-    case 'explore':
-      // torn ticket stub
-      return (
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute', bottom: 12, right: -14, transform: 'rotate(-14deg)',
-            border: '1.5px dashed var(--ink-faint)', borderRadius: 6, padding: '5px 26px 5px 12px',
-            fontSize: 9, letterSpacing: '0.14em', color: 'var(--ink-faint)', fontWeight: 700,
-            background: 'var(--paper)', opacity: 0.85,
-          }}
-        >
-          MUC · ADMIT ONE
-        </div>
-      )
-    case 'network':
-      // a red thread tying off
-      return (
-        <svg aria-hidden viewBox="0 0 120 40" style={{ position: 'absolute', bottom: 8, right: 8, width: 96, opacity: 0.5 }}>
-          <path d="M4,30 C30,10 54,34 66,22 C74,14 66,6 60,14 C54,22 74,30 116,18" fill="none" stroke="var(--signal)" strokeWidth={2} strokeLinecap="round" />
-        </svg>
-      )
-    case 'profile':
-      // ink thumbprint
-      return (
-        <svg aria-hidden viewBox="0 0 40 48" style={{ position: 'absolute', bottom: 10, right: 16, width: 30, opacity: 0.22, transform: 'rotate(8deg)' }}>
-          {[16, 12.5, 9, 5.5].map((r, i) => (
-            <ellipse key={i} cx={20} cy={24} rx={r} ry={r * 1.25} fill="none" stroke="var(--ink)" strokeWidth={2.2} />
-          ))}
-        </svg>
-      )
-    case 'give':
-      // wax heart seal
-      return (
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute', bottom: 12, right: 14, width: 34, height: 34, borderRadius: '50%',
-            background: 'var(--signal-soft)', display: 'grid', placeItems: 'center',
-            transform: 'rotate(10deg)', fontSize: 15,
-          }}
-        >
-          <span style={{ color: 'var(--signal)' }}>♥</span>
-        </div>
-      )
-    default:
-      return null
-  }
-}
-
-/* ── Fog of war: the city clears as you actually go ──────────────────────── */
+/* ── District progress: the city clears as you actually go ───────────────── */
 
 type DistrictInfo = { key: string; name: string; visited: boolean; via: string | null }
 type DistrictsResponse = { total: number; visited_count: number; districts: DistrictInfo[] }
@@ -867,8 +795,8 @@ function CityFog() {
 
   return (
     <section style={{ marginTop: 34 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, borderBottom: '1px dashed var(--rule)', paddingBottom: 8, marginBottom: 10 }}>
-        <span style={{ fontFamily: serif, fontStyle: 'italic', fontSize: 19 }}>The city is the map</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingBottom: 8, marginBottom: 10 }}>
+        <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 500 }}>Districts explored</span>
         {data && (
           <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
             {data.visited_count} of {data.total} districts
@@ -989,7 +917,7 @@ function SignerPickerModal({
           </button>
         </div>
         <p style={{ fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.5, margin: '0 0 14px' }}>
-          They confirm <span style={{ fontFamily: serif, fontStyle: 'italic' }}>{quest.title}</span> happened, and their name is written into your journal.
+          They confirm <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{quest.title}</span> happened, and their name is recorded on your profile.
         </p>
         {loadError && <div style={{ color: 'var(--signal)', fontSize: 13, marginBottom: 10 }}>{loadError}</div>}
         {people == null && !loadError && <div style={{ color: 'var(--ink-faint)', fontSize: 13 }}>Loading your knot…</div>}
@@ -1080,7 +1008,7 @@ function SelfClaimModal({
           </button>
         </div>
         <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', lineHeight: 1.55, margin: '0 0 16px' }}>
-          Credibility on knotify is built on trust. Add a photo from the moment, it becomes part of your journal page.
+          Credibility on knotify is built on trust. Add a photo from the moment to complete this quest.
         </p>
 
         <label
@@ -1121,7 +1049,7 @@ function SelfClaimModal({
             fontSize: 14, fontWeight: 600, cursor: photo ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-text)',
           }}
         >
-          {busy ? 'Stamping…' : `Stamp it, +${quest.points}`}
+          {busy ? 'Completing…' : `Complete quest · +${quest.points}`}
         </motion.button>
       </motion.div>
     </motion.div>

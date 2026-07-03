@@ -300,7 +300,7 @@ export function KCard({
       onClick={onClick}
       style={{
         background: 'white',
-        border: '0.5px solid var(--rule)',
+        boxShadow: 'var(--lift-1)',
         borderRadius: 16,
         overflow: 'hidden',
         ...style,

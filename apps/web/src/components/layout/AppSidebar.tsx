@@ -309,7 +309,31 @@ export function AppSidebar() {
           </div>
         )}
 
-        {/* Logout (subtle, below profile) */}
+        {/* Settings + logout (subtle, below profile) */}
+        <button
+          type="button"
+          onClick={() => navigate('/settings')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            width: '100%',
+            padding: '8px 12px',
+            borderRadius: 8,
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--ink-muted)',
+            fontSize: 11.5,
+            fontFamily: "'IBM Plex Sans', sans-serif",
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper-deep)' }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+        >
+          <Settings size={12} />
+          Settings
+        </button>
         <button
           type="button"
           onClick={logout}

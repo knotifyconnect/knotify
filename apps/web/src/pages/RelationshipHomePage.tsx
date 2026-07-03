@@ -533,7 +533,7 @@ export function RelationshipHomePage() {
 
   // ── "Today's moves" — the unified queue ────────────────────────────────────
   const maintenanceNode = (stats.total > 0 || moves.length > 0) ? (
-    <div style={{ padding: 20, borderRadius: 16, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
+    <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
       <HealthStrip stats={stats} onOpenMap={() => navigate('/map')} />
       <DeskSectionLabel right={
         moves.length > 0 ? <span style={{ color: coldCount > 0 ? T.signal : coolingCount > 0 ? T.ochre : T.verd, textTransform: 'none', letterSpacing: 0, fontWeight: 700 }}>
@@ -557,7 +557,7 @@ export function RelationshipHomePage() {
               ask:       askByPeer.get(entry.peerId),
             })
             return (
-              <div key={entry.connectionId} style={{ borderRadius: 12, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, borderLeft: `3px solid ${sc}`, overflow: 'hidden' }}>
+              <div key={entry.connectionId} style={{ borderRadius: 12, background: T.paperSoft, borderLeft: `3px solid ${sc}`, overflow: 'hidden' }}>
                 {/* Top row: avatar + name/state + snooze */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px 0' }}>
                   <button type="button" onClick={() => navigate(`/profile/${entry.peer.id}`)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
@@ -649,8 +649,8 @@ export function RelationshipHomePage() {
       )}
     </div>
   ) : (
-    <div style={{ padding: '40px 32px', textAlign: 'center', borderRadius: 16, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
-      <p style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, color: T.ink, margin: '0 0 10px' }}>Your knot is empty.</p>
+    <div style={{ padding: '40px 32px', textAlign: 'center', borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
+      <p style={{ fontFamily: T.display, fontSize: 22, fontWeight: 500, color: T.ink, margin: '0 0 10px' }}>Your knot is empty</p>
       <p style={{ fontSize: 13.5, color: T.inkMuted, margin: '0 auto 20px', maxWidth: 380, lineHeight: 1.55, fontFamily: T.text }}>
         Connect with people and knotify will tell you who to reach out to, when, and why.
       </p>

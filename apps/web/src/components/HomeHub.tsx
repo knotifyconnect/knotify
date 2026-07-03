@@ -508,7 +508,8 @@ function EventsCarousel({ events, interests, onRsvp, onOpen, onSeeAll }: {
         style={{ display: 'flex', gap: 12, overflowX: 'auto', scrollSnapType: 'x mandatory', paddingBottom: 8, scrollbarWidth: 'none' }}>
         {events.map((e, i) => {
           const color = accentFor(e.id)
-          const matched = overlap(e.interests, interests) > 0
+          const sharedInterest = (e.interests ?? []).find((x) => interests.map((i) => i.toLowerCase()).includes(x.toLowerCase()))
+          const matched = Boolean(sharedInterest)
           return (
             <motion.div key={e.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
               onClick={() => onOpen(e)}
@@ -517,7 +518,7 @@ function EventsCarousel({ events, interests, onRsvp, onOpen, onSeeAll }: {
               <div style={{ height: 100, position: 'relative', background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : EVENT_GRAD[color] }}>
                 <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 6 }}>
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(0,0,0,0.28)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text }}>Event</span>
-                  {matched && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(0,0,0,0.28)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text }}>For you</span>}
+                  {matched && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(216,68,43,0.85)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text, textTransform: 'capitalize' }}>{sharedInterest}</span>}
                 </div>
               </div>
               <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -890,9 +891,6 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
 
         {/* ── Events carousel ───────────────────────────────────────────── */}
         <EventsCarousel events={rankedEvents} interests={interests} onRsvp={toggleRsvp} onOpen={setSelectedEvent} onSeeAll={() => navigate('/events')} />
-
-        {/* ── Side quests grid ──────────────────────────────────────────── */}
-        <SideQuestsSection quests={allQuests} onOpen={setSelectedQuest} />
 
         {/* ── People suggestions ────────────────────────────────────────── */}
         {people.length > 0 && (

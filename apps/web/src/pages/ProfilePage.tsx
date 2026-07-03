@@ -735,10 +735,11 @@ function OwnProfileView() {
     <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 16 }}>
 
       <DeskHeader
-        kicker="Profile · manage"
-        title={<span style={{ fontStyle: 'italic' }}>Your knotify</span>}
+        kicker="Your profile"
+        title="Profile"
         right={
           <div style={{ display: 'flex', gap: 8 }}>
+            <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
             <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
             <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
               {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
@@ -801,13 +802,10 @@ function OwnProfileView() {
 
               <div style={{ minWidth: 0, display: 'grid', gap: 10 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--signal)', fontWeight: 950 }}>
-                    Your profile signal
-                  </div>
                   <KPill color={pill.color}>{pill.label}</KPill>
                 </div>
 
-                <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(36px, 5vw, 58px)', lineHeight: 0.92, fontWeight: 400, letterSpacing: '-0.05em', margin: 0, color: 'var(--ink)' }}>
+                <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(30px, 4vw, 44px)', lineHeight: 1, fontWeight: 500, letterSpacing: '-0.03em', margin: 0, color: 'var(--ink)' }}>
                   {me.full_name}
                 </h1>
 
@@ -839,16 +837,6 @@ function OwnProfileView() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <KBtn variant="signal" size="sm" onClick={() => { setEditMode(!editMode) }}>
-                {editMode ? 'Cancel editing' : 'Edit profile'}
-              </KBtn>
-              {editMode && (
-                <KBtn variant="ghost" size="sm" disabled={saving} onClick={onSave}>
-                  {saving ? 'Saving...' : 'Save changes'}
-                </KBtn>
-              )}
-            </div>
           </div>
 
           <aside
@@ -863,7 +851,7 @@ function OwnProfileView() {
             }}
           >
             <div>
-              <div style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontWeight: 950 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
                 Signal strength
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
@@ -885,7 +873,7 @@ function OwnProfileView() {
             </div>
 
             <div style={{ borderTop: '1px solid rgba(35,31,28,0.08)', paddingTop: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 950, color: 'var(--ink)', marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
                 Next best move
               </div>
               <div style={{ display: 'grid', gap: 8 }}>

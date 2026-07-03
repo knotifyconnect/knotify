@@ -883,25 +883,20 @@ export function MessagesPage() {
     <div style={{ maxWidth: 1060, margin: '0 auto' }}>
 
       {/* ─── Header ──────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 5, fontFamily: "'IBM Plex Sans'" }}>
-            knotify · messages
-          </div>
-          <h1
-            style={{
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontSize: 'clamp(22px, 2.5vw, 34px)',
-              fontWeight: 400,
-              letterSpacing: '-0.03em',
-              margin: 0,
-            }}
-          >
-            Your <span style={{ fontStyle: 'italic', color: 'var(--signal)' }}>conversations.</span>
-          </h1>
-        </div>
-        <KBtn variant="ghost" size="sm" onClick={() => setNewChatOpen((p) => !p)}>
-          + New
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <h1
+          style={{
+            fontFamily: "'Fraunces', Georgia, serif",
+            fontSize: 'clamp(24px, 2.5vw, 30px)',
+            fontWeight: 500,
+            letterSpacing: '-0.02em',
+            margin: 0,
+          }}
+        >
+          Messages
+        </h1>
+        <KBtn variant="ink" size="sm" onClick={() => setNewChatOpen((p) => !p)}>
+          + New chat
         </KBtn>
       </div>
 
@@ -1033,12 +1028,12 @@ export function MessagesPage() {
           {/* List */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px' }}>
             {loadingConvs && !conversations.length && (
-              <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', fontStyle: 'italic', fontFamily: "'Fraunces'" }}>
+              <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                 Loading…
               </p>
             )}
             {!filteredConvs.length && !loadingConvs && (
-              <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', fontStyle: 'italic', fontFamily: "'Fraunces'" }}>
+              <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                 No conversations yet.
               </p>
             )}
@@ -1300,12 +1295,12 @@ export function MessagesPage() {
           >
             {!selectedId ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink-faint)', textAlign: 'center' }}>
+                <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 14, color: 'var(--ink-faint)', textAlign: 'center' }}>
                   Select a conversation to start messaging.
                 </p>
               </div>
             ) : loadingMsgs && !displayMessages.length ? (
-              <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 14, color: 'var(--ink-faint)' }}>
+              <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, color: 'var(--ink-faint)' }}>
                 Loading…
               </p>
             ) : displayMessages.length === 0 ? (
@@ -1313,7 +1308,7 @@ export function MessagesPage() {
                 {selectedConv?.peer && !selectedHistoryCleared && (
                   <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={52} style={{ margin: '0 auto 12px' }} />
                 )}
-                <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink-muted)', margin: 0 }}>
+                <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 15, fontWeight: 500, color: 'var(--ink-muted)', margin: 0 }}>
                   {selectedHistoryCleared
                     ? 'History cleared. New messages will appear here.'
                     : `Start the conversation with ${selectedConv?.peer?.full_name?.split(' ')[0] ?? 'them'}.`}
@@ -1409,13 +1404,13 @@ export function MessagesPage() {
                           style={{
                             padding: '9px 13px',
                             borderRadius: msg.is_mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                            background: isDeletedMessage ? 'transparent' : msg.is_mine ? 'var(--ink)' : 'var(--paper)',
+                            background: isDeletedMessage ? 'transparent' : msg.is_mine ? 'var(--ink)' : 'var(--paper-deep)',
                             color: isDeletedMessage ? 'var(--ink-faint)' : msg.is_mine ? 'var(--paper)' : 'var(--ink)',
-                            border: isDeletedMessage ? '0.5px dashed var(--rule-soft)' : msg.is_mine ? 'none' : '0.5px solid var(--rule-soft)',
-                            fontSize: 13.5,
+                            border: isDeletedMessage ? '0.5px dashed var(--rule-soft)' : 'none',
+                            fontSize: 14,
                             lineHeight: 1.5,
                             fontStyle: isDeletedMessage ? 'italic' : 'normal',
-                            boxShadow: isDeletedMessage ? 'none' : '0 1px 4px rgba(26,24,21,0.06)',
+                            boxShadow: 'none',
                           }}
                         >
                           <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{isDeletedMessage ? 'Message deleted' : msg.content}</div>
@@ -1629,10 +1624,10 @@ export function MessagesPage() {
                     minHeight: 42,
                     maxHeight: 120,
                     resize: 'none',
-                    borderRadius: 12,
+                    borderRadius: 21,
                     border: '0.5px solid var(--rule)',
-                    background: 'var(--paper-soft)',
-                    padding: '9px 40px 9px 12px',
+                    background: 'var(--paper-deep)',
+                    padding: '10px 42px 10px 16px',
                     fontSize: 14,
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     color: 'var(--ink)',
@@ -1669,7 +1664,7 @@ export function MessagesPage() {
                 size="sm"
                 disabled={!selectedId || !composer.trim() || sendLoading}
                 onClick={() => void sendMessage()}
-                style={{ flexShrink: 0, height: 42 }}
+                style={{ flexShrink: 0, height: 42, borderRadius: 21, padding: '0 20px' }}
               >
                 Send
               </KBtn>

@@ -42,32 +42,31 @@ export function DeskPage({ children, rail, maxWidth = 1100 }: { children: ReactN
   )
 }
 
-// ── Header: uppercase kicker + italic serif title + right slot ───────────────
-// Finished with a newspaper masthead rule: one strong ink line over a hairline.
+// ── Header: subtle kicker + serif title + right slot ─────────────────────────
+// Modernized: no newspaper masthead rules. Fraunces title stays as the brand
+// signature; the kicker is a quiet supporting label.
 export function DeskHeader({ kicker, title, right }: { kicker: ReactNode; title: ReactNode; right?: ReactNode }) {
   return (
-    <div style={{ marginBottom: 22 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: 10, color: T.inkMuted, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: T.text }}>{kicker}</div>
-          <div style={{ fontFamily: T.display, fontSize: 'clamp(24px, 3vw, 30px)', fontWeight: 400, letterSpacing: '-0.02em', marginTop: 4, lineHeight: 1.05 }}>{title}</div>
+          {kicker != null && kicker !== '' && (
+            <div style={{ fontSize: 12.5, color: T.inkFaint, fontFamily: T.text, marginBottom: 3 }}>{kicker}</div>
+          )}
+          <div style={{ fontFamily: T.display, fontSize: 'clamp(26px, 3.2vw, 34px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{title}</div>
         </div>
         {right && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>{right}</div>}
       </div>
-      <div aria-hidden style={{ borderTop: `2px solid ${T.ink}`, marginBottom: 2 }} />
-      <div aria-hidden style={{ borderTop: `0.5px solid ${T.rule}` }} />
     </div>
   )
 }
 
-// Editorial section label: small caps, then a hairline leader running to the
-// right slot — the newspaper "section rule" instead of a floating caption.
+// Section label: a clean, confident caption. No uppercase, no leader rule.
 export function SectionLabel({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
-    <div style={{ fontSize: 11, color: T.inkMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', fontWeight: 600, fontFamily: T.text, gap: 10 }}>
-      <span style={{ flexShrink: 0 }}>{children}</span>
-      <span aria-hidden style={{ flex: 1, minWidth: 12, height: 1, background: T.ruleSoft }} />
-      {right && <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>{right}</span>}
+    <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+      <span style={{ fontSize: 14, color: T.ink, fontWeight: 600, fontFamily: T.text, letterSpacing: '-0.01em' }}>{children}</span>
+      {right && <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: T.inkMuted }}>{right}</span>}
     </div>
   )
 }
@@ -135,13 +134,13 @@ export function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
 
 export function EditCard({ title, sub, action, onAction, children }: { title: string; sub?: string; action?: string; onAction?: () => void; children: ReactNode }) {
   return (
-    <div style={{ padding: 18, borderRadius: 16, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, gap: 8 }}>
+    <div style={{ padding: 20, borderRadius: 16, background: '#fff', boxShadow: 'var(--lift-1)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14, gap: 8 }}>
         <div>
-          <span style={{ fontSize: 11, color: T.inkMuted, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, fontFamily: T.text }}>{title}</span>
-          {sub && <span style={{ fontSize: 11, color: T.inkFaint, marginLeft: 8 }}>{sub}</span>}
+          <span style={{ fontSize: 14, color: T.ink, fontWeight: 600, fontFamily: T.text, letterSpacing: '-0.01em' }}>{title}</span>
+          {sub && <span style={{ fontSize: 12, color: T.inkFaint, marginLeft: 8 }}>{sub}</span>}
         </div>
-        {action && <button type="button" onClick={onAction} style={{ background: 'none', border: 'none', fontSize: 11.5, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>{action}</button>}
+        {action && <button type="button" onClick={onAction} style={{ background: 'none', border: 'none', fontSize: 12.5, color: T.signal, fontWeight: 600, cursor: 'pointer', fontFamily: T.text }}>{action}</button>}
       </div>
       {children}
     </div>
@@ -151,13 +150,13 @@ export function EditCard({ title, sub, action, onAction, children }: { title: st
 // ── Rail card wrappers ───────────────────────────────────────────────────────
 export function RailCard({ children, tone = 'soft', style }: { children: ReactNode; tone?: 'soft' | 'ink' | 'signal' | 'verd' | 'ochre'; style?: CSSProperties }) {
   const tones: Record<string, CSSProperties> = {
-    soft: { background: T.paper, border: `0.5px solid ${T.rule}`, color: T.ink },
+    soft: { background: '#fff', boxShadow: 'var(--lift-1)', color: T.ink },
     ink: { background: T.ink, color: T.paperSoft },
     signal: { background: T.signal, color: '#fff' },
     verd: { background: T.verd, color: '#fff' },
-    ochre: { background: T.ochreSoft, border: `0.5px solid ${T.ochre}`, color: '#6A4E12' },
+    ochre: { background: T.ochreSoft, color: '#6A4E12' },
   }
-  return <div style={{ padding: 16, borderRadius: 14, ...tones[tone], ...style }}>{children}</div>
+  return <div style={{ padding: 16, borderRadius: 16, ...tones[tone], ...style }}>{children}</div>
 }
 
 // Stable accent color from a string (for gradient fallbacks where no image exists)
