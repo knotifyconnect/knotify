@@ -1,0 +1,63 @@
+{
+  "id": "hierarchical-multi-entry-boundaries",
+  "coverage": [
+    "one-column",
+    "english",
+    "company-before-role",
+    "role-before-company",
+    "multi-role-line",
+    "parent-child-hierarchy",
+    "incomplete-entry-retention",
+    "unknown-section-boundary"
+  ],
+  "expected": {
+    "experience": [
+      {
+        "company": "Example Automotive GmbH",
+        "role": "Working Student PM",
+        "startDate": "2022-03",
+        "endDate": "current"
+      },
+      {
+        "company": "Private",
+        "role": "Investment Analyst",
+        "startDate": "2019-04",
+        "endDate": "current"
+      },
+      {
+        "company": "Example Automotive GmbH",
+        "role": "Internship PM",
+        "startDate": "2021-10",
+        "endDate": "2022-02"
+      },
+      {
+        "company": "Example Electronics",
+        "role": null,
+        "startDate": "2017-09",
+        "endDate": "2018-02"
+      }
+    ],
+    "education": [
+      {
+        "institution": "Example Technical University",
+        "degree": "M.Sc.",
+        "field": "Consumer Science",
+        "startDate": "2023-10",
+        "endDate": "current"
+      },
+      {
+        "institution": "Example University",
+        "degree": "B.Eng.",
+        "field": "Industrial Engineering",
+        "startDate": "2018-10",
+        "endDate": "2023-09"
+      }
+    ],
+    "skills": [],
+    "languages": [],
+    "forbiddenDescriptionText": [
+      "Market Maker Trading Simulation",
+      "Startup Example Electronics"
+    ]
+  }
+}

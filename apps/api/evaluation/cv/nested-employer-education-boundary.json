@@ -1,0 +1,76 @@
+{
+  "id": "nested-employer-education-boundary",
+  "coverage": [
+    "one-column",
+    "english",
+    "company-before-role",
+    "multiple-degrees",
+    "language-proficiency",
+    "unusual-section-name"
+  ],
+  "expected": {
+    "experience": [
+      {
+        "company": "Acme Mobility GmbH",
+        "role": "Working Student - Project Management",
+        "startDate": "2022-03",
+        "endDate": "current"
+      },
+      {
+        "company": "Acme Mobility GmbH",
+        "role": "Internship - Project Management",
+        "startDate": "2021-10",
+        "endDate": "2022-02"
+      },
+      {
+        "company": "Beta Logistics GmbH",
+        "role": "Working Student - Logistics Operation",
+        "startDate": "2020-07",
+        "endDate": "2021-03"
+      },
+      {
+        "company": "Gamma Electronics",
+        "role": "Founder Start-up",
+        "startDate": "2017-09",
+        "endDate": "2018-02"
+      }
+    ],
+    "education": [
+      {
+        "institution": "Technical University of Example",
+        "degree": "M.Sc.",
+        "field": "Consumer Science",
+        "startDate": "2023-10",
+        "endDate": "current"
+      },
+      {
+        "institution": "Example University",
+        "degree": "B.Eng.",
+        "field": "Industrial Engineering",
+        "startDate": "2018-10",
+        "endDate": "2023-09"
+      },
+      {
+        "institution": "Example Institute",
+        "degree": "Diploma",
+        "field": "Mechanical Engineering",
+        "startDate": "2014-07",
+        "endDate": "2017-06"
+      }
+    ],
+    "skills": [
+      "Excel (advanced)",
+      "Power BI"
+    ],
+    "languages": [
+      {
+        "name": "English",
+        "proficiency": "Fluent"
+      },
+      {
+        "name": "German",
+        "proficiency": "B2"
+      }
+    ]
+  }
+}

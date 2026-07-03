@@ -1,0 +1,15 @@
+{
+  "id": "multi-page-cv",
+  "coverage": ["one-column", "english", "multi-page", "role-before-company"],
+  "expected": {
+    "experience": [
+      { "company": "Northstar GmbH", "role": "Product Manager", "startDate": "2022", "endDate": "current" },
+      { "company": "Southstar AG", "role": "Business Analyst", "startDate": "2019", "endDate": "2021" }
+    ],
+    "education": [
+      { "institution": "Example University", "degree": "M.A.", "field": "Management", "startDate": "2017", "endDate": "2019" }
+    ],
+    "skills": [],
+    "languages": []
+  }
+}

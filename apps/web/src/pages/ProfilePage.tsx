@@ -24,6 +24,15 @@ import { AvatarPicker } from '../components/ui/avatar-picker'
 import { AvatarGroup } from '../components/ui/avatar-1'
 import { avatarUrl } from '../lib/avatar'
 import { useIsMobile } from '../hooks/useIsMobile'
+import {
+  CvImportReviewModal,
+  type CvApplyPayload,
+  type CvPreview,
+  type CvPreviewAnalysis,
+  type CvPreviewResponse,
+  type CvPreviewSkill,
+} from '../components/profile/CvImportReviewModal'
+const CV_PREVIEW_TIMEOUT_MS = 45_000
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -82,38 +91,41 @@ type ProfileExtended = {
   languages: string[]
 }
 
-type CvExtractResult = {
-  education: EducationEntry[]
-  experience: ExperienceEntry[]
-  skillIds: number[]
-  skillNames?: string[]
-  bio: string | null
-  headline: string | null
-  languages?: string[]
+
+type CvApplyResponse = {
+  applied: {
+    educationInserted: number
+    experienceInserted: number
+    skillsInserted: number
+  }
+  user: {
+    id: string
+    headline: string | null
+    bio: string | null
+    languages: string[]
+  }
+  education: Array<{
+    id: string
+    institution: string
+    degree: string | null
+    field: string | null
+    startYear: number | null
+    endYear: number | null
+    description: string | null
+    sortOrder: number
+  }>
+  experience: Array<{
+    id: string
+    company: string
+    role: string
+    startDate: string | null
+    endDate: string | null
+    description: string | null
+    sortOrder: number
+  }>
+  skills: CvPreviewSkill[]
 }
 
-type CareerPath = {
-  title?: string
-  description?: string
-  matchScore?: number
-  skillGaps?: Array<{ skill?: string; priority?: string }>
-}
-
-type CvAnalysis = {
-  id: string
-  career_paths: CareerPath[]
-  extracted_skills: Array<{ name?: string; category?: string; confidence?: string }>
-  analysis_status: string
-  created_at: string
-}
-
-type CvSkill = {
-  id: string
-  name: string
-  category: string | null
-  is_verified: boolean
-  source: string
-}
 
 type ProfileUpdate = {
   id: string
@@ -275,15 +287,32 @@ function OwnProfileView() {
   const [expDraft, setExpDraft] = useState<ExperienceEntry[]>([])
   const [extSaving, setExtSaving] = useState(false)
 
-  // CV extract
+
+  // CV preview/import. Preview data remains in component memory only.
   const [cvFile, setCvFile] = useState<File | null>(null)
   const [cvExtracting, setCvExtracting] = useState(false)
-  const [cvExtractResult, setCvExtractResult] = useState<CvExtractResult | null>(null)
+  const [cvElapsedSeconds, setCvElapsedSeconds] = useState(0)
+  const [cvExtractResult, setCvExtractResult] = useState<CvPreview | null>(null)
+  const [cvAnalysis, setCvAnalysis] = useState<CvPreviewAnalysis | null>(null)
+  const [cvSkills, setCvSkills] = useState<CvPreviewSkill[]>([])
   const [cvError, setCvError] = useState<string | null>(null)
   const cvInputRef = useRef<HTMLInputElement>(null)
-  // Legacy CV analysis (career paths + cv-extracted skills from /api/cv/upload)
-  const [cvAnalysis, setCvAnalysis] = useState<CvAnalysis | null>(null)
-  const [cvSkills, setCvSkills] = useState<CvSkill[]>([])
+
+  useEffect(() => {
+    if (!cvExtracting) {
+      setCvElapsedSeconds(0)
+      return
+    }
+
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      setCvElapsedSeconds(
+        Math.max(1, Math.floor((Date.now() - startedAt) / 1000))
+      )
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [cvExtracting])
 
   // Updates (working on now)
   const [updates, setUpdates] = useState<ProfileUpdate[]>([])
@@ -308,12 +337,6 @@ function OwnProfileView() {
       .catch(() => setConnectionCount(0))
   }, [])
 
-  // Load any existing CV analysis (career paths + cv-extracted skills)
-  useEffect(() => {
-    apiGet<{ analysis: CvAnalysis | null; skills: CvSkill[] }>('/api/cv/analysis')
-      .then((d) => { setCvAnalysis(d.analysis ?? null); setCvSkills(d.skills ?? []) })
-      .catch(() => { /* no analysis yet, fine */ })
-  }, [])
 
   useEffect(() => {
     apiGet<{ user: Me }>('/api/users/me')
@@ -509,100 +532,125 @@ function OwnProfileView() {
     } catch { /* ignore */ }
   }
 
-  // ── CV extract ────────────────────────────────────────────────────────────
 
-  // Upload CV → original multipart endpoint → career paths + cv-extracted skills.
-  // Refreshes profile-extended so any auto-filled fields show up right away.
+  // ── CV preview/import ─────────────────────────────────────────────────────
+
   async function extractCv() {
     if (!cvFile) return
+
     setCvExtracting(true)
     setCvError(null)
+
     try {
       const form = new FormData()
       form.append('cv', cvFile)
-      const result = await apiPostForm<{
-        analysisId: string
-        analysis: {
-          careerPaths: CareerPath[]
-          extractedSkills: Array<{ name?: string; category?: string }>
-          summary?: string
-          profileExtract?: {
-            headline: string | null
-            bio: string | null
-            education: Array<{ institution: string; degree: string; field: string; start_year: string; end_year: string; description: string }>
-            experience: Array<{ company: string; role: string; start_date: string; end_date: string; description: string }>
-          } | null
-        }
-        skills: CvSkill[]
-      }>('/api/cv/upload', form)
 
-      // Re-fetch full analysis (server normalises shape)
-      try {
-        const fresh = await apiGet<{ analysis: CvAnalysis | null; skills: CvSkill[] }>('/api/cv/analysis')
-        setCvAnalysis(fresh.analysis ?? null)
-        setCvSkills(fresh.skills ?? result.skills ?? [])
-      } catch {
-        setCvAnalysis({
-          id: result.analysisId,
-          career_paths: result.analysis.careerPaths ?? [],
-          extracted_skills: result.analysis.extractedSkills ?? [],
-          analysis_status: 'complete',
-          created_at: new Date().toISOString(),
-        })
-        setCvSkills(result.skills ?? [])
+      const result = await apiPostForm<CvPreviewResponse>(
+        '/api/cv/preview',
+        form,
+        { timeoutMs: CV_PREVIEW_TIMEOUT_MS }
+      )
+
+      const preview = result.preview
+      const hasPreview =
+        Boolean(preview.headline || preview.bio) ||
+        preview.education.length > 0 ||
+        preview.experience.length > 0 ||
+        preview.skills.length > 0 ||
+        preview.languages.length > 0
+
+      if (!hasPreview) {
+        setCvAnalysis(result.analysis)
+        setCvSkills([])
+        setCvError(
+          'No profile data could be extracted. Make sure the PDF contains selectable text.'
+        )
+        return
       }
 
-      // Build the diff preview from Claude's profile extraction
-      const pe = result.analysis.profileExtract
-      const extractedNames = (result.analysis.extractedSkills ?? []).map((s) => s.name ?? '').filter(Boolean)
-      // Match against catalog, if catalog not yet loaded, IDs will be empty but we still
-      // open the modal (hasDiff uses extractedNames, not matchedSkillIds, as the gate)
-      const matchedSkillIds = skillCatalog
-        .filter((s) => extractedNames.some((n) => n.toLowerCase() === s.name.toLowerCase()))
-        .map((s) => s.id)
-
-      const hasDiff = (pe?.education?.length ?? 0) > 0
-        || (pe?.experience?.length ?? 0) > 0
-        || extractedNames.length > 0
-        || !!(pe?.bio || pe?.headline)
-
-      if (hasDiff) {
-        setCvExtractResult({
-          education: pe?.education ?? [],
-          experience: pe?.experience ?? [],
-          skillIds: matchedSkillIds,
-          skillNames: extractedNames,
-          bio: pe?.bio ?? null,
-          headline: pe?.headline ?? null,
-        })
-      } else {
-        setCvError('CV uploaded but no profile data could be extracted. Make sure the PDF contains selectable text.')
-      }
-
-      // Refresh profile-extended in case server auto-filled anything mapped to curated skills
-      try { await loadExtended() } catch { /* noop */ }
+      setCvExtractResult(preview)
+      setCvAnalysis(result.analysis)
+      setCvSkills(preview.skills)
     } catch (err) {
-      setCvError(err instanceof Error ? err.message : 'CV extraction failed')
+      setCvError(
+        err instanceof Error ? err.message : 'CV preview failed'
+      )
     } finally {
       setCvExtracting(false)
       setCvFile(null)
-      if (cvInputRef.current) cvInputRef.current.value = ''
+
+      if (cvInputRef.current) {
+        cvInputRef.current.value = ''
+      }
     }
   }
 
-  async function applyCvDiff(diff: CvExtractResult, opts: { edu: boolean; exp: boolean; skills: boolean; bio: boolean }) {
-    const promises: Promise<unknown>[] = []
-    if (opts.edu && diff.education.length) promises.push(apiPut('/api/users/me/education', { education: diff.education }).then((d: unknown) => { const t = d as { education: EducationEntry[] }; setEducation(t.education ?? diff.education) }))
-    if (opts.exp && diff.experience.length) promises.push(apiPut('/api/users/me/experience', { experience: diff.experience }).then((d: unknown) => { const t = d as { experience: ExperienceEntry[] }; setExperience(t.experience ?? diff.experience) }))
-    if (opts.skills && diff.skillIds.length) promises.push(apiPut('/api/users/me/skills', { skillIds: diff.skillIds }).then(() => setUserSkillIds(diff.skillIds)))
-    if (opts.bio && (diff.bio || diff.headline) && me) {
-      const patch: Record<string, string> = {}
-      if (diff.bio) patch.bio = diff.bio
-      if (diff.headline) patch.headline = diff.headline
-      promises.push(apiPatch<{ user: Me }>('/api/users/me', patch).then((d) => setMe(d.user)))
+  async function applyCvDiff(payload: CvApplyPayload) {
+    setCvError(null)
+
+    try {
+      const result = await apiPost<CvApplyResponse>(
+        '/api/cv/apply',
+        payload
+      )
+
+      setMe((current) =>
+        current
+          ? {
+              ...current,
+              headline: result.user.headline,
+              bio: result.user.bio,
+              languages: result.user.languages,
+            }
+          : current
+      )
+
+      setEducation(
+        result.education.map((item) => ({
+          id: item.id,
+          institution: item.institution,
+          degree: item.degree ?? '',
+          field: item.field ?? '',
+          start_year:
+            item.startYear === null ? '' : String(item.startYear),
+          end_year:
+            item.endYear === null ? '' : String(item.endYear),
+          description: item.description ?? '',
+        }))
+      )
+
+      setExperience(
+        result.experience.map((item) => ({
+          id: item.id,
+          company: item.company,
+          role: item.role,
+          start_date: item.startDate ?? '',
+          end_date: item.endDate ?? '',
+          description: item.description ?? '',
+        }))
+      )
+
+      setUserSkillIds(
+        result.skills
+          .map((skill) => skill.catalogSkillId)
+          .filter((id): id is number => typeof id === 'number')
+      )
+
+      setCvSkills(
+        result.skills.map((skill) => ({
+          ...skill,
+          matchedCatalog: true,
+        }))
+      )
+
+      setCvExtractResult(null)
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'CV import failed'
+
+      setCvError(message)
+      throw err
     }
-    await Promise.allSettled(promises)
-    setCvExtractResult(null)
   }
 
   // ── Updates ───────────────────────────────────────────────────────────────
@@ -1226,7 +1274,7 @@ function OwnProfileView() {
       <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
         <SectionHead label="CV & career paths" />
         <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
-          Upload your CV, Claude analyses it, suggests career paths, and extracts your skills.
+          Review an editable preview before saving. The PDF and extracted raw text are not stored by this import flow.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <label style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '0.5px dashed var(--rule)', background: 'var(--paper-soft)', fontSize: 13, color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1240,52 +1288,68 @@ function OwnProfileView() {
             {cvExtracting ? 'Analysing…' : 'Upload & analyse'}
           </KBtn>
         </div>
+        {cvExtracting && (
+          <div style={{ marginTop: 9, fontSize: 11.5, color: 'var(--ink-muted)', lineHeight: 1.45 }}>
+            Analysing locally... {cvElapsedSeconds}s. The request stops after 45 seconds and falls back safely when the model is slow.
+          </div>
+        )}
         {cvError && <p style={{ fontSize: 12, color: 'var(--signal)', marginTop: 8 }}>{cvError}</p>}
 
         {/* Career path suggestions */}
-        {cvAnalysis?.career_paths && cvAnalysis.career_paths.length > 0 && (
+        {cvAnalysis?.careerPaths && cvAnalysis.careerPaths.length > 0 && (
           <div style={{ marginTop: 18 }}>
             <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 10 }}>
               Suggested career paths
             </div>
             <div style={{ display: 'grid', gap: 10 }}>
-              {cvAnalysis.career_paths.map((path, idx) => (
+              {cvAnalysis.careerPaths.map((path, idx) => (
                 <CareerPathCard key={idx} path={path} />
               ))}
             </div>
           </div>
         )}
 
-        {/* CV-extracted skills */}
+
+        {/* Latest in-memory CV skill preview */}
         {cvSkills.length > 0 && (
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: '0.5px solid var(--rule-soft)' }}>
             <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>
-              Skills extracted from your CV
+              Latest CV skill preview
             </div>
+
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {cvSkills.map((s) => (
+              {cvSkills.map((skill, index) => (
                 <span
-                  key={s.id}
+                  key={String(skill.catalogSkillId ?? 'new') + ':' + skill.name + ':' + index}
                   style={{
                     padding: '3px 9px',
                     borderRadius: 999,
-                    background: s.is_verified ? 'var(--verd-soft)' : 'var(--paper-soft)',
-                    border: `0.5px solid ${s.is_verified ? 'rgba(31,107,94,0.25)' : 'var(--rule)'}`,
+                    background: skill.matchedCatalog
+                      ? 'var(--verd-soft)'
+                      : 'var(--paper-soft)',
+                    border: skill.matchedCatalog
+                      ? '0.5px solid rgba(31,107,94,0.25)'
+                      : '0.5px solid var(--rule)',
                     fontSize: 11.5,
-                    color: s.is_verified ? 'var(--verd)' : 'var(--ink-muted)',
+                    color: skill.matchedCatalog
+                      ? 'var(--verd)'
+                      : 'var(--ink-muted)',
                     fontFamily: "'IBM Plex Sans', sans-serif",
                   }}
-                  title={s.category ?? undefined}
+                  title={skill.category}
                 >
-                  {s.is_verified ? '✓ ' : ''}{s.name}
+                  {skill.matchedCatalog ? '✓ ' : ''}
+                  {skill.name}
                 </span>
               ))}
             </div>
+
             <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 8, fontStyle: 'italic', fontFamily: "'Fraunces', Georgia, serif" }}>
-              Match these against the curated skills list (Skills section above) to make them verifiable on your profile.
+              Preview only. Skills are saved only after you approve them in the review window.
             </p>
           </div>
         )}
+
       </KCard>
 
       {/* ─── Links ──────────────────────────────────────────────────────────── */}
@@ -1450,114 +1514,20 @@ function OwnProfileView() {
         </div>
       )}
 
-      {/* ─── CV diff preview modal ───────────────────────────────────────────── */}
+
+      {/* ─── CV review modal ────────────────────────────────────────────────── */}
       {cvExtractResult && (
-        <CvDiffModal
+        <CvImportReviewModal
           result={cvExtractResult}
-          skillCatalog={skillCatalog}
+          analysis={cvAnalysis}
           onApply={applyCvDiff}
           onClose={() => setCvExtractResult(null)}
         />
       )}
+
     </div>
   )
 }
-
-// ─── CV diff modal ────────────────────────────────────────────────────────────
-
-function CvDiffModal({
-  result,
-  skillCatalog,
-  onApply,
-  onClose,
-}: {
-  result: CvExtractResult
-  skillCatalog: SkillCatalogItem[]
-  onApply: (r: CvExtractResult, opts: { edu: boolean; exp: boolean; skills: boolean; bio: boolean }) => Promise<void>
-  onClose: () => void
-}) {
-  const [applyEdu, setApplyEdu] = useState(true)
-  const [applyExp, setApplyExp] = useState(true)
-  const [applySkills, setApplySkills] = useState(true)
-  const [applyBio, setApplyBio] = useState(!!(result.bio || result.headline))
-  const [applying, setApplying] = useState(false)
-
-  const extractedSkillNames = (result.skillNames && result.skillNames.length)
-    ? result.skillNames
-    : skillCatalog.filter((s) => result.skillIds.includes(s.id)).map((s) => s.name)
-
-  async function apply() {
-    setApplying(true)
-    try {
-      await onApply(result, { edu: applyEdu, exp: applyExp, skills: applySkills, bio: applyBio })
-    } finally { setApplying(false) }
-  }
-
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(26,24,21,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(4px)' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 600, background: 'var(--paper)', borderRadius: 18, padding: 24, maxHeight: '90vh', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
-          <div>
-            <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: 21, fontWeight: 500, margin: 0, letterSpacing: -0.2 }}>CV extraction preview</h2>
-            <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '4px 0 0' }}>Review what Claude found. Toggle sections on/off before applying.</p>
-          </div>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--ink-faint)' }}>✕</button>
-        </div>
-
-        {/* Section toggles */}
-        {[
-          { key: 'edu', label: 'Education', count: result.education.length, value: applyEdu, set: setApplyEdu },
-          { key: 'exp', label: 'Experience', count: result.experience.length, value: applyExp, set: setApplyExp },
-          { key: 'skills', label: 'Skills', count: extractedSkillNames.length, value: applySkills, set: setApplySkills },
-          { key: 'bio', label: 'Bio / Headline', count: result.bio || result.headline ? 1 : 0, value: applyBio, set: setApplyBio },
-        ].map(({ key, label, count, value, set }) => count > 0 && (
-          <div key={key} style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 10, border: `0.5px solid ${value ? 'var(--verd)' : 'var(--rule)'}`, background: value ? 'var(--verd-soft)' : 'var(--paper-soft)', transition: 'all 0.15s' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--ink)' }}>{label} <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', fontWeight: 400 }}>({count} item{count > 1 ? 's' : ''})</span></div>
-              <button type="button" onClick={() => set((v) => !v)}
-                style={{ padding: '4px 10px', borderRadius: 999, border: value ? 'none' : '0.5px solid var(--rule)', background: value ? 'var(--verd)' : 'transparent', color: value ? '#fff' : 'var(--ink-muted)', fontSize: 12, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}>
-                {value ? '✓ Apply' : 'Skip'}
-              </button>
-            </div>
-
-            {/* Preview content */}
-            {key === 'edu' && result.education.map((e, i) => (
-              <div key={i} style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 3 }}>
-                <strong>{e.institution}</strong>{e.degree ? ` · ${e.degree}` : ''}{e.start_year ? ` (${e.start_year}${e.end_year ? `–${e.end_year}` : ''})` : ''}
-              </div>
-            ))}
-            {key === 'exp' && result.experience.map((e, i) => (
-              <div key={i} style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 3 }}>
-                <strong>{e.role}</strong> at {e.company}{e.start_date ? ` (${e.start_date.slice(0, 7)})` : ''}
-              </div>
-            ))}
-            {key === 'skills' && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                {extractedSkillNames.map((name) => (
-                  <span key={name} style={{ padding: '3px 8px', borderRadius: 999, background: 'rgba(31,107,94,0.1)', fontSize: 11.5, color: 'var(--verd)' }}>{name}</span>
-                ))}
-              </div>
-            )}
-            {key === 'bio' && (
-              <div>
-                {result.headline && <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 3 }}><strong>Headline:</strong> {result.headline}</div>}
-                {result.bio && <div style={{ fontSize: 12.5, color: 'var(--ink-muted)' }}><strong>Bio:</strong> {result.bio.slice(0, 120)}{result.bio.length > 120 ? '…' : ''}</div>}
-              </div>
-            )}
-          </div>
-        ))}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-          <KBtn variant="ghost" size="sm" onClick={onClose} disabled={applying}>Dismiss</KBtn>
-          <KBtn variant="signal" size="sm" onClick={apply} disabled={applying || (!applyEdu && !applyExp && !applySkills && !applyBio)}>
-            {applying ? 'Applying…' : 'Apply selected'}
-          </KBtn>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 
 // ─── Public profile view ─────────────────────────────────────────────────────
 

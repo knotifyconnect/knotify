@@ -29,3 +29,22 @@ apps/api/dist/
 # Logs
 *.log
 npm-debug.log*
+
+# Supabase local CLI state and remote-link metadata
+supabase/.temp/
+supabase/.branches/
+
+# Local one-time repair, diagnostic, and release-capture artifacts
+/apply-*.ps1
+/repair-*.ps1
+/collect-*.ps1
+/complete-*.ps1
+/prepare-*.ps1
+/*.zip
+
+# Accidental local binaries that are not application source
+/ChatGPT Installer.exe
+/Microsoft.Services.Store.winmd
+
+# Supabase local CLI link metadata
+/supabase/.temp/

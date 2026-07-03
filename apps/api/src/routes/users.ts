@@ -1,11 +1,10 @@
-﻿import { Router } from 'express'
+import { Router } from 'express'
 import { z } from 'zod'
 import multer from 'multer'
-import Anthropic from '@anthropic-ai/sdk'
+import { analyseCv } from '../services/cvAnalysis.js'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const uploadCv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 
 const updateMeSchema = z.object({
@@ -670,7 +669,7 @@ usersRouter.put('/me/skills', requireAuth, async (req, res) => {
   return res.json({ skills })
 })
 
-// CV extraction via Claude
+// Local CV extraction
 // Accepts JSON body: { pdfBase64?: string, text?: string, filename?: string }
 // (Avoids multipart/form-data which has issues with @vercel/node serverless.)
 usersRouter.post('/me/cv-extract', requireAuth, async (req, res) => {
@@ -706,30 +705,19 @@ usersRouter.post('/me/cv-extract', requireAuth, async (req, res) => {
   void filename
 
   try {
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: `Extract structured profile data from this CV/resume text. Return ONLY a JSON object (no markdown, no explanation) with these fields (omit fields you cannot find):
-{
-  "name": "Full Name",
-  "headline": "Current role or professional headline (max 120 chars)",
-  "education": [{ "institution": "University Name", "degree": "Bachelor of Science", "field": "Computer Science", "start_year": 2018, "end_year": 2022 }],
-  "experience": [{ "company": "Company Name", "role": "Software Engineer", "start_date": "2022-01", "end_date": "2024-03" }],
-  "skills": ["Python", "React", "SQL"],
-  "languages": ["English", "German"]
-}
-
-CV Text:
-${text.slice(0, 8000)}`,
-      }],
-    })
-
-    const raw = message.content[0]?.type === 'text' ? message.content[0].text : ''
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return res.status(422).json({ error: 'Could not parse CV data' })
-    const parsed = JSON.parse(jsonMatch[0])
+    const analysis = await analyseCv(text)
+    const parsed = {
+      headline: analysis.profileExtract.headline,
+      bio: analysis.profileExtract.bio,
+      education: analysis.profileExtract.education,
+      experience: analysis.profileExtract.experience,
+      skills: analysis.extractedSkills
+        .filter((skill) => skill.category !== 'language')
+        .map((skill) => skill.name),
+      languages: analysis.extractedSkills
+        .filter((skill) => skill.category === 'language')
+        .map((skill) => skill.name),
+    }
 
     // Map skill names to skill_catalog IDs (case-insensitive)
     const skillNames: string[] = Array.isArray(parsed.skills) ? parsed.skills.filter((s: unknown) => typeof s === 'string') : []

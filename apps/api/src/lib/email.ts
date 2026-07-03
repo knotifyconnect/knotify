@@ -1,13 +1,26 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+let resend: Resend | null = null
+
+function getResend(): Resend {
+  if (resend) return resend
+
+  const apiKey = process.env.RESEND_API_KEY?.trim()
+
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY is not configured')
+  }
+
+  resend = new Resend(apiKey)
+  return resend
+}
 
 const FROM = 'knotify <hello@knotify.pro>'
 const WEB_URL = process.env.PUBLIC_WEB_URL || 'https://knotify.pro'
 
 export async function sendFriendInviteEmail(opts: { to: string; inviterName: string; url: string }) {
   const { to, inviterName, url } = opts
-  const { error } = await resend.emails.send({
+  const { error } = await getResend().emails.send({
     from: FROM,
     to,
     subject: `${inviterName} invited you to knotify`,
@@ -55,7 +68,7 @@ export async function sendBetaApprovalEmail(to: string, name?: string) {
   const firstName = name?.split(' ')[0] ?? 'there'
   const signupUrl = `${WEB_URL}/signup`
 
-  const { error } = await resend.emails.send({
+  const { error } = await getResend().emails.send({
     from: FROM,
     to,
     subject: "You're in — welcome to knotify",

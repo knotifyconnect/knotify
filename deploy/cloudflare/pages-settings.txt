@@ -1,0 +1,14 @@
+Project type: Cloudflare Pages
+Repository root: /
+Build command: npm ci && npm run build:production --workspace @nodenet/web
+Build output directory: apps/web/dist
+Production branch: pilot (or the chosen protected release branch)
+Build system: v3
+Node version: 22.16.0 (pinned by .node-version)
+
+Required build environment variables:
+VITE_API_URL
+VITE_APP_URL
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+NODE_VERSION=22.16.0

@@ -1,0 +1,39 @@
+{
+  "id": "wrapped-continuation-lines",
+  "coverage": [
+    "one-column",
+    "english",
+    "wrapped-continuation-lines",
+    "hanging-indent",
+    "hyphenated-line-break",
+    "unknown-section-boundary"
+  ],
+  "expected": {
+    "experience": [],
+    "education": [
+      {
+        "institution": "Example Technical University",
+        "degree": "M.Sc.",
+        "field": "Energy Systems",
+        "startDate": "2020-10",
+        "endDate": "2022-09"
+      },
+      {
+        "institution": "Example Applied University",
+        "degree": "B.Eng.",
+        "field": "Chemical Engineering",
+        "startDate": "2016-10",
+        "endDate": "2020-09"
+      }
+    ],
+    "skills": [],
+    "languages": [],
+    "requiredDescriptionText": [
+      "Notable Project: Hybrid Redox Flow Battery - Conducted R&D on electrolyte flow.",
+      "Research focus: electrochemical storage systems for long-duration energy."
+    ],
+    "forbiddenDescriptionText": [
+      "Market Maker Trading Simulation"
+    ]
+  }
+}

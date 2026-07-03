@@ -1,0 +1,18 @@
+{
+  "id": "english-two-column-right-dates",
+  "coverage": ["two-column", "english", "right-aligned-dates", "company-before-role", "language-proficiency"],
+  "expected": {
+    "experience": [
+      { "company": "Acme GmbH", "role": "Senior Engineer", "startDate": "2022-02", "endDate": "current" },
+      { "company": "Beta Labs", "role": "Software Engineer", "startDate": "2019", "endDate": "2021" }
+    ],
+    "education": [
+      { "institution": "Example University", "degree": "B.Sc.", "field": "Computer Science", "startDate": "2015", "endDate": "2019" }
+    ],
+    "skills": ["TypeScript", "PostgreSQL"],
+    "languages": [
+      { "name": "English", "proficiency": "C2" },
+      { "name": "German", "proficiency": "B1" }
+    ]
+  }
+}
