@@ -189,12 +189,12 @@ function relativeTime(value: string) {
 
 function SectionHead({ label, action, onAction }: { label: string; action?: string; onAction?: () => void }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-      <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 18, fontWeight: 500, letterSpacing: '-0.01em', color: 'var(--ink)' }}>
         {label}
       </div>
       {action && (
-        <button type="button" onClick={onAction} style={{ fontSize: 12, color: 'var(--signal)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        <button type="button" onClick={onAction} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--signal)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           {action}
         </button>
       )}
@@ -748,183 +748,84 @@ function OwnProfileView() {
         }
       />
 
-      <KCard style={{ padding: 0, marginBottom: 2, overflow: 'hidden', background: '#fffaf3' }}>
-        <div
-          style={{
-            minHeight: 238,
-            background:
-              'radial-gradient(circle at 8% 0%, rgba(216,68,43,0.13) 0%, transparent 34%), linear-gradient(135deg, #fffaf3 0%, #f4eadb 100%)',
-            padding: isMobile ? 18 : 28,
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 320px',
-            gap: isMobile ? 18 : 22,
-            alignItems: 'stretch',
-            borderBottom: '1px solid rgba(35,31,28,0.08)',
-          }}
-        >
-          <div style={{ display: 'grid', alignContent: 'space-between', gap: 24 }}>
-            <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-              <div style={{ position: 'relative', flexShrink: 0 }}>
-                <img
-                  src={avatarDraft || me.avatar_url || avatarUrl(me.full_name, 160)}
-                  alt={me.full_name}
-                  style={{
-                    width: 92,
-                    height: 92,
-                    borderRadius: 28,
-                    border: '2px solid rgba(255,255,255,0.9)',
-                    objectFit: 'cover',
-                    display: 'block',
-                    boxShadow: '0 18px 45px rgba(35,31,28,0.16)',
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setAvatarEditorOpen(true)}
-                  style={{
-                    position: 'absolute',
-                    right: -6,
-                    bottom: -6,
-                    border: 0,
-                    borderRadius: 999,
-                    background: 'var(--signal)',
-                    color: 'white',
-                    fontSize: 11,
-                    fontWeight: 850,
-                    padding: '7px 10px',
-                    cursor: 'pointer',
-                    boxShadow: '0 10px 24px rgba(216,68,43,0.25)',
-                  }}
-                >
-                  Edit
-                </button>
-              </div>
-
-              <div style={{ minWidth: 0, display: 'grid', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <KPill color={pill.color}>{pill.label}</KPill>
-                </div>
-
-                <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(30px, 4vw, 44px)', lineHeight: 1, fontWeight: 500, letterSpacing: '-0.03em', margin: 0, color: 'var(--ink)' }}>
-                  {me.full_name}
-                </h1>
-
-                {editMode ? (
-                  <input
-                    value={me.headline ?? ''}
-                    onChange={(e) => setMe({ ...me, headline: e.target.value.slice(0, 120) })}
-                    placeholder="CS student building AI products"
-                    style={{ ...fieldStyle, background: 'rgba(255,255,255,0.76)', borderColor: 'rgba(35,31,28,0.14)', color: 'var(--ink)', maxWidth: 560 }}
-                  />
-                ) : (
-                  <p style={{ margin: 0, color: 'var(--ink-muted)', fontSize: 16, lineHeight: 1.55, maxWidth: 620 }}>
-                    {me.headline || 'Add a headline so people know what to come to you for.'}
-                  </p>
-                )}
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
-                  {[me.location_city, me.current_company, me.university].filter(Boolean).map((item) => (
-                    <span key={item} style={{ border: '1px solid rgba(35,31,28,0.10)', background: 'rgba(255,255,255,0.62)', borderRadius: 999, padding: '7px 11px', fontSize: 12.5, color: 'var(--ink-muted)' }}>
-                      {item}
-                    </span>
-                  ))}
-                  {!me.location_city && !me.current_company && !me.university && (
-                    <span style={{ border: '1px solid rgba(35,31,28,0.10)', background: 'rgba(255,255,255,0.62)', borderRadius: 999, padding: '7px 11px', fontSize: 12.5, color: 'var(--ink-muted)' }}>
-                      Add city, company, or university
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-          </div>
-
-          <aside
-            style={{
-              background: 'rgba(255,255,255,0.76)',
-              border: '1px solid rgba(35,31,28,0.09)',
-              borderRadius: 26,
-              padding: 18,
-              display: 'grid',
-              gap: 16,
-              boxShadow: '0 20px 60px rgba(35,31,28,0.08)',
-            }}
+      {/* ─── Profile header (flat, sits on the page) ─────────────────────── */}
+      <div style={{ display: 'flex', gap: isMobile ? 16 : 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <img
+            src={avatarDraft || me.avatar_url || avatarUrl(me.full_name, 160)}
+            alt={me.full_name}
+            style={{ width: 104, height: 104, borderRadius: 26, border: '3px solid #fff', objectFit: 'cover', display: 'block', boxShadow: 'var(--lift-2)' }}
+          />
+          <button
+            type="button"
+            onClick={() => setAvatarEditorOpen(true)}
+            aria-label="Edit photo"
+            style={{ position: 'absolute', right: -6, bottom: -6, border: '2px solid #fff', borderRadius: 999, background: 'var(--signal)', color: 'white', fontSize: 11, fontWeight: 600, padding: '5px 11px', cursor: 'pointer', boxShadow: 'var(--lift-1)' }}
           >
-            <div>
-              <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
-                Signal strength
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-                {[
-                  { label: 'Connections', value: String(connectionCount) },
-                  { label: 'Skills', value: String(userSkillIds.length || 0) },
-                  { label: 'Updates', value: String(updates.length || 0) },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ borderRadius: 16, background: '#fffaf3', padding: '12px 11px', border: '1px solid rgba(35,31,28,0.08)' }}>
-                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 22, color: 'var(--ink)', lineHeight: 1 }}>
-                      {value}
-                    </div>
-                    <div style={{ marginTop: 5, fontSize: 10, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-                      {label}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ borderTop: '1px solid rgba(35,31,28,0.08)', paddingTop: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
-                Next best move
-              </div>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {!updates[0] && (
-                  <button type="button" onClick={() => scrollToProfileSection('updates')} style={{ textAlign: 'left', border: '1px solid rgba(35,31,28,0.09)', background: '#fffaf3', color: 'var(--ink-muted)', borderRadius: 14, padding: '10px 11px', fontSize: 12.5, cursor: 'pointer' }}>
-                    Share what you are working on
-                  </button>
-                )}
-                {experience.length === 0 && (
-                  <button type="button" onClick={() => { startExpEdit(); scrollToProfileSection('experience') }} style={{ textAlign: 'left', border: '1px solid rgba(35,31,28,0.09)', background: '#fffaf3', color: 'var(--ink-muted)', borderRadius: 14, padding: '10px 11px', fontSize: 12.5, cursor: 'pointer' }}>
-                    Add one experience or project
-                  </button>
-                )}
-                {education.length === 0 && (
-                  <button type="button" onClick={() => { startEduEdit(); scrollToProfileSection('education') }} style={{ textAlign: 'left', border: '1px solid rgba(35,31,28,0.09)', background: '#fffaf3', color: 'var(--ink-muted)', borderRadius: 14, padding: '10px 11px', fontSize: 12.5, cursor: 'pointer' }}>
-                    Add education
-                  </button>
-                )}
-                {updates[0] && experience.length > 0 && education.length > 0 && (
-                  <div style={{ color: 'var(--ink-muted)', fontSize: 12.5, lineHeight: 1.5 }}>
-                    Your profile has enough signal to start connecting.
-                  </div>
-                )}
-              </div>
-            </div>
-          </aside>
+            Edit
+          </button>
         </div>
 
-        {!editMode && me.bio && (
-          <div style={{ padding: isMobile ? '16px 18px 20px' : '18px 28px 24px', background: 'var(--paper)', borderTop: '1px solid var(--rule-soft)' }}>
-            <p style={{ maxWidth: 760, fontSize: 14.5, lineHeight: 1.65, color: 'var(--ink-soft)', margin: 0 }}>
-              {me.bio}
-            </p>
+        <div style={{ flex: 1, minWidth: 240, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(28px, 4vw, 40px)', lineHeight: 1.02, fontWeight: 500, letterSpacing: '-0.03em', margin: 0, color: 'var(--ink)' }}>
+              {me.full_name}
+            </h1>
+            <KPill color={pill.color}>{pill.label}</KPill>
           </div>
-        )}
 
-        {editMode && (
-          <div style={{ padding: '18px 28px 24px', background: 'var(--paper)', borderTop: '1px solid var(--rule-soft)' }}>
-            <textarea
-              value={me.bio ?? ''}
-              onChange={(e) => setMe({ ...me, bio: e.target.value.slice(0, 500) })}
-              placeholder="Short bio: what are you building, learning, or looking for?"
-              rows={3}
-              style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
+          {editMode ? (
+            <input
+              value={me.headline ?? ''}
+              onChange={(e) => setMe({ ...me, headline: e.target.value.slice(0, 120) })}
+              placeholder="e.g. CS student building AI products"
+              style={{ ...fieldStyle, maxWidth: 560 }}
             />
-            <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'", marginTop: 3 }}>
-              {(me.bio ?? '').length}/500
-            </div>
+          ) : (
+            <p style={{ margin: 0, color: me.headline ? 'var(--ink-soft)' : 'var(--ink-faint)', fontSize: 16, lineHeight: 1.5, maxWidth: 620 }}>
+              {me.headline || 'Add a headline so people know what to come to you for.'}
+            </p>
+          )}
+
+          <div style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{profileMeta}</div>
+
+          <div style={{ display: 'flex', gap: 22, marginTop: 6, flexWrap: 'wrap' }}>
+            {([
+              { label: 'connections', value: connectionCount, onClick: () => navigate('/map') },
+              { label: 'skills', value: userSkillIds.length, onClick: undefined },
+              { label: 'updates', value: updates.length, onClick: undefined },
+            ] as { label: string; value: number; onClick?: () => void }[]).map(({ label, value, onClick }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={onClick}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'baseline', gap: 5, fontFamily: "'IBM Plex Sans', sans-serif" }}
+              >
+                <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>{value}</span>
+                <span style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{label}</span>
+              </button>
+            ))}
           </div>
-        )}
-      </KCard>
+        </div>
+      </div>
+
+      {/* Bio */}
+      {editMode ? (
+        <div>
+          <textarea
+            value={me.bio ?? ''}
+            onChange={(e) => setMe({ ...me, bio: e.target.value.slice(0, 500) })}
+            placeholder="Short bio: what are you building, learning, or looking for?"
+            rows={3}
+            style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
+          />
+          <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'", marginTop: 3 }}>
+            {(me.bio ?? '').length}/500
+          </div>
+        </div>
+      ) : me.bio ? (
+        <p style={{ fontSize: 15, lineHeight: 1.65, color: 'var(--ink-soft)', margin: 0, maxWidth: 720 }}>{me.bio}</p>
+      ) : null}
       {/* ─── Edit mode fields ────────────────────────────────────────────────── */}
       {editMode && (
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>

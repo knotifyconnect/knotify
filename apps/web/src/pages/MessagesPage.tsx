@@ -880,83 +880,64 @@ export function MessagesPage() {
   const EMOJI_KEYBOARD = ['😊', '😂', '❤️', '👍', '🙌', '🔥', '🎉', '🤔', '😎', '👏', '✨', '💪', '🚀', '💯', '🙏']
 
   return (
-    <div style={{ maxWidth: 1060, margin: '0 auto' }}>
-
-      {/* ─── Header ──────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <h1
-          style={{
-            fontFamily: "'Fraunces', Georgia, serif",
-            fontSize: 'clamp(24px, 2.5vw, 30px)',
-            fontWeight: 500,
-            letterSpacing: '-0.02em',
-            margin: 0,
-          }}
-        >
-          Messages
-        </h1>
-        <KBtn variant="ink" size="sm" onClick={() => setNewChatOpen((p) => !p)}>
-          + New chat
-        </KBtn>
-      </div>
-
+    <div style={{ height: 'calc(100dvh - 104px)', minHeight: 460, display: 'flex', flexDirection: 'column' }}>
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.2)', color: 'var(--signal)', fontSize: 13, marginBottom: 12 }}>
           {error}
         </div>
       )}
 
-      {/* ─── Layout ──────────────────────────────────────────────────────── */}
-      {/* Desktop: list (300px) + thread side-by-side.
-          Mobile: SHOW EITHER list OR thread (switcher driven by selectedId).
-          Picking a chat → thread; back arrow in thread → list. */}
+      {/* App-shell: one surface split into conversation list + thread.
+          Mobile: show EITHER list OR thread (switcher driven by selectedId). */}
       <div
+        className="!grid-cols-1 md:!grid-cols-[340px_1fr]"
         style={{
+          flex: 1,
+          minHeight: 0,
           display: 'grid',
-          gridTemplateColumns: '300px minmax(0,1fr)',
-          gap: 12,
-          height: 'calc(100vh - 200px)',
-          minHeight: 400,
+          gridTemplateColumns: '340px minmax(0,1fr)',
+          borderRadius: 18,
+          overflow: 'hidden',
+          background: '#fff',
+          boxShadow: 'var(--lift-2)',
         }}
-        className="!grid-cols-1 md:!grid-cols-[300px_1fr]"
       >
         {/* ── Conversation list ─────────────────────────────────────────── */}
-        {/* On mobile: hidden when a chat is selected */}
-        <KCard
+        <div
           className={selectedId ? 'hidden md:flex' : 'flex'}
-          style={{ padding: 0, flexDirection: 'column', overflow: 'hidden' }}
+          style={{ flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid var(--rule-soft)', background: 'var(--paper-soft)' }}
         >
-          {/* Search */}
-          <div style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--rule-soft)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>Chats</span>
-              {unreadTotal > 0 && (
-                <span
-                  style={{
-                    fontSize: 10.5,
-                    fontWeight: 600,
-                    color: 'white',
-                    background: 'var(--signal)',
-                    borderRadius: 999,
-                    padding: '1px 7px',
-                    fontFamily: "'IBM Plex Mono'",
-                  }}
-                >
-                  {unreadTotal}
-                </span>
-              )}
+          {/* List header + search */}
+          <div style={{ padding: '18px 18px 12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 500, letterSpacing: '-0.02em', margin: 0 }}>Messages</h1>
+                {unreadTotal > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'white', background: 'var(--signal)', borderRadius: 999, padding: '1px 8px' }}>
+                    {unreadTotal}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setNewChatOpen((p) => !p)}
+                aria-label="New chat"
+                style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--ink)', color: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 20, lineHeight: 1, flexShrink: 0 }}
+              >
+                +
+              </button>
             </div>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search conversations…"
+              placeholder="Search"
               style={{
                 width: '100%',
-                padding: '8px 11px',
-                borderRadius: 9,
-                border: '0.5px solid var(--rule)',
-                background: 'var(--paper-soft)',
-                fontSize: 13,
+                padding: '9px 14px',
+                borderRadius: 999,
+                border: 'none',
+                background: 'var(--paper-deep)',
+                fontSize: 13.5,
                 fontFamily: "'IBM Plex Sans', sans-serif",
                 color: 'var(--ink)',
                 outline: 'none',
@@ -1096,13 +1077,13 @@ export function MessagesPage() {
               </button>
             ))}
           </div>
-        </KCard>
+        </div>
 
         {/* ── Thread ────────────────────────────────────────────────────── */}
         {/* On mobile: hidden when no chat selected */}
-        <KCard
+        <div
           className={selectedId ? 'flex' : 'hidden md:flex'}
-          style={{ padding: 0, flexDirection: 'column', overflow: 'hidden' }}
+          style={{ flexDirection: 'column', overflow: 'hidden', background: '#fff' }}
         >
           {/* Thread header */}
           <div
@@ -1670,7 +1651,7 @@ export function MessagesPage() {
               </KBtn>
             </div>
           </div>
-        </KCard>
+        </div>
       </div>
 
       {/* Plan coffee modal */}

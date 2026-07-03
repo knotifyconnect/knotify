@@ -121,9 +121,8 @@ const GIG_TYPES = [
 // ── Shared primitives ─────────────────────────────────────────────────────────
 function SectionLabel({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
   return (
-    <div style={{ fontSize: 11, color: T.inkMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', fontWeight: 600, fontFamily: T.text, gap: 10 }}>
-      <span style={{ flexShrink: 0 }}>{children}</span>
-      <span aria-hidden style={{ flex: 1, minWidth: 12, height: 1, background: T.ruleSoft }} />
+    <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+      <span style={{ fontFamily: T.display, fontSize: 18, fontWeight: 500, letterSpacing: '-0.01em', color: T.ink }}>{children}</span>
       {right && <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>{right}</span>}
     </div>
   )
