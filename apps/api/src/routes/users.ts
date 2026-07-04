@@ -21,6 +21,19 @@ const updateMeSchema = z.object({
     })
     .nullable()
     .optional(),
+  bannerUrl: z
+    .string()
+    .max(1400000)
+    .refine((value) => value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:image/'), {
+      message: 'bannerUrl must be a URL or image data URL',
+    })
+    .nullable()
+    .optional(),
+  profileLayout: z
+    .array(z.object({ id: z.string().max(40), visible: z.boolean() }))
+    .max(40)
+    .nullable()
+    .optional(),
   locationCity: z.string().optional(),
   status: z.enum(['studying', 'open_to_work', 'employed']).optional(),
   locationLat: z.number().optional(),
@@ -171,6 +184,8 @@ usersRouter.patch('/me', requireAuth, async (req, res) => {
   if (data.university !== undefined) update.university = data.university.trim()
   if (data.currentCompany !== undefined) update.current_company = data.currentCompany.trim()
   if (data.avatarUrl !== undefined) update.avatar_url = data.avatarUrl ? data.avatarUrl.trim() : null
+  if (data.bannerUrl !== undefined) update.banner_url = data.bannerUrl ? data.bannerUrl.trim() : null
+  if (data.profileLayout !== undefined) update.profile_layout = data.profileLayout
   if (data.locationCity !== undefined) update.location_city = data.locationCity.trim()
   if (data.status !== undefined) update.status = data.status
   if (data.locationLat !== undefined) update.location_lat = data.locationLat

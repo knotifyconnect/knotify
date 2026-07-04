@@ -20,7 +20,7 @@ import { trackEvent } from '../lib/analytics'
 import { CareerPathCard } from '../components/profile/CareerPathCard'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '../lib/knotify'
-import { DeskHeader } from '../lib/desk'
+import { DeskHeader, Toggle, CredRingDark } from '../lib/desk'
 import { AvatarPicker } from '../components/ui/avatar-picker'
 import { AvatarGroup } from '../components/ui/avatar-1'
 import { avatarUrl } from '../lib/avatar'
@@ -58,6 +58,8 @@ type Me = {
   can_help_with?: string | null
   is_hr?: boolean
   is_admin?: boolean
+  banner_url?: string | null
+  profile_layout?: Array<{ id: string; visible: boolean }> | null
 }
 
 type EducationEntry = {
@@ -215,6 +217,51 @@ const fieldStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 }
 
+// Downscale an uploaded image to a JPEG data URL (banners are wide, keep bytes sane).
+async function downscaleImage(file: File, maxW: number, quality: number): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const im = new Image()
+    im.onload = () => resolve(im)
+    im.onerror = reject
+    im.src = dataUrl
+  })
+  const scale = Math.min(1, maxW / img.width)
+  const w = Math.round(img.width * scale)
+  const h = Math.round(img.height * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return dataUrl
+  ctx.drawImage(img, 0, 0, w, h)
+  return canvas.toDataURL('image/jpeg', quality)
+}
+
+// A calm branded default banner when the user hasn't uploaded one — reflects rank.
+function defaultBanner(tier?: string): string {
+  const map: Record<string, string> = {
+    'Loose end': 'linear-gradient(120deg, #EBE4D6 0%, #D9D1BF 100%)',
+    Overhand: 'linear-gradient(120deg, #F0E0B5 0%, #C8941F 120%)',
+    Bowline: 'linear-gradient(120deg, #1F6B5E 0%, #123f38 120%)',
+    Masthead: 'linear-gradient(120deg, #1A1815 0%, #5C2A4F 120%)',
+  }
+  return map[tier ?? ''] ?? 'linear-gradient(120deg, #F4EFE6 0%, #E5D2DD 60%, #C8DDD7 100%)'
+}
+
+// Widgets the user can show/hide on their own profile (persisted to profile_layout).
+const PROFILE_WIDGETS: { id: string; label: string }[] = [
+  { id: 'credibility', label: 'Credibility' },
+  { id: 'working', label: 'Working on now' },
+  { id: 'asks', label: 'Open asks' },
+  { id: 'invite', label: 'Invite link' },
+]
+
 // Read-first "add" affordance: a quiet full-width prompt that opens a composer.
 const ghostAddStyle: React.CSSProperties = {
   width: '100%',
@@ -305,6 +352,38 @@ function OwnProfileView() {
   // Progressive-disclosure composers (read-first: forms appear only on demand)
   const [composingUpdate, setComposingUpdate] = useState(false)
   const [composingAsk, setComposingAsk] = useState(false)
+
+  // Profile widgets that moved here from Home: credibility + invite link + banner.
+  const [credibility, setCredibility] = useState<{ score: number; tier: string; next: { name: string; at: number } | null; gigUnlocked: boolean; gigUnlockAt: number; weeklyDelta: number; percentile: number | null } | null>(null)
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const [inviteCopied, setInviteCopied] = useState(false)
+  const [bannerBusy, setBannerBusy] = useState(false)
+  const [customizing, setCustomizing] = useState(false)
+
+  useEffect(() => {
+    apiGet<{ credibility_score: number; tier: string; next_tier: { name: string; at: number } | null; gig_unlocked: boolean; gig_unlock_at: number; weekly_delta?: number; percentile?: number | null }>('/api/quests')
+      .then((r) => setCredibility({ score: r.credibility_score, tier: r.tier, next: r.next_tier, gigUnlocked: r.gig_unlocked, gigUnlockAt: r.gig_unlock_at, weeklyDelta: r.weekly_delta ?? 0, percentile: r.percentile ?? null }))
+      .catch(() => {})
+    apiGet<{ url: string }>('/api/invites/me').then((r) => setInviteUrl(r.url)).catch(() => {})
+  }, [])
+
+  async function saveBanner(file: File | null) {
+    setBannerBusy(true)
+    try {
+      const bannerUrl = file ? await downscaleImage(file, 1600, 0.82) : null
+      const res = await apiPatch<{ user: Me }>('/api/users/me', { bannerUrl })
+      setMe((m) => (m ? { ...m, banner_url: res.user.banner_url } : m))
+    } catch { /* ignore */ } finally {
+      setBannerBusy(false)
+    }
+  }
+
+  function copyInvite() {
+    if (!inviteUrl) return
+    navigator.clipboard.writeText(inviteUrl)
+      .then(() => { setInviteCopied(true); setTimeout(() => setInviteCopied(false), 2000) })
+      .catch(() => {})
+  }
 
 
   // CV preview/import. Preview data remains in component memory only.
@@ -749,16 +828,64 @@ function OwnProfileView() {
     return acc
   }, {})
 
+  // Customizable widgets: user can show/hide these (saved to the account).
+  const hiddenWidgets = new Set((me.profile_layout ?? []).filter((w) => !w.visible).map((w) => w.id))
+  const isWidgetVisible = (id: string) => !hiddenWidgets.has(id)
+  function toggleWidget(id: string) {
+    const next = PROFILE_WIDGETS.map((w) => ({ id: w.id, visible: w.id === id ? hiddenWidgets.has(id) : !hiddenWidgets.has(w.id) }))
+    setMe((m) => (m ? { ...m, profile_layout: next } : m))
+    apiPatch('/api/users/me', { profileLayout: next }).catch(() => {})
+  }
+
   return (
     <div style={{ maxWidth: 780, margin: '0 auto', display: 'grid', gap: 22 }}>
 
+      {/* ─── Banner / wallpaper ──────────────────────────────────────────── */}
+      <div style={{ position: 'relative', height: isMobile ? 120 : 168, borderRadius: 18, overflow: 'hidden', background: me.banner_url ? `center/cover no-repeat url(${me.banner_url})` : defaultBanner(credibility?.tier), boxShadow: 'var(--lift-1)' }}>
+        {!me.banner_url && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', padding: 16 }}>
+            <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 15, color: credibility && ['Bowline', 'Masthead'].includes(credibility.tier) ? 'rgba(255,255,255,0.9)' : 'var(--ink-muted)' }}>
+              {credibility ? `${credibility.tier} · knotting Munich` : 'knotting Munich'}
+            </span>
+          </div>
+        )}
+        <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 999, background: 'rgba(26,24,21,0.55)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: bannerBusy ? 'wait' : 'pointer', backdropFilter: 'blur(4px)' }}>
+            {bannerBusy ? 'Uploading…' : me.banner_url ? 'Change banner' : '＋ Add banner'}
+            <input type="file" accept="image/*" style={{ display: 'none' }} disabled={bannerBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void saveBanner(f) }} />
+          </label>
+          {me.banner_url && (
+            <button type="button" onClick={() => void saveBanner(null)} disabled={bannerBusy} aria-label="Remove banner" style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'rgba(26,24,21,0.55)', color: '#fff', cursor: 'pointer', fontSize: 16, lineHeight: 1, backdropFilter: 'blur(4px)' }}>
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+        <KBtn variant={customizing ? 'signal' : 'ghost'} size="sm" onClick={() => setCustomizing((c) => !c)}>{customizing ? 'Done' : 'Customize'}</KBtn>
         <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
         <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
         <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
           {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
         </KBtn>
       </div>
+
+      {customizing && (
+        <KCard style={{ padding: '18px 20px' }}>
+          <SectionHead label="Customize your profile" />
+          <p style={{ fontSize: 12.5, color: 'var(--ink-muted)', margin: '0 0 12px' }}>Choose which widgets appear on your profile. Saved to your account.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {PROFILE_WIDGETS.map((w) => (
+              <label key={w.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderTop: '0.5px solid var(--rule-soft)', cursor: 'pointer' }}>
+                <span style={{ fontSize: 14, color: 'var(--ink)' }}>{w.label}</span>
+                <Toggle on={isWidgetVisible(w.id)} onClick={() => toggleWidget(w.id)} />
+              </label>
+            ))}
+          </div>
+        </KCard>
+      )}
 
       {/* ─── Profile header (flat, sits on the page) ─────────────────────── */}
       <div style={{ display: 'flex', gap: isMobile ? 16 : 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -838,6 +965,31 @@ function OwnProfileView() {
       ) : me.bio ? (
         <p style={{ fontSize: 15, lineHeight: 1.65, color: 'var(--ink-soft)', margin: 0, maxWidth: 720 }}>{me.bio}</p>
       ) : null}
+
+      {/* ─── Credibility widget (moved from Home) ────────────────────────── */}
+      {isWidgetVisible('credibility') && credibility && (
+        <button type="button" onClick={() => navigate('/quests')} style={{ textAlign: 'left', cursor: 'pointer', border: 'none', padding: 22, borderRadius: 18, background: 'var(--ink)', color: 'var(--paper-soft)', position: 'relative', overflow: 'hidden' }}>
+          <div aria-hidden style={{ position: 'absolute', right: -30, top: -30, width: 160, height: 160, borderRadius: '50%', background: 'radial-gradient(circle, rgba(216,68,43,0.3) 0%, transparent 70%)' }} />
+          <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+            <CredRingDark score={credibility.score} max={credibility.next?.at ?? 120} size={66} label={credibility.tier} sub={`Credibility${credibility.percentile != null ? ` · top ${credibility.percentile}%` : ''}`} />
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: 'rgba(250,246,238,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>This week</div>
+              <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 20, color: 'var(--ochre)' }}>{credibility.weeklyDelta > 0 ? `+${credibility.weeklyDelta}` : '0'}</div>
+            </div>
+          </div>
+          {credibility.next && (
+            <div style={{ marginTop: 16, position: 'relative' }}>
+              <div style={{ height: 5, borderRadius: 999, background: 'rgba(250,246,238,0.1)' }}>
+                <div style={{ width: `${Math.min(100, Math.round((credibility.score / (credibility.next.at || 1)) * 100))}%`, height: '100%', borderRadius: 999, background: 'var(--ochre)' }} />
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11.5, color: 'rgba(250,246,238,0.55)', display: 'flex', justifyContent: 'space-between' }}>
+                <span>{credibility.next.at - credibility.score} pts to {credibility.next.name}</span>
+                <span style={{ color: credibility.gigUnlocked ? '#8fe0ab' : 'rgba(250,246,238,0.45)' }}>{credibility.gigUnlocked ? 'Gigs unlocked' : `Gigs at ${credibility.gigUnlockAt}`}</span>
+              </div>
+            </div>
+          )}
+        </button>
+      )}
       {/* ─── Edit mode fields ────────────────────────────────────────────────── */}
       {editMode && (
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
@@ -898,6 +1050,7 @@ function OwnProfileView() {
       )}
 
       {/* ─── Working on now ─────────────────────────────────────────────────── */}
+      {isWidgetVisible('working') && (
       <div ref={updatesSectionRef} style={{ scrollMarginTop: 96 }}>
       <KCard style={{ padding: '20px 22px', outline: highlightedProfileSection === 'updates' ? '3px solid rgba(216,68,43,0.32)' : 'none', boxShadow: highlightedProfileSection === 'updates' ? '0 0 0 8px rgba(216,68,43,0.08)' : undefined }}>
         <SectionHead label="Working on now" action={updates[0] && !composingUpdate ? 'Post update' : undefined} onAction={() => setComposingUpdate(true)} />
@@ -934,8 +1087,10 @@ function OwnProfileView() {
         )}
       </KCard>
       </div>
+      )}
 
       {/* ─── Open asks ──────────────────────────────────────────────────────── */}
+      {isWidgetVisible('asks') && (
       <KCard style={{ padding: '20px 22px' }}>
         <SectionHead label="Open asks" action={myAsks.length > 0 && !composingAsk ? 'Post ask' : undefined} onAction={() => setComposingAsk(true)} />
         {myAsks.length > 0 && (
@@ -975,6 +1130,7 @@ function OwnProfileView() {
           </button>
         ) : null}
       </KCard>
+      )}
 
       {/* ─── Experience ─────────────────────────────────────────────────────── */}
       <div ref={experienceSectionRef} style={{ scrollMarginTop: 96 }}>
@@ -1291,6 +1447,20 @@ function OwnProfileView() {
                 💼 LinkedIn
               </a>
             )}
+          </div>
+        </KCard>
+      )}
+
+      {/* ─── Invite link (moved from Home) ──────────────────────────────────── */}
+      {isWidgetVisible('invite') && inviteUrl && (
+        <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
+          <SectionHead label="Invite your network" />
+          <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>Share your personal link to bring people into Munich's professional graph.</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--paper-soft)', borderRadius: 10, border: '0.5px solid var(--rule)', padding: '8px 10px' }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteUrl}</div>
+            <button type="button" onClick={copyInvite} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: 8, border: 'none', background: inviteCopied ? 'var(--verd)' : 'var(--ink)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}>
+              {inviteCopied ? 'Copied!' : 'Copy link'}
+            </button>
           </div>
         </KCard>
       )}

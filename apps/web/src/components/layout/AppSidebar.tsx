@@ -19,6 +19,7 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { KAvatar, KnotifyLogoImg } from '@/lib/knotify'
+import { NotificationsBell } from '@/components/NotificationsBell'
 import { nextRankForScore, rankForScore } from '@/lib/knots'
 import { supabase } from '@/lib/supabase'
 import { useSessionStore } from '@/store/session'
@@ -139,25 +140,18 @@ export function AppSidebar() {
           zIndex: 40,
         }}
       >
-        {/* Logo (mark + wordmark, design uses size 22), clicks → /home */}
-        <button
-          type="button"
-          onClick={() => navigate('/home')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '0 8px 24px',
-            cursor: 'pointer',
-            background: 'none',
-            border: 'none',
-            textAlign: 'left',
-            width: '100%',
-          }}
-          aria-label="Go to home"
-        >
-          <KnotifyLogoImg variant="wordmark" height={24} />
-        </button>
+        {/* Logo (mark + wordmark) + notifications bell */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '0 4px 24px' }}>
+          <button
+            type="button"
+            onClick={() => navigate('/home')}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px', cursor: 'pointer', background: 'none', border: 'none', textAlign: 'left' }}
+            aria-label="Go to home"
+          >
+            <KnotifyLogoImg variant="wordmark" height={24} />
+          </button>
+          <NotificationsBell variant="sidebar" />
+        </div>
 
         {/* Nav items */}
         {items.map((item) => {
@@ -357,6 +351,11 @@ export function AppSidebar() {
           Log out
         </button>
       </aside>
+
+      {/* Mobile floating notifications bell (top-right) */}
+      <div className="md:hidden">
+        <NotificationsBell variant="floating" />
+      </div>
 
       {/* ── Mobile bottom tab bar ─────────────────────────────────── */}
       <nav

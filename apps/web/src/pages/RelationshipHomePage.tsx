@@ -363,6 +363,8 @@ export function RelationshipHomePage() {
   const [referralPeer, setReferralPeer] = useState<Peer | null>(null)
   const [askMenuPeer, setAskMenuPeer] = useState<Peer | null>(null)
   const [railEvents, setRailEvents] = useState<Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }>>([])
+  const [credMini, setCredMini] = useState<{ score: number; tier: string } | null>(null)
+  const [sideQuests, setSideQuests] = useState<Array<{ key: string; title: string; points: number; description?: string }>>([])
   const [myAsks, setMyAsks] = useState<Ask[]>([])
   const [feedAsks, setFeedAsks] = useState<Ask[]>([])
   const [askOpen, setAskOpen] = useState(false)
@@ -376,6 +378,14 @@ export function RelationshipHomePage() {
   useEffect(() => {
     apiGet<{ events: Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }> }>('/api/events?limit=3')
       .then((r) => setRailEvents(r.events ?? [])).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    apiGet<{ credibility_score: number; tier: string; quests: Array<{ key: string; title: string; points: number; status: string; description?: string }> }>('/api/quests')
+      .then((r) => {
+        setCredMini({ score: r.credibility_score, tier: r.tier })
+        setSideQuests((r.quests ?? []).filter((q) => q.status === 'claimable').map((q) => ({ key: q.key, title: q.title, points: q.points, description: q.description })).slice(0, 3))
+      }).catch(() => {})
   }, [])
 
   const loadMyAsks = useCallback((uid: string) => {
@@ -791,6 +801,28 @@ export function RelationshipHomePage() {
 
       {asksBlock}
 
+      {sideQuests.length > 0 && (
+        <div>
+          <DeskSectionLabel right={<button type="button" onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.ochre, fontWeight: 600, cursor: 'pointer', fontFamily: T.text, padding: 0 }}>All →</button>}>Side quests</DeskSectionLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {sideQuests.map((q) => (
+              <button
+                key={q.key}
+                type="button"
+                onClick={() => navigate('/quests')}
+                style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: '10px 12px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 10, fontFamily: T.text }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, lineHeight: 1.25 }}>{q.title}</div>
+                  {q.description && <div style={{ fontSize: 11, color: T.inkMuted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.description}</div>}
+                </div>
+                <span style={{ flexShrink: 0, fontFamily: T.display, fontStyle: 'italic', fontSize: 15, color: T.ochre }}>+{q.points}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
         <DeskSectionLabel>Next · IRL</DeskSectionLabel>
         {railEvents.length > 0 ? (
@@ -834,53 +866,21 @@ export function RelationshipHomePage() {
         kicker={`Home · ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`}
         title={<span style={{ fontStyle: 'italic' }}>Welcome back{firstName ? `, ${firstName}` : ''}.</span>}
         right={<>
+          {credMini && (
+            <button
+              type="button"
+              onClick={() => navigate('/profile')}
+              title="Your credibility"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 999, border: 'none', background: T.ink, color: T.paperSoft, cursor: 'pointer', fontFamily: T.text }}
+            >
+              <span style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 14, lineHeight: 1 }}>{credMini.tier}</span>
+              <span style={{ fontSize: 12.5, color: T.ochre, fontWeight: 700 }}>{credMini.score}</span>
+            </button>
+          )}
           <KBtn variant="ghost" size="sm" onClick={() => setAskOpen(true)}>Ask your knot</KBtn>
           <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
         </>}
       />
-
-      {pendingForMe.length > 0 && (
-        <div style={{ marginBottom: 20, padding: '13px 18px', borderRadius: 12, background: T.signalSoft, border: '0.5px solid rgba(216,68,43,0.2)', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <Users size={16} style={{ color: T.signalDeep, flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: T.signalDeep, fontFamily: T.text }}>
-              {pendingForMe.length === 1
-                ? `${pendingForMe[0].peer.full_name} wants to connect`
-                : `${pendingForMe.length} people want to connect with you`}
-            </div>
-          </div>
-          <KBtn variant="signal" size="sm" onClick={() => navigate('/map')}>Review</KBtn>
-        </div>
-      )}
-
-      {!inviteDismissed && inviteUrl && (
-        <div style={{ marginBottom: 20, padding: '14px 18px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-            <UserPlus size={16} style={{ color: T.inkMuted, flexShrink: 0, marginTop: 2 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>
-                Invite your network to Munich's professional graph
-              </div>
-            </div>
-            <button type="button" onClick={dismissInviteCard} style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: T.inkFaint, display: 'flex', flexShrink: 0 }}>
-              <X size={14} />
-            </button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.paper, borderRadius: 8, border: `0.5px solid ${T.rule}`, padding: '8px 10px' }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: T.inkFaint, fontFamily: "'IBM Plex Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {inviteUrl}
-            </div>
-            <button
-              type="button"
-              onClick={copyInviteLink}
-              style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 6, border: 'none', background: inviteCopied ? '#22c55e' : T.ink, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s', whiteSpace: 'nowrap' }}
-            >
-              {inviteCopied ? <Check size={12} /> : <Copy size={12} />}
-              {inviteCopied ? 'Copied!' : 'Copy link'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Mobile-only: coffees + asks (the desktop rail is hidden under lg) */}
       <div className="k-mobile-stack">

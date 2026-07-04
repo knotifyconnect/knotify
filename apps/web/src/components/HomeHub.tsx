@@ -623,7 +623,7 @@ function GigCard({ gig: g, index }: { gig: Gig; index: number }) {
   const rewardColor = g.reward_type === 'paid' ? T.verd : g.reward_type === 'coffee' ? T.ochre : T.inkMuted
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} transition={{ delay: index * 0.05 }}
-      style={{ padding: 18, borderRadius: 14, background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      style={{ padding: 18, borderRadius: 16, background: '#fff', boxShadow: 'var(--lift-1)', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
         <div style={{ fontFamily: T.display, fontSize: 15, fontWeight: 500, color: T.ink }}>{g.title}</div>
         <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 600, color: rewardColor, fontFamily: T.text }}>{rewardLabel(g)}</span>
@@ -659,7 +659,7 @@ function CreateEventInline({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <div style={{ padding: 18, borderRadius: 14, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
+    <div style={{ padding: 18, borderRadius: 16, background: '#fff', boxShadow: 'var(--lift-1)' }}>
       <SectionLabel>Host an event</SectionLabel>
       {!open ? (
         <button onClick={() => setOpen(true)} style={{ width: '100%', padding: '10px', borderRadius: 10, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 13, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
@@ -700,7 +700,7 @@ function CreateGigInline({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <div style={{ padding: 18, borderRadius: 14, background: T.paperSoft, border: `0.5px solid ${T.rule}` }}>
+    <div style={{ padding: 18, borderRadius: 16, background: '#fff', boxShadow: 'var(--lift-1)' }}>
       <SectionLabel>Offer a gig</SectionLabel>
       {!open ? (
         <button onClick={() => setOpen(true)} style={{ width: '100%', padding: '10px', borderRadius: 10, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 13, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
@@ -805,86 +805,24 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
 
-        {/* ── Top row: maintenance + credibility + side quests mini ─────── */}
-        <div className={maintenance ? 'k-hub-top-grid' : 'k-hub-top-grid-simple'} style={{ marginBottom: 28 }}>
-          {maintenance}
-          <div style={{ display: maintenance ? 'flex' : 'contents', flexDirection: 'column', gap: 16 }}>
+        {/* ── Relationship OS hero: Today's moves, full width ───────────── */}
+        {maintenance && <div style={{ marginBottom: 28 }}>{maintenance}</div>}
 
-            {/* Credibility card */}
-            <div style={{ padding: 22, borderRadius: 18, background: T.ink, color: T.paperSoft, position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', right: -30, top: -30, width: 160, height: 160, borderRadius: '50%', background: `radial-gradient(circle, rgba(216,68,43,0.3) 0%, transparent 70%)` }} />
-              <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <CredRing score={score} max={next?.at ?? 120} />
-                  <div>
-                    <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 22, fontWeight: 500, letterSpacing: -0.3, lineHeight: 1.1 }}>{quests?.tier ?? 'Loose end'}</div>
-                    <div style={{ fontSize: 11, color: 'rgba(250,246,238,0.55)', marginTop: 3, fontFamily: T.text }}>Credibility{quests?.percentile != null ? ` · top ${quests.percentile}%` : ''}</div>
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 10, color: 'rgba(250,246,238,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: T.text }}>This week</div>
-                  <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 20, color: T.ochre, lineHeight: 1.2 }}>{(quests?.weekly_delta ?? 0) > 0 ? `+${quests?.weekly_delta}` : '0'}</div>
-                  {(quests?.streak ?? 0) > 0 && (
-                    <div style={{ fontSize: 11, color: 'rgba(250,246,238,0.6)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>
-                      <Flame size={11} color={T.ochre} />{quests?.streak}d
-                    </div>
-                  )}
+        {/* ── Contribute: host an event / offer a gig (accessible, near top) ── */}
+        <div style={{ marginBottom: 32 }}>
+          <SectionLabel>Contribute</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
+            <CreateEventInline onCreated={loadEvents} />
+            {elig?.can_offer && <CreateGigInline onCreated={() => { loadGigs(); apiGet<Eligibility>('/api/gigs/eligibility').then(setElig).catch(() => {}) }} />}
+            {elig && !elig.can_offer && (
+              <div style={{ padding: 18, borderRadius: 14, background: '#fff', boxShadow: 'var(--lift-1)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Lock size={16} color={T.inkFaint} />
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>Offer gigs at {elig.unlock_at} credibility</div>
+                  <div style={{ fontSize: 12, color: T.inkMuted, marginTop: 2, fontFamily: T.text }}>You are at {elig.credibility_score}. Browse offers or earn more through quests.</div>
                 </div>
               </div>
-              {next && (
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ height: 5, borderRadius: 999, background: 'rgba(250,246,238,0.1)' }}>
-                    <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: T.ochre, transition: 'width 0.6s ease' }} />
-                  </div>
-                  <div style={{ marginTop: 8, fontSize: 11.5, color: 'rgba(250,246,238,0.55)', fontFamily: T.text, display: 'flex', justifyContent: 'space-between' }}>
-                    <span>{next.at - score} pts to {next.name}</span>
-                    <span style={{ color: quests?.gig_unlocked ? '#8fe0ab' : 'rgba(250,246,238,0.45)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      {!quests?.gig_unlocked && <Lock size={10} />}{quests?.gig_unlocked ? 'Gigs unlocked' : `Gigs at ${quests?.gig_unlock_at ?? 70}`}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Side quests mini (top 3 claimable, tap to open detail) */}
-            <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
-              <SectionLabel right={<button onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 12.5, color: T.ochre, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}>All <ChevronRight size={12} /></button>}>Side quests</SectionLabel>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {claimable.slice(0, 3).map((q, i) => (
-                  <motion.div key={q.key} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}>
-                    <button onClick={() => setSelectedQuest(q)} style={{ width: '100%', background: 'none', border: 'none', padding: '10px 0', borderBottom: `0.5px solid var(--rule-soft)`, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}>
-                      <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.18)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ochre)' }}>
-                        <QuestIcon name={q.icon} size={15} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
-                        <div style={{ fontSize: 11, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {q.type === 'self' ? 'Tap to see how to complete' : q.description}
-                        </div>
-                      </div>
-                      <span style={{ flexShrink: 0, fontFamily: T.display, fontStyle: 'italic', fontSize: 15, color: 'var(--ochre)' }}>+{q.points}</span>
-                    </button>
-                  </motion.div>
-                ))}
-                {claimable.length < 3 && inProgress.slice(0, 3 - claimable.length).map((q) => (
-                  <button key={q.key} onClick={() => setSelectedQuest(q)} style={{ width: '100%', background: 'none', border: 'none', padding: '10px 0', borderBottom: `0.5px solid var(--rule-soft)`, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', opacity: 0.85, textAlign: 'left' }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(200,148,31,0.1)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-faint)' }}>
-                      <QuestIcon name={q.icon} size={15} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 600, lineHeight: 1.25 }}>{q.title}</div>
-                      <div style={{ height: 4, borderRadius: 999, background: 'var(--rule-soft)', marginTop: 5 }}>
-                        <div style={{ width: `${Math.round(((q.progress ?? 0) / (q.target || 1)) * 100)}%`, height: '100%', borderRadius: 999, background: T.ochre }} />
-                      </div>
-                    </div>
-                    <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--ink-muted)', fontFamily: T.text }}>{q.progress}/{q.target}</span>
-                  </button>
-                ))}
-                {claimable.length === 0 && inProgress.length === 0 && (
-                  <div style={{ fontSize: 13, color: 'var(--ink-muted)', fontStyle: 'italic', fontFamily: T.display, padding: '8px 0' }}>Complete quests to earn credibility.</div>
-                )}
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -917,20 +855,6 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
           </div>
         )}
 
-        {/* ── Host event / Offer gig inline ─────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
-          <CreateEventInline onCreated={loadEvents} />
-          {elig?.can_offer && <CreateGigInline onCreated={() => { loadGigs(); apiGet<Eligibility>('/api/gigs/eligibility').then(setElig).catch(() => {}) }} />}
-          {elig && !elig.can_offer && (
-            <div style={{ padding: 18, borderRadius: 14, background: T.paperSoft, border: `0.5px solid ${T.rule}`, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Lock size={16} color={T.inkFaint} />
-              <div>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>Offer gigs at {elig.unlock_at} credibility</div>
-                <div style={{ fontSize: 12, color: T.inkMuted, marginTop: 2, fontFamily: T.text }}>You are at {elig.credibility_score}. Browse offers or earn more through quests.</div>
-              </div>
-            </div>
-          )}
-        </div>
       </motion.div>
     </>
   )
