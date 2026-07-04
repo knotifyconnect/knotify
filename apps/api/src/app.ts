@@ -20,6 +20,7 @@ import { channelsRouter } from './routes/channels.js'
 import { ogRouter } from './routes/og.js'
 import { asksRouter } from './routes/asks.js'
 import { relationshipHomeRouter } from './routes/relationshipHome.js'
+import { companionRouter } from './routes/companion.js'
 import { betaRouter } from './routes/beta.js'
 import { adminPanelRouter } from './routes/adminPanel.js'
 import { questsRouter } from './routes/quests.js'
@@ -124,6 +125,7 @@ app.use('/api/channels', channelsRouter)
 app.use('/api/og', ogRouter)
 app.use('/api/asks', asksRouter)
 app.use('/api/relationship-home', relationshipHomeRouter)
+app.use('/api/companion', companionRouter)
 app.use('/api/beta', betaRouter)
 app.use('/api/admin-panel', adminPanelRouter)
 app.use('/api/quests', questsRouter)

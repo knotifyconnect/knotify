@@ -1,15 +1,14 @@
 /**
  * RelationshipHomePage — the Relationship OS.
  *
- * Data source: /api/relationship-home (engine output)
+ * Data source: /api/relationship-home (engine output, ranked connections + occasions)
  * Fallback:    /api/connections (if engine route unavailable)
  *
- * One prioritized "Today's moves" queue fuses every live occasion per person
- * (shared event, milestone, open ask, coffee follow-up, booked meeting,
- * overdue cadence) into a single card with real, wired actions:
- *   · Message / Congratulate / Offer help / Follow up → conversation with draft
- *   · Coffee → /messages?to=X&action=coffee (real meeting planner)
- *   · Snooze → durable server-side feedback, gone on every device
+ * The hero is the Companion chat (CompanionHero) — it talks through what the
+ * engine surfaces (occasions, cadence, milestones) instead of a static card
+ * queue. Ranked-connection data is still fetched here to resolve suggestion
+ * pills (peer lookups) and to log feedback via `logAndAct`; the deep-link
+ * actions (message w/ draft, coffee planner, snooze feedback) are unchanged.
  *
  * Design tokens: Fraunces headings · IBM Plex Sans body · Paper #F4EFE6
  * Signal Red (#D84428) used ONLY on: Review button, cold dot, cold accents.
@@ -18,12 +17,12 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiPost } from '../lib/api'
 import { HomeHub } from '../components/HomeHub'
+import { CompanionHero, type Suggestion, type PeerLite } from '../components/CompanionHero'
 import { KAvatar, KBtn } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 import { CreateAskModal } from '../components/asks/CreateAskModal'
 import { AskDrawer, type Ask } from '../components/asks/AskDrawer'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
-import { MessageSquare, Coffee, X, Copy, Check, UserPlus, MoreHorizontal, Users } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -186,30 +185,6 @@ const STATE_COLOR: Record<RelState, string> = {
   cold:    '#D84428',
   new:     '#4caf7d',
 }
-const STATE_LABEL: Record<RelState, string> = {
-  warm: 'Warm', cooling: 'Cooling', cold: 'Cold', new: 'New'
-}
-
-const CTA_LABEL: Record<SuggestedAction, string> = {
-  reconnect:    'Reconnect',
-  message:      'Message',
-  congratulate: 'Congratulate',
-  welcome:      'Say hi',
-  meet:         'Plan to meet',
-  ask:          'Offer help',
-  follow_up:    'Send follow-up',
-}
-
-const OCCASION_STYLE: Record<Occasion['type'], { bg: string; fg: string }> = {
-  follow_up:        { bg: T.verdSoft,   fg: T.verd },
-  upcoming_meeting: { bg: T.verdSoft,   fg: T.verd },
-  shared_event:     { bg: T.plumSoft,   fg: T.plum },
-  milestone:        { bg: T.ochreSoft,  fg: '#7A5A0F' },
-  open_ask:         { bg: T.ochreSoft,  fg: '#7A5A0F' },
-  new_connection:   { bg: T.verdSoft,   fg: T.verd },
-  overdue:          { bg: T.paperDeep,  fg: T.inkMuted },
-}
-
 function timeAgo(iso: string) {
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
   if (d === 0) return 'today'
@@ -223,29 +198,6 @@ function timeAgo(iso: string) {
 function shortWhen(iso: string) {
   const d = new Date(iso)
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-}
-
-// ── Default message drafts per action (used when Layer 2 has no opener) ──────
-
-function draftFor(entry: RankedEntry, extras: { milestone?: string; ask?: string }): string | undefined {
-  if (entry.draftOpener) return entry.draftOpener
-  const first = entry.peer.full_name.split(' ')[0]
-  const sharedEvent = (entry.occasions ?? []).find((o) => o.type === 'shared_event')
-  switch (entry.suggestedAction) {
-    case 'welcome':      return `Hi ${first}, great to be connected! What are you working on at the moment?`
-    case 'reconnect':    return `Hi ${first}, it's been a while! How have things been on your side?`
-    case 'message':      return `Hi ${first}, was just thinking of you. How's everything going?`
-    case 'congratulate': return extras.milestone
-      ? `Congratulations, ${first}! Just saw your update: "${extras.milestone.slice(0, 80)}"`
-      : `Saw your news. Congratulations, ${first}!`
-    case 'ask':          return extras.ask
-      ? `Hi ${first}, saw your ask: "${extras.ask.slice(0, 80)}". I might be able to help.`
-      : `Hi ${first}, saw your ask. Happy to help if I can.`
-    case 'follow_up':    return `Great meeting you, ${first}! Really enjoyed the conversation and wanted to follow up while it's fresh.`
-    case 'meet':         return sharedEvent?.title
-      ? `Hey ${first}! Saw we're both going to ${sharedEvent.title}. Want to meet there?`
-      : undefined
-  }
 }
 
 // ── Network health strip ──────────────────────────────────────────────────────
@@ -355,8 +307,6 @@ export function RelationshipHomePage() {
   const [loading, setLoading] = useState(true)
   const [firstName, setFirstName] = useState('')
   const [userId, setUserId] = useState('')
-  const [messagingPeer, setMessagingPeer] = useState<string | null>(null)
-  const [showAllMoves, setShowAllMoves] = useState(false)
   const [actedIds, setActedIds] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(sessionStorage.getItem('knotify:acted') ?? '[]')) } catch { return new Set() }
   })
@@ -458,15 +408,12 @@ export function RelationshipHomePage() {
   }, [userId])
 
   async function openMessage(peerId: string, draftOpener?: string) {
-    setMessagingPeer(peerId)
     try {
       const result = await apiPost<{ conversation: { id: string } }>('/api/conversations', { peerId })
       const url = `/messages?conversation=${result.conversation.id}` + (draftOpener ? `&draft=${encodeURIComponent(draftOpener)}` : '')
       navigate(url)
     } catch {
       navigate('/messages')
-    } finally {
-      setMessagingPeer(null)
     }
   }
 
@@ -509,12 +456,6 @@ export function RelationshipHomePage() {
   const pendingForMe     = data?.pendingForMe ?? []
   const upcomingMeetings = data?.upcomingMeetings ?? []
 
-  // Draft context lookups: latest milestone / ask content per peer
-  const milestoneByPeer = new Map<string, string>()
-  for (const m of milestones) { if (m.user && !milestoneByPeer.has(m.user.id)) milestoneByPeer.set(m.user.id, m.content) }
-  const askByPeer = new Map<string, string>()
-  for (const a of openAsks) { if (a.user && !askByPeer.has(a.user.id)) askByPeer.set(a.user.id, a.content) }
-
   const stats: HomeStats = data?.stats ?? {
     total:   rankedRaw.length,
     warm:    rankedRaw.filter((r) => r.state === 'warm').length,
@@ -524,151 +465,49 @@ export function RelationshipHomePage() {
     needsFollowUp: 0, upcomingMeetings: 0, handled: 0,
   }
 
-  // The queue: anything with a live occasion or a non-warm state is a "move".
-  const moves = ranked.filter((r) =>
-    (r.occasions ?? []).length > 0 || r.state !== 'warm'
-  )
-  const allWarm = ranked.length > 0 && moves.length === 0
-  const coldCount    = moves.filter((r) => r.state === 'cold').length
-  const coolingCount = moves.filter((r) => r.state === 'cooling').length
-
-  const MOVES_PREVIEW = 4
-  const visibleMoves = showAllMoves ? moves : moves.slice(0, MOVES_PREVIEW)
-
   // Pulse shows network milestones only — asks live in their own clickable
   // "Asks for you" section (openAsks feeds the targeted /api/asks/feed instead).
   const networkFeed: NetworkItem[] = [
     ...milestones.map((m) => ({ ...m, type: 'milestone' as const })),
   ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12)
 
-  // ── "Today's moves" — the unified queue ────────────────────────────────────
-  const maintenanceNode = (stats.total > 0 || moves.length > 0) ? (
-    <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
-      <HealthStrip stats={stats} onOpenMap={() => navigate('/map')} />
-      <DeskSectionLabel right={
-        moves.length > 0 ? <span style={{ color: coldCount > 0 ? T.signal : coolingCount > 0 ? T.ochre : T.verd, textTransform: 'none', letterSpacing: 0, fontWeight: 700 }}>
-          {coldCount > 0 ? `${coldCount} going cold` : coolingCount > 0 ? `${coolingCount} cooling` : `${moves.length} move${moves.length === 1 ? '' : 's'}`}
-        </span> : undefined
-      }>Today's moves</DeskSectionLabel>
+  // ── Companion — the conversational Home hero ────────────────────────────────
+  const companionPeers = new Map<string, PeerLite>(
+    ranked.map((r) => [r.peerId, { id: r.peer.id, full_name: r.peer.full_name, avatar_url: r.peer.avatar_url }])
+  )
+  const rankedByPeer = new Map(ranked.map((r) => [r.peerId, r]))
 
-      {allWarm || moves.length === 0 ? (
-        <div style={{ fontSize: 13.5, color: T.inkMuted, fontFamily: T.display, fontStyle: 'italic', padding: '6px 0' }}>
-          Nothing needs you today. Your relationships are warm.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {visibleMoves.map((entry) => {
-            const sc = STATE_COLOR[entry.state]
-            const occasions = entry.occasions ?? []
-            const hasBookedCoffee = entry.signals.hasUpcomingMeeting || occasions.some((o) => o.type === 'upcoming_meeting')
-            const ctaLabel = hasBookedCoffee ? 'Open chat' : CTA_LABEL[entry.suggestedAction]
-            const draft = hasBookedCoffee ? undefined : draftFor(entry, {
-              milestone: milestoneByPeer.get(entry.peerId),
-              ask:       askByPeer.get(entry.peerId),
-            })
-            return (
-              <div key={entry.connectionId} style={{ borderRadius: 12, background: T.paperSoft, borderLeft: `3px solid ${sc}`, overflow: 'hidden' }}>
-                {/* Top row: avatar + name/state + snooze */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px 0' }}>
-                  <button type="button" onClick={() => navigate(`/profile/${entry.peer.id}`)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
-                    <KAvatar name={entry.peer.full_name} src={entry.peer.avatar_url} size={38} />
-                  </button>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>{entry.peer.full_name}</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: sc }}>{STATE_LABEL[entry.state]}</span>
-                    </div>
-                    {(entry.peer.headline || entry.peer.current_company) && (
-                      <div style={{ fontSize: 11, color: T.inkFaint, fontFamily: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {entry.peer.headline ?? entry.peer.current_company}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => logAndAct(entry, 'snoozed')}
-                    aria-label="Snooze for a week"
-                    title="Snooze for a week"
-                    style={{ flexShrink: 0, background: 'none', border: 'none', padding: '4px 6px', cursor: 'pointer', color: T.inkFaint, display: 'flex', alignItems: 'center' }}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-                {/* Occasion chips — why this person, today */}
-                {occasions.length > 0 && (
-                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', padding: '8px 12px 0' }}>
-                    {occasions.slice(0, 3).map((o, i) => {
-                      const os = o.type === 'overdue'
-                        ? { bg: `${sc}22`, fg: entry.state === 'cold' ? T.signalDeep : '#7A5A0F' }
-                        : OCCASION_STYLE[o.type]
-                      return (
-                        <span key={`${o.type}-${i}`} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 999, background: os.bg, color: os.fg, fontFamily: T.text, whiteSpace: 'nowrap', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {o.label}
-                        </span>
-                      )
-                    })}
-                  </div>
-                )}
-                {/* Reason text — full width, not truncated */}
-                <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, padding: '6px 12px 10px', fontFamily: T.text }}>
-                  {entry.reason}
-                </div>
-                {/* Action buttons row */}
-                <div style={{ display: 'flex', gap: 6, padding: '0 10px 10px', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={() => { logAndAct(entry, 'acted'); openMessage(entry.peer.id, draft) }}
-                    disabled={messagingPeer === entry.peer.id}
-                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 12px', borderRadius: 999, border: 'none', background: T.ink, color: T.paperSoft, fontSize: 12.5, fontFamily: T.text, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', minWidth: 0 }}
-                  >
-                    <MessageSquare size={13} />{messagingPeer === entry.peer.id ? 'Opening...' : ctaLabel}
-                  </button>
-                  {!hasBookedCoffee && (
-                    <button
-                      type="button"
-                      onClick={() => { logAndAct(entry, 'acted'); openCoffeePlanner(entry.peer.id) }}
-                      title={`Plan a coffee with ${entry.peer.full_name.split(' ')[0]}`}
-                      style={{ padding: '8px 12px', borderRadius: 999, border: 'none', background: T.paperDeep, color: T.ink, fontSize: 12.5, fontFamily: T.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
-                    >
-                      <Coffee size={13} /><span style={{ fontSize: 12 }}>Coffee</span>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setAskMenuPeer(entry.peer)}
-                    aria-label={`Ask ${entry.peer.full_name.split(' ')[0]} for something`}
-                    title="Ask for a referral, intro or advice"
-                    style={{ padding: '8px 10px', borderRadius: 999, border: 'none', background: T.paperDeep, color: T.inkMuted, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
-                  >
-                    <MoreHorizontal size={14} />
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-          {moves.length > MOVES_PREVIEW && (
-            <button
-              type="button"
-              onClick={() => setShowAllMoves((s) => !s)}
-              style={{ width: '100%', padding: '8px 0', borderRadius: 10, border: `0.5px dashed ${T.rule}`, background: 'transparent', fontSize: 12, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text }}
-            >
-              {showAllMoves ? 'Show fewer' : `Show all ${moves.length} moves`}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  ) : (
-    <div style={{ padding: '40px 32px', textAlign: 'center', borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
-      <p style={{ fontFamily: T.display, fontSize: 22, fontWeight: 500, color: T.ink, margin: '0 0 10px' }}>Your knot is empty</p>
-      <p style={{ fontSize: 13.5, color: T.inkMuted, margin: '0 auto 20px', maxWidth: 380, lineHeight: 1.55, fontFamily: T.text }}>
-        Connect with people and knotify will tell you who to reach out to, when, and why.
-      </p>
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-        <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
-        <KBtn variant="ghost" size="sm" onClick={() => navigate('/map')}>View your knot</KBtn>
-      </div>
-    </div>
+  function handleCompanionSuggestion(s: Suggestion) {
+    const entry = s.peerId ? rankedByPeer.get(s.peerId) : undefined
+    switch (s.action) {
+      case 'open_message':
+        if (!s.peerId) return
+        if (entry) logAndAct(entry, 'acted')
+        openMessage(s.peerId, s.draft)
+        return
+      case 'open_coffee':
+        if (!s.peerId) return
+        if (entry) logAndAct(entry, 'acted')
+        openCoffeePlanner(s.peerId)
+        return
+      case 'open_profile':
+        if (s.peerId) navigate(`/profile/${s.peerId}`)
+        return
+      case 'open_quests':
+        navigate('/quests')
+        return
+      case 'open_events':
+        navigate('/events')
+        return
+    }
+  }
+
+  const maintenanceNode = (
+    <CompanionHero
+      peers={companionPeers}
+      healthStrip={<HealthStrip stats={stats} onOpenMap={() => navigate('/map')} />}
+      onSuggestion={handleCompanionSuggestion}
+    />
   )
 
   // ── Asks block: targeted "for you" feed + your own. Clickable → AskDrawer.
