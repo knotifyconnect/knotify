@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { SmilePlus, Trash2 } from 'lucide-react'
 import { apiGet, apiPatch, apiPost } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
@@ -254,6 +255,17 @@ async function apiDeleteJson<T>(path: string): Promise<T> {
   return json as T
 }
 
+const MSG_ICON_BTN: React.CSSProperties = {
+  width: 26, height: 26, borderRadius: '50%', background: 'var(--paper)', border: '0.5px solid var(--rule)',
+  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+  color: 'var(--ink-muted)', boxShadow: '0 2px 6px rgba(26,24,21,0.12)',
+}
+const MSG_MENU_ITEM: React.CSSProperties = {
+  display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8,
+  border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'var(--ink)',
+  fontFamily: "'IBM Plex Sans', sans-serif",
+}
+
 export function MessagesPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
@@ -277,6 +289,7 @@ export function MessagesPage() {
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null)
   const [pickerOpenMsgId, setPickerOpenMsgId] = useState<string | null>(null)
+  const [actionMenuMsgId, setActionMenuMsgId] = useState<string | null>(null)
   const [messageDeleteConfirm, setMessageDeleteConfirm] = useState<{ id: string; scope: MessageDeleteScope } | null>(null)
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
   const [threadMenuOpen, setThreadMenuOpen] = useState(false)
@@ -1363,22 +1376,38 @@ export function MessagesPage() {
                           }
                         }}
                       >
-                        {/* React button — absolutely positioned so hover never resizes the bubble */}
+                        {/* Hover actions — absolutely positioned so hover never resizes the bubble */}
                         {hoveredMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
-                          <button
-                            type="button"
-                            onClick={() => setPickerOpenMsgId(pickerOpenMsgId === msg.id ? null : msg.id)}
-                            aria-label="Add reaction"
-                            style={{
-                              position: 'absolute', top: 4, [msg.is_mine ? 'left' : 'right']: -32,
-                              width: 26, height: 26, borderRadius: '50%',
-                              background: 'var(--paper)', border: '0.5px solid var(--rule)',
-                              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 13, padding: 0, boxShadow: '0 2px 6px rgba(26,24,21,0.12)', zIndex: 3,
-                            }}
-                          >
-                            🙂
-                          </button>
+                          <div style={{ position: 'absolute', top: 2, [msg.is_mine ? 'left' : 'right']: -60, display: 'flex', gap: 4, zIndex: 4 }}>
+                            <button
+                              type="button"
+                              onClick={() => { setPickerOpenMsgId(pickerOpenMsgId === msg.id ? null : msg.id); setActionMenuMsgId(null) }}
+                              aria-label="Add reaction"
+                              style={MSG_ICON_BTN}
+                            >
+                              <SmilePlus size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setActionMenuMsgId(actionMenuMsgId === msg.id ? null : msg.id); setPickerOpenMsgId(null) }}
+                              aria-label="Message actions"
+                              style={MSG_ICON_BTN}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        )}
+                        {/* Delete menu */}
+                        {actionMenuMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
+                          <>
+                            <div onClick={() => setActionMenuMsgId(null)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
+                            <div style={{ position: 'absolute', top: 'calc(100% + 6px)', [msg.is_mine ? 'right' : 'left']: 0, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 12, boxShadow: '0 8px 24px rgba(26,24,21,0.18)', zIndex: 10, padding: 6, minWidth: 160 }}>
+                              <button type="button" onClick={() => { void deleteMessage(msg, 'for-me'); setActionMenuMsgId(null) }} disabled={deletingMessageId === msg.id} style={MSG_MENU_ITEM}>Delete for me</button>
+                              {msg.is_mine && (
+                                <button type="button" onClick={() => { void deleteMessage(msg, 'for-everyone'); setActionMenuMsgId(null) }} disabled={deletingMessageId === msg.id} style={{ ...MSG_MENU_ITEM, color: 'var(--signal)' }}>Delete for everyone</button>
+                              )}
+                            </div>
+                          </>
                         )}
                         {/* Bubble */}
                         <div
@@ -1401,54 +1430,6 @@ export function MessagesPage() {
                             {msg.is_mine && !isOpt(msg) && !isDeletedMessage && (
                               <span style={{ color: msg.read_at ? 'var(--verd)' : 'rgba(244,239,230,0.5)', fontSize: 11 }}>
                                 {msg.read_at || msg.delivered_at ? '✓✓' : '✓'}
-                              </span>
-                            )}
-                            {!isOpt(msg) && !isDeletedMessage && hoveredMsgId === msg.id && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
-                                <button
-                                  type="button"
-                                  onClick={() => void deleteMessage(msg, 'for-me')}
-                                  disabled={deletingMessageId === msg.id}
-                                  style={{
-                                    border: 'none',
-                                    background: 'transparent',
-                                    color: msg.is_mine ? 'rgba(244,239,230,0.72)' : 'var(--signal)',
-                                    cursor: deletingMessageId === msg.id ? 'default' : 'pointer',
-                                    fontSize: 10.5,
-                                    padding: 0,
-                                    fontFamily: "'IBM Plex Sans'",
-                                    textDecoration: 'underline',
-                                  }}
-                                >
-                                  {deletingMessageId === msg.id
-                                    ? 'Deleting…'
-                                    : messageDeleteConfirm?.id === msg.id && messageDeleteConfirm.scope === 'for-me'
-                                      ? 'Confirm for me'
-                                      : 'Delete for me'}
-                                </button>
-                                {msg.is_mine && (
-                                  <button
-                                    type="button"
-                                    onClick={() => void deleteMessage(msg, 'for-everyone')}
-                                    disabled={deletingMessageId === msg.id}
-                                    style={{
-                                      border: 'none',
-                                      background: 'transparent',
-                                      color: msg.is_mine ? 'rgba(244,239,230,0.72)' : 'var(--signal)',
-                                      cursor: deletingMessageId === msg.id ? 'default' : 'pointer',
-                                      fontSize: 10.5,
-                                      padding: 0,
-                                      fontFamily: "'IBM Plex Sans'",
-                                      textDecoration: 'underline',
-                                    }}
-                                  >
-                                    {deletingMessageId === msg.id
-                                      ? 'Deleting…'
-                                      : messageDeleteConfirm?.id === msg.id && messageDeleteConfirm.scope === 'for-everyone'
-                                        ? 'Confirm everyone'
-                                        : 'Delete for everyone'}
-                                  </button>
-                                )}
                               </span>
                             )}
                           </div>

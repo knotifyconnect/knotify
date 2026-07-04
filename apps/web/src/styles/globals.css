@@ -185,6 +185,24 @@ body::before {
   .k-rail { width: 400px !important; }
 }
 
+/* ── Profile: dense two-column widget dashboard (no tabs) ─────────────────── */
+/* CSS columns keep DOM order but flow cards into two balanced columns on wider
+   screens, so the profile reads as a dashboard instead of one long scroll. */
+.k-profile-cols {
+  column-gap: 16px;
+}
+.k-profile-cols > * {
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 16px;
+}
+@media (min-width: 900px) {
+  .k-profile-cols {
+    column-count: 2;
+  }
+}
+
 /* ── Mobile-only stacked rail sections (home) ─────────────────────────────── */
 /* Flex column with real gaps below lg; fully hidden once the desktop rail shows. */
 .k-mobile-stack {

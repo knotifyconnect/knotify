@@ -359,7 +359,6 @@ function OwnProfileView() {
   const [inviteCopied, setInviteCopied] = useState(false)
   const [bannerBusy, setBannerBusy] = useState(false)
   const [customizing, setCustomizing] = useState(false)
-  const [profileTab, setProfileTab] = useState<'overview' | 'resume'>('overview')
 
   useEffect(() => {
     apiGet<{ credibility_score: number; tier: string; next_tier: { name: string; at: number } | null; gig_unlocked: boolean; gig_unlock_at: number; weekly_delta?: number; percentile?: number | null }>('/api/quests')
@@ -832,9 +831,9 @@ function OwnProfileView() {
   // Customizable widgets: user can show/hide these (saved to the account).
   const hiddenWidgets = new Set((me.profile_layout ?? []).filter((w) => !w.visible).map((w) => w.id))
   const isWidgetVisible = (id: string) => !hiddenWidgets.has(id)
-  // Tabs keep the profile from being one long scroll. Edit mode shows all.
-  const showOverview = editMode || profileTab === 'overview'
-  const showResume = editMode || profileTab === 'resume'
+  // No tabs: everything shows, laid out as a dense two-column dashboard (below).
+  const showOverview = true
+  const showResume = true
   function toggleWidget(id: string) {
     const next = PROFILE_WIDGETS.map((w) => ({ id: w.id, visible: w.id === id ? hiddenWidgets.has(id) : !hiddenWidgets.has(w.id) }))
     setMe((m) => (m ? { ...m, profile_layout: next } : m))
@@ -842,7 +841,7 @@ function OwnProfileView() {
   }
 
   return (
-    <div style={{ maxWidth: 780, margin: '0 auto', display: 'grid', gap: 22 }}>
+    <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 22 }}>
 
       {/* ─── Banner / wallpaper ──────────────────────────────────────────── */}
       <div style={{ position: 'relative', height: isMobile ? 120 : 168, borderRadius: 18, overflow: 'hidden', background: me.banner_url ? `center/cover no-repeat url(${me.banner_url})` : defaultBanner(credibility?.tier), boxShadow: 'var(--lift-1)' }}>
@@ -970,21 +969,8 @@ function OwnProfileView() {
         <p style={{ fontSize: 15, lineHeight: 1.65, color: 'var(--ink-soft)', margin: 0, maxWidth: 720 }}>{me.bio}</p>
       ) : null}
 
-      {/* ─── Tabs (keeps the profile from being one long scroll) ─────────── */}
-      {!editMode && (
-        <div style={{ display: 'flex', gap: 0, borderBottom: '0.5px solid var(--rule-soft)' }}>
-          {([['overview', 'Overview'], ['resume', 'Experience & skills']] as const).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setProfileTab(key)}
-              style={{ background: 'none', border: 'none', padding: '10px 2px', marginRight: 22, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 14, fontWeight: profileTab === key ? 600 : 500, color: profileTab === key ? 'var(--ink)' : 'var(--ink-muted)', borderBottom: profileTab === key ? '2px solid var(--ink)' : '2px solid transparent', marginBottom: -1 }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* ─── Dense two-column dashboard of profile widgets ───────────────── */}
+      <div className="k-profile-cols" style={editMode ? { columnCount: 1 } : undefined}>
 
       {/* ─── Credibility widget (moved from Home) ────────────────────────── */}
       {isWidgetVisible('credibility') && credibility && showOverview && (
@@ -1579,6 +1565,8 @@ function OwnProfileView() {
           </div>
         </KCard>
       )}
+
+      </div>{/* /k-profile-cols */}
 
       {/* ─── Avatar editor modal ──────────────────────────────────────────── */}
       {avatarEditorOpen && (

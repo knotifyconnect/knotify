@@ -120,9 +120,17 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
     try {
       await api.stats()
       onLogin()
-    } catch {
+    } catch (err) {
       clearSecret()
-      setError('Incorrect password.')
+      const msg = err instanceof Error ? err.message : ''
+      if (msg === 'UNAUTHORIZED') {
+        setError('Incorrect password.')
+      } else if (msg) {
+        // Not an auth failure — surface the real problem (server/config/CORS).
+        setError(`Could not reach the admin API — ${msg}. If your password is correct, ADMIN_PANEL_SECRET may be misconfigured on the API.`)
+      } else {
+        setError('Could not reach the admin API. Check your connection and try again.')
+      }
     } finally {
       setLoading(false)
     }
