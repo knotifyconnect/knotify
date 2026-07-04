@@ -30,6 +30,7 @@ type EventItem = {
   source: string; url: string | null; image_url?: string | null; interests?: string[]
   host_label?: string | null; capacity?: number | null
   price_eur?: number | null; event_type?: string | null
+  reason?: string
 }
 type Gig = {
   id: string; gig_type: string; title: string; description: string | null
@@ -507,8 +508,8 @@ function EventsCarousel({ events, interests, onRsvp, onOpen, onSeeAll }: {
         style={{ display: 'flex', gap: 12, overflowX: 'auto', scrollSnapType: 'x mandatory', paddingBottom: 8, scrollbarWidth: 'none' }}>
         {events.map((e, i) => {
           const color = accentFor(e.id)
-          const sharedInterest = (e.interests ?? []).find((x) => interests.map((i) => i.toLowerCase()).includes(x.toLowerCase()))
-          const matched = Boolean(sharedInterest)
+          const reason = e.reason ?? (e.interests ?? []).find((x) => interests.map((i) => i.toLowerCase()).includes(x.toLowerCase()))
+          const matched = Boolean(reason)
           return (
             <motion.div key={e.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
               onClick={() => onOpen(e)}
@@ -517,7 +518,7 @@ function EventsCarousel({ events, interests, onRsvp, onOpen, onSeeAll }: {
               <div style={{ height: 100, position: 'relative', background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : EVENT_GRAD[color] }}>
                 <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 6 }}>
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(0,0,0,0.28)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text }}>Event</span>
-                  {matched && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(216,68,43,0.85)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text, textTransform: 'capitalize' }}>{sharedInterest}</span>}
+                  {matched && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: 'rgba(216,68,43,0.85)', padding: '3px 8px', borderRadius: 999, fontFamily: T.text, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{reason}</span>}
                 </div>
               </div>
               <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -744,7 +745,12 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null)
 
   const loadQuests = useCallback(() => { apiGet<QuestsResp>('/api/quests').then(setQuests).catch(() => {}) }, [])
-  const loadEvents = useCallback(() => { apiGet<{ events: EventItem[] }>('/api/events?limit=20').then(r => setEvents(r.events)).catch(() => {}) }, [])
+  // Personalized, server-ranked events (with a "why") from the for-you engine.
+  const loadEvents = useCallback(() => {
+    apiGet<{ events: EventItem[] }>('/api/for-you')
+      .then(r => setEvents((r.events ?? []).map(e => ({ ...e, is_host: e.is_host ?? false, rsvped: e.rsvped ?? false }))))
+      .catch(() => { apiGet<{ events: EventItem[] }>('/api/events?limit=20').then(r => setEvents(r.events)).catch(() => {}) })
+  }, [])
   const loadGigs   = useCallback(() => { apiGet<{ gigs: Gig[] }>('/api/gigs?limit=6').then(r => setGigs(r.gigs)).catch(() => {}) }, [])
 
   useEffect(() => {
@@ -817,7 +823,7 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
         )}
 
         {/* ── Events for you (personalized) ─────────────────────────────── */}
-        <EventsCarousel events={rankedEvents} interests={interests} onRsvp={toggleRsvp} onOpen={setSelectedEvent} onSeeAll={() => navigate('/events')} />
+        <EventsCarousel events={events} interests={interests} onRsvp={toggleRsvp} onOpen={setSelectedEvent} onSeeAll={() => navigate('/events')} />
 
         {/* ── Contribute: host an event / offer a gig ───────────────────── */}
         <div style={{ marginBottom: 8 }}>
