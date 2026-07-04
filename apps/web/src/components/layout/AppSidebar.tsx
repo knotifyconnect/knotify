@@ -150,7 +150,7 @@ export function AppSidebar() {
           >
             <KnotifyLogoImg variant="wordmark" height={24} />
           </button>
-          <NotificationsBell variant="sidebar" />
+          <NotificationsBell variant="sidebar" messageUnread={messageUnreadCount} referralUnread={referralUnreadCount} />
         </div>
 
         {/* Nav items */}
@@ -354,7 +354,7 @@ export function AppSidebar() {
 
       {/* Mobile floating notifications bell (top-right) */}
       <div className="md:hidden">
-        <NotificationsBell variant="floating" />
+        <NotificationsBell variant="floating" messageUnread={messageUnreadCount} referralUnread={referralUnreadCount} />
       </div>
 
       {/* ── Mobile bottom tab bar ─────────────────────────────────── */}

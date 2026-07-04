@@ -16,8 +16,6 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, MessageSquare, Briefcase, Check, X } from 'lucide-react'
 import { apiGet, apiPatch } from '../lib/api'
 import { KAvatar } from '../lib/knotify'
-import { useMessageUnreadCount } from '../hooks/useMessageUnreadCount'
-import { useReferralUnreadCount } from '../hooks/useReferralUnreadCount'
 
 type Peer = { id: string; full_name: string; username: string; avatar_url: string | null }
 type RawConn = {
@@ -35,15 +33,13 @@ const T = {
   display: "'Fraunces', Georgia, serif", text: "'IBM Plex Sans', system-ui, sans-serif",
 }
 
-export function NotificationsBell({ variant = 'sidebar' }: { variant?: 'sidebar' | 'floating' }) {
+export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, referralUnread = 0 }: { variant?: 'sidebar' | 'floating'; messageUnread?: number; referralUnread?: number }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [requests, setRequests] = useState<Request[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null)
-  const messageUnread = useMessageUnreadCount()
-  const referralUnread = useReferralUnreadCount()
 
   const load = useCallback(async () => {
     try {
