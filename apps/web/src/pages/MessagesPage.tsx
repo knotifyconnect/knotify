@@ -1339,6 +1339,12 @@ export function MessagesPage() {
                 const showAuthor = !coffeeEvent && !msg.is_mine && (!prev || prev.sender_id !== msg.sender_id)
 
                 const msgReactions = (!coffeeEvent && !isDeletedMessage && !isOpt(msg) && msg.reactions) ? msg.reactions : []
+                // Last couple of messages open their popovers upward so they don't
+                // overflow behind the composer / quick-actions.
+                const nearBottom = i >= displayMessages.length - 2
+                const popoverVertical: React.CSSProperties = nearBottom
+                  ? { bottom: 'calc(100% + 6px)' }
+                  : { top: 'calc(100% + 6px)' }
                 return (
                   <div key={msg.id}>
                     {showDay && (
@@ -1362,12 +1368,12 @@ export function MessagesPage() {
                       </div>
                     )}
                     <div
-                      style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 2 }}
+                      style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 2, paddingLeft: msg.is_mine ? 68 : 0, paddingRight: msg.is_mine ? 0 : 68 }}
+                      onMouseEnter={() => setHoveredMsgId(msg.id)}
+                      onMouseLeave={() => setHoveredMsgId(null)}
                     >
                       <div
-                        style={{ maxWidth: '76%', position: 'relative' }}
-                        onMouseEnter={() => setHoveredMsgId(msg.id)}
-                        onMouseLeave={() => setHoveredMsgId(null)}
+                        style={{ maxWidth: '80%', position: 'relative' }}
                         onContextMenu={(event) => {
                           if (!isOpt(msg) && !isDeletedMessage) {
                             event.preventDefault()
@@ -1401,7 +1407,7 @@ export function MessagesPage() {
                         {actionMenuMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
                           <>
                             <div onClick={() => setActionMenuMsgId(null)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
-                            <div style={{ position: 'absolute', top: 'calc(100% + 6px)', [msg.is_mine ? 'right' : 'left']: 0, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 12, boxShadow: '0 8px 24px rgba(26,24,21,0.18)', zIndex: 10, padding: 6, minWidth: 160 }}>
+                            <div style={{ position: 'absolute', ...popoverVertical, [msg.is_mine ? 'right' : 'left']: 0, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 12, boxShadow: '0 8px 24px rgba(26,24,21,0.18)', zIndex: 10, padding: 6, minWidth: 160 }}>
                               <button type="button" onClick={() => { void deleteMessage(msg, 'for-me'); setActionMenuMsgId(null) }} disabled={deletingMessageId === msg.id} style={MSG_MENU_ITEM}>Delete for me</button>
                               {msg.is_mine && (
                                 <button type="button" onClick={() => { void deleteMessage(msg, 'for-everyone'); setActionMenuMsgId(null) }} disabled={deletingMessageId === msg.id} style={{ ...MSG_MENU_ITEM, color: 'var(--signal)' }}>Delete for everyone</button>
@@ -1448,7 +1454,7 @@ export function MessagesPage() {
                             <div
                               style={{
                                 position: 'absolute',
-                                top: 'calc(100% + 6px)',
+                                ...popoverVertical,
                                 [msg.is_mine ? 'right' : 'left']: 0,
                                 background: 'var(--paper)',
                                 border: '1px solid var(--rule)',
