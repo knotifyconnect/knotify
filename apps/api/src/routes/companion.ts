@@ -23,49 +23,23 @@ import { sendMessage, proposeCoffee, rsvpEvent, createAsk, type ExecutedAction }
 
 export const companionRouter = Router()
 
-// TEMPORARY diagnostic: confirms whether THIS exact compiled module (the real
-// route code, not main.ts's separate /api/health shortcut) sees the key, AND
-// whether the 051/052 migrations have actually been applied, AND whether the
-// key+model combination genuinely works end-to-end against the real Anthropic
-// API. No secrets exposed. Remove once the connectivity issue is resolved.
-companionRouter.get('/debug-env', async (_req, res) => {
-  const key = process.env.ANTHROPIC_API_KEY
-  const model = process.env.COMPANION_MODEL || 'claude-sonnet-5'
-
-  const messagesTable = await supabase.from('companion_messages').select('id').limit(1)
-  const memoryTable = await supabase.from('companion_memory').select('id').limit(1)
-
-  let anthropicPing: { ok: boolean; detail: string } = { ok: false, detail: 'not attempted (no key)' }
-  if (key) {
-    try {
-      const client = new Anthropic({ apiKey: key })
-      const r = await client.messages.create({ model, max_tokens: 8, messages: [{ role: 'user', content: 'say ok' }] })
-      const text = r.content[0]?.type === 'text' ? r.content[0].text : ''
-      anthropicPing = { ok: true, detail: `model responded: "${text.slice(0, 40)}"` }
-    } catch (err) {
-      anthropicPing = { ok: false, detail: err instanceof Error ? err.message : 'unknown error calling Anthropic' }
-    }
-  }
-
-  res.json({
-    hasAnthropicKey: Boolean(key),
-    keyLength: key?.length ?? 0,
-    model,
-    nodeEnv: process.env.NODE_ENV ?? null,
-    companionMessagesTableExists: !messagesTable.error,
-    companionMessagesTableError: messagesTable.error?.message ?? null,
-    companionMemoryTableExists: !memoryTable.error,
-    companionMemoryTableError: memoryTable.error?.message ?? null,
-    anthropicPing,
-  })
-})
-
 const MODEL = process.env.COMPANION_MODEL || 'claude-sonnet-5'
 const HISTORY_LIMIT = 50
 const CONTEXT_TURNS = 20
 const MAX_MESSAGE_LENGTH = 2000
 const MAX_MEMORY_FACTS_PER_TURN = 5
 const MAX_MEMORY_FACT_LENGTH = 300
+
+// ── Cost control ─────────────────────────────────────────────────────────────
+// Per-user rolling 24h cap on Companion turns, checked BEFORE any Claude call
+// so a capped-out request costs nothing. Admins are unlimited (covers
+// founder/testing accounts); premium users get a generous daily allowance;
+// everyone else gets a small free taste. All three tunable without a
+// redeploy via env vars.
+const FREE_DAILY_LIMIT = Number(process.env.COMPANION_FREE_DAILY_LIMIT ?? 10)
+const PREMIUM_DAILY_LIMIT = Number(process.env.COMPANION_PREMIUM_DAILY_LIMIT ?? 100)
+const LIMIT_REACHED_FREE = "You've used today's free Companion messages. Upgrade to premium for a lot more room, or come back tomorrow."
+const LIMIT_REACHED_PREMIUM = "You've hit today's Companion limit. It resets tomorrow."
 // Deliberately distinct wording from the generic-failure path below, so a
 // screenshot immediately tells us which branch fired: this one means
 // getAnthropic() returned null, i.e. ANTHROPIC_API_KEY isn't visible to this
@@ -186,7 +160,7 @@ async function executeTool(userId: string, ctx: CompanionContext, name: string, 
   }
 }
 
-const MAX_AGENT_TURNS = 5
+const MAX_AGENT_TURNS = 3
 
 async function callCompanion(
   client: Anthropic,
@@ -248,6 +222,26 @@ async function persistMemory(userId: string, facts: string[]) {
   await supabase.from('companion_memory').insert(facts.map((fact) => ({ user_id: userId, fact })))
 }
 
+/** Checked before any Claude call so a capped-out request never costs anything. */
+async function checkDailyLimit(userId: string): Promise<{ allowed: true } | { allowed: false; message: string }> {
+  const { data: me } = await supabase.from('users').select('is_admin, is_premium').eq('id', userId).maybeSingle()
+  if (me?.is_admin) return { allowed: true }
+
+  const limit = me?.is_premium ? PREMIUM_DAILY_LIMIT : FREE_DAILY_LIMIT
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { count } = await supabase
+    .from('companion_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('role', 'user')
+    .gte('created_at', since)
+
+  if ((count ?? 0) >= limit) {
+    return { allowed: false, message: me?.is_premium ? LIMIT_REACHED_PREMIUM : LIMIT_REACHED_FREE }
+  }
+  return { allowed: true }
+}
+
 // ── GET /messages ────────────────────────────────────────────────────────────
 companionRouter.get('/messages', requireAuth, async (req, res) => {
   const userId = req.appUserId
@@ -292,6 +286,11 @@ companionRouter.post('/messages', requireAuth, async (req, res) => {
   if (content.length > MAX_MESSAGE_LENGTH) return res.status(400).json({ error: `content must be ${MAX_MESSAGE_LENGTH} characters or fewer` })
 
   try {
+    const limitCheck = await checkDailyLimit(userId)
+    if (!limitCheck.allowed) {
+      return res.json({ reply: limitCheck.message, suggestions: [] })
+    }
+
     await persistMessage(userId, 'user', content)
 
     const client = getAnthropic()
