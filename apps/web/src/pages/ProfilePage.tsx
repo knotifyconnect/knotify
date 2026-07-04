@@ -843,36 +843,101 @@ function OwnProfileView() {
   return (
     <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 22 }}>
 
-      {/* ─── Banner / wallpaper ──────────────────────────────────────────── */}
-      <div style={{ position: 'relative', height: isMobile ? 120 : 168, borderRadius: 18, overflow: 'hidden', background: me.banner_url ? `center/cover no-repeat url(${me.banner_url})` : defaultBanner(credibility?.tier), boxShadow: 'var(--lift-1)' }}>
-        {!me.banner_url && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', padding: 16 }}>
-            <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 15, color: credibility && ['Bowline', 'Masthead'].includes(credibility.tier) ? 'rgba(255,255,255,0.9)' : 'var(--ink-muted)' }}>
-              {credibility ? `${credibility.tier} · knotting Munich` : 'knotting Munich'}
-            </span>
-          </div>
-        )}
-        <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 999, background: 'rgba(26,24,21,0.55)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: bannerBusy ? 'wait' : 'pointer', backdropFilter: 'blur(4px)' }}>
-            {bannerBusy ? 'Uploading…' : me.banner_url ? 'Change banner' : '＋ Add banner'}
-            <input type="file" accept="image/*" style={{ display: 'none' }} disabled={bannerBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void saveBanner(f) }} />
-          </label>
-          {me.banner_url && (
-            <button type="button" onClick={() => void saveBanner(null)} disabled={bannerBusy} aria-label="Remove banner" style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'rgba(26,24,21,0.55)', color: '#fff', cursor: 'pointer', fontSize: 16, lineHeight: 1, backdropFilter: 'blur(4px)' }}>
-              ✕
-            </button>
+      {/* ─── Banner + identity (interconnected: avatar overlaps the cover) ─── */}
+      <div>
+        {/* Cover */}
+        <div style={{ position: 'relative', height: isMobile ? 128 : 180, borderRadius: 20, overflow: 'hidden', background: me.banner_url ? `center/cover no-repeat url(${me.banner_url})` : defaultBanner(credibility?.tier), boxShadow: 'var(--lift-1)' }}>
+          {!me.banner_url && (
+            <>
+              <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(255,255,255,0.32) 1px, transparent 1px)', backgroundSize: '22px 22px', opacity: ['Bowline', 'Masthead'].includes(credibility?.tier ?? '') ? 0.5 : 0.32 }} />
+              <div style={{ position: 'absolute', left: 20, bottom: 16 }}>
+                <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 15, color: ['Bowline', 'Masthead'].includes(credibility?.tier ?? '') ? 'rgba(255,255,255,0.92)' : 'var(--ink-soft)' }}>
+                  {credibility ? `${credibility.tier} · knotting Munich` : 'knotting Munich'}
+                </span>
+              </div>
+            </>
           )}
+          <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 6 }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 999, background: 'rgba(26,24,21,0.5)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: bannerBusy ? 'wait' : 'pointer', backdropFilter: 'blur(4px)' }}>
+              {bannerBusy ? 'Uploading…' : me.banner_url ? 'Change cover' : '＋ Cover photo'}
+              <input type="file" accept="image/*" style={{ display: 'none' }} disabled={bannerBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void saveBanner(f) }} />
+            </label>
+            {me.banner_url && (
+              <button type="button" onClick={() => void saveBanner(null)} disabled={bannerBusy} aria-label="Remove cover" style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'rgba(26,24,21,0.5)', color: '#fff', cursor: 'pointer', fontSize: 15, lineHeight: 1, backdropFilter: 'blur(4px)' }}>✕</button>
+            )}
+          </div>
         </div>
-      </div>
 
+        {/* Identity — avatar overlaps the cover, actions sit alongside */}
+        <div style={{ padding: '0 6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginTop: isMobile ? -40 : -52 }}>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <img
+                src={avatarDraft || me.avatar_url || avatarUrl(me.full_name, 160)}
+                alt={me.full_name}
+                style={{ width: isMobile ? 92 : 116, height: isMobile ? 92 : 116, borderRadius: 30, border: '4px solid var(--paper)', objectFit: 'cover', display: 'block', boxShadow: 'var(--lift-2)' }}
+              />
+              <button
+                type="button"
+                onClick={() => setAvatarEditorOpen(true)}
+                aria-label="Edit photo"
+                style={{ position: 'absolute', right: -6, bottom: -6, border: '2px solid var(--paper)', borderRadius: 999, background: 'var(--signal)', color: 'white', fontSize: 11, fontWeight: 600, padding: '5px 11px', cursor: 'pointer', boxShadow: 'var(--lift-1)' }}
+              >
+                Edit
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingBottom: 4 }}>
+              <KBtn variant={customizing ? 'signal' : 'ghost'} size="sm" onClick={() => setCustomizing((c) => !c)}>{customizing ? 'Done' : 'Customize'}</KBtn>
+              <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
+              <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
+              <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
+                {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
+              </KBtn>
+            </div>
+          </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-        <KBtn variant={customizing ? 'signal' : 'ghost'} size="sm" onClick={() => setCustomizing((c) => !c)}>{customizing ? 'Done' : 'Customize'}</KBtn>
-        <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
-        <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
-        <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
-          {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
-        </KBtn>
+          <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(28px, 4vw, 40px)', lineHeight: 1.02, fontWeight: 500, letterSpacing: '-0.03em', margin: 0, color: 'var(--ink)' }}>
+                {me.full_name}
+              </h1>
+              <KPill color={pill.color}>{pill.label}</KPill>
+            </div>
+
+            {editMode ? (
+              <input
+                value={me.headline ?? ''}
+                onChange={(e) => setMe({ ...me, headline: e.target.value.slice(0, 120) })}
+                placeholder="e.g. CS student building AI products"
+                style={{ ...fieldStyle, maxWidth: 560 }}
+              />
+            ) : (
+              <p style={{ margin: 0, color: me.headline ? 'var(--ink-soft)' : 'var(--ink-faint)', fontSize: 16, lineHeight: 1.5, maxWidth: 620 }}>
+                {me.headline || 'Add a headline so people know what to come to you for.'}
+              </p>
+            )}
+
+            <div style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{profileMeta}</div>
+
+            <div style={{ display: 'flex', gap: 22, marginTop: 6, flexWrap: 'wrap' }}>
+              {([
+                { label: 'connections', value: connectionCount, onClick: () => navigate('/map') },
+                { label: 'skills', value: userSkillIds.length, onClick: undefined },
+                { label: 'updates', value: updates.length, onClick: undefined },
+              ] as { label: string; value: number; onClick?: () => void }[]).map(({ label, value, onClick }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={onClick}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'baseline', gap: 5, fontFamily: "'IBM Plex Sans', sans-serif" }}
+                >
+                  <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>{value}</span>
+                  <span style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       {customizing && (
@@ -889,67 +954,6 @@ function OwnProfileView() {
           </div>
         </KCard>
       )}
-
-      {/* ─── Profile header (flat, sits on the page) ─────────────────────── */}
-      <div style={{ display: 'flex', gap: isMobile ? 16 : 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flexShrink: 0 }}>
-          <img
-            src={avatarDraft || me.avatar_url || avatarUrl(me.full_name, 160)}
-            alt={me.full_name}
-            style={{ width: 104, height: 104, borderRadius: 26, border: '3px solid #fff', objectFit: 'cover', display: 'block', boxShadow: 'var(--lift-2)' }}
-          />
-          <button
-            type="button"
-            onClick={() => setAvatarEditorOpen(true)}
-            aria-label="Edit photo"
-            style={{ position: 'absolute', right: -6, bottom: -6, border: '2px solid #fff', borderRadius: 999, background: 'var(--signal)', color: 'white', fontSize: 11, fontWeight: 600, padding: '5px 11px', cursor: 'pointer', boxShadow: 'var(--lift-1)' }}
-          >
-            Edit
-          </button>
-        </div>
-
-        <div style={{ flex: 1, minWidth: 240, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(28px, 4vw, 40px)', lineHeight: 1.02, fontWeight: 500, letterSpacing: '-0.03em', margin: 0, color: 'var(--ink)' }}>
-              {me.full_name}
-            </h1>
-            <KPill color={pill.color}>{pill.label}</KPill>
-          </div>
-
-          {editMode ? (
-            <input
-              value={me.headline ?? ''}
-              onChange={(e) => setMe({ ...me, headline: e.target.value.slice(0, 120) })}
-              placeholder="e.g. CS student building AI products"
-              style={{ ...fieldStyle, maxWidth: 560 }}
-            />
-          ) : (
-            <p style={{ margin: 0, color: me.headline ? 'var(--ink-soft)' : 'var(--ink-faint)', fontSize: 16, lineHeight: 1.5, maxWidth: 620 }}>
-              {me.headline || 'Add a headline so people know what to come to you for.'}
-            </p>
-          )}
-
-          <div style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{profileMeta}</div>
-
-          <div style={{ display: 'flex', gap: 22, marginTop: 6, flexWrap: 'wrap' }}>
-            {([
-              { label: 'connections', value: connectionCount, onClick: () => navigate('/map') },
-              { label: 'skills', value: userSkillIds.length, onClick: undefined },
-              { label: 'updates', value: updates.length, onClick: undefined },
-            ] as { label: string; value: number; onClick?: () => void }[]).map(({ label, value, onClick }) => (
-              <button
-                key={label}
-                type="button"
-                onClick={onClick}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'baseline', gap: 5, fontFamily: "'IBM Plex Sans', sans-serif" }}
-              >
-                <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>{value}</span>
-                <span style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
 
       {/* Bio */}
       {editMode ? (
