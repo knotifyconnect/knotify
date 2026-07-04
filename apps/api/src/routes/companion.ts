@@ -24,16 +24,39 @@ import { sendMessage, proposeCoffee, rsvpEvent, createAsk, type ExecutedAction }
 export const companionRouter = Router()
 
 // TEMPORARY diagnostic: confirms whether THIS exact compiled module (the real
-// route code, not main.ts's separate /api/health shortcut) sees the key.
-// No secrets exposed, just booleans/lengths. Remove once the connectivity
-// issue is resolved.
-companionRouter.get('/debug-env', (_req, res) => {
+// route code, not main.ts's separate /api/health shortcut) sees the key, AND
+// whether the 051/052 migrations have actually been applied, AND whether the
+// key+model combination genuinely works end-to-end against the real Anthropic
+// API. No secrets exposed. Remove once the connectivity issue is resolved.
+companionRouter.get('/debug-env', async (_req, res) => {
   const key = process.env.ANTHROPIC_API_KEY
+  const model = process.env.COMPANION_MODEL || 'claude-sonnet-5'
+
+  const messagesTable = await supabase.from('companion_messages').select('id').limit(1)
+  const memoryTable = await supabase.from('companion_memory').select('id').limit(1)
+
+  let anthropicPing: { ok: boolean; detail: string } = { ok: false, detail: 'not attempted (no key)' }
+  if (key) {
+    try {
+      const client = new Anthropic({ apiKey: key })
+      const r = await client.messages.create({ model, max_tokens: 8, messages: [{ role: 'user', content: 'say ok' }] })
+      const text = r.content[0]?.type === 'text' ? r.content[0].text : ''
+      anthropicPing = { ok: true, detail: `model responded: "${text.slice(0, 40)}"` }
+    } catch (err) {
+      anthropicPing = { ok: false, detail: err instanceof Error ? err.message : 'unknown error calling Anthropic' }
+    }
+  }
+
   res.json({
     hasAnthropicKey: Boolean(key),
     keyLength: key?.length ?? 0,
-    model: process.env.COMPANION_MODEL || 'claude-sonnet-5',
+    model,
     nodeEnv: process.env.NODE_ENV ?? null,
+    companionMessagesTableExists: !messagesTable.error,
+    companionMessagesTableError: messagesTable.error?.message ?? null,
+    companionMemoryTableExists: !memoryTable.error,
+    companionMemoryTableError: memoryTable.error?.message ?? null,
+    anthropicPing,
   })
 })
 
