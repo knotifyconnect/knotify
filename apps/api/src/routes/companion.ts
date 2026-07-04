@@ -29,12 +29,18 @@ const CONTEXT_TURNS = 20
 const MAX_MESSAGE_LENGTH = 2000
 const MAX_MEMORY_FACTS_PER_TURN = 5
 const MAX_MEMORY_FACT_LENGTH = 300
-const FALLBACK_REPLY = "I'm having trouble connecting right now, try again shortly."
+// Deliberately distinct wording from the generic-failure path below, so a
+// screenshot immediately tells us which branch fired: this one means
+// getAnthropic() returned null, i.e. ANTHROPIC_API_KEY isn't visible to this
+// runtime at all (as opposed to the key being present but the API call itself
+// failing, which surfaces as a 500 with the real error message instead).
+const FALLBACK_REPLY = "Companion setup issue: ANTHROPIC_API_KEY is not configured on this server."
 
 let anthropic: Anthropic | null | undefined
 function getAnthropic(): Anthropic | null {
   if (anthropic !== undefined) return anthropic
   const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) console.error('[companion] ANTHROPIC_API_KEY is not set in process.env for this runtime')
   anthropic = apiKey ? new Anthropic({ apiKey }) : null
   return anthropic
 }
@@ -234,6 +240,7 @@ companionRouter.get('/messages', requireAuth, async (req, res) => {
 
     return res.json({ messages: [{ id: 'opener', role: 'assistant', content: reply, suggestions: suggestions.length ? suggestions : null, created_at: new Date().toISOString() }] })
   } catch (err) {
+    console.error('[companion] GET /messages failed', err)
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Failed loading companion messages' })
   }
 })
@@ -273,6 +280,7 @@ companionRouter.post('/messages', requireAuth, async (req, res) => {
 
     return res.json({ reply, suggestions, actions })
   } catch (err) {
+    console.error('[companion] POST /messages failed', err)
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Failed sending message to companion' })
   }
 })

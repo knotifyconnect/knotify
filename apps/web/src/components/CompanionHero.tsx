@@ -1,11 +1,12 @@
 /**
- * CompanionHero — the Relationship OS's conversational hero on Home.
- *
- * Replaces the old static "Today's moves" card queue. On open it fetches
- * (and, server-side, lazily generates) a proactive opener grounded in the
- * user's real network data, then lets them chat freely. Suggestion pills
- * deep-link into the existing message/coffee/profile/quests/events flows —
- * this component never sends messages or RSVPs on the user's behalf.
+ * CompanionHero — a standalone chat card on Home, separate from the
+ * "Today's moves" card queue (which stays as its own section so the two
+ * never intervene with each other). On open it fetches (and, server-side,
+ * lazily generates) a proactive opener grounded in the user's real network
+ * data, then lets them chat freely. It's a real agent: some suggestion
+ * pills are deep-links, but it can also directly send a message, propose
+ * coffee, RSVP, or post an ask when the user confirms in conversation
+ * (executed actions render as ✓/✕ chips above the reply).
  */
 import { useEffect, useRef, useState } from 'react'
 import { apiGet, apiPost } from '../lib/api'
@@ -47,13 +48,10 @@ const ACTION_ICON: Record<Suggestion['action'], typeof Send> = {
 
 export function CompanionHero({
   peers,
-  healthStrip,
   onSuggestion,
 }: {
   /** peerId → lightweight peer info, used to resolve suggestion pills. */
   peers: Map<string, PeerLite>
-  /** The existing HealthStrip node, rendered above the chat, unchanged. */
-  healthStrip: React.ReactNode
   onSuggestion: (s: Suggestion) => void
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -66,7 +64,11 @@ export function CompanionHero({
     let mounted = true
     apiGet<{ messages: ChatMessage[] }>('/api/companion/messages')
       .then((r) => { if (mounted) setMessages(r.messages ?? []) })
-      .catch(() => {})
+      .catch((e) => {
+        if (!mounted) return
+        const detail = e instanceof Error ? e.message : 'Failed to load the Companion.'
+        setMessages([{ id: 'load-error', role: 'assistant', content: detail, suggestions: null, created_at: new Date().toISOString() }])
+      })
       .finally(() => { if (mounted) setLoadingHistory(false) })
     return () => { mounted = false }
   }, [])
@@ -85,8 +87,11 @@ export function CompanionHero({
     try {
       const r = await apiPost<{ reply: string; suggestions: Suggestion[]; actions?: ExecutedAction[] }>('/api/companion/messages', { content })
       setMessages((prev) => [...prev, { id: `reply-${Date.now()}`, role: 'assistant', content: r.reply, suggestions: r.suggestions?.length ? r.suggestions : null, created_at: new Date().toISOString(), actions: r.actions?.length ? r.actions : undefined }])
-    } catch {
-      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, role: 'assistant', content: "Sorry, that didn't go through, try again.", suggestions: null, created_at: new Date().toISOString() }])
+    } catch (e) {
+      // Surfaces the real server error (e.g. a bad model id, a missing table) while
+      // this feature is still being stabilized, instead of a generic message.
+      const detail = e instanceof Error ? e.message : "Sorry, that didn't go through, try again."
+      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, role: 'assistant', content: detail, suggestions: null, created_at: new Date().toISOString() }])
     } finally {
       setSending(false)
     }
@@ -101,7 +106,6 @@ export function CompanionHero({
 
   return (
     <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
-      {healthStrip}
       <SectionLabel>Companion</SectionLabel>
 
       <div
