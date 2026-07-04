@@ -23,6 +23,20 @@ import { sendMessage, proposeCoffee, rsvpEvent, createAsk, type ExecutedAction }
 
 export const companionRouter = Router()
 
+// TEMPORARY diagnostic: confirms whether THIS exact compiled module (the real
+// route code, not main.ts's separate /api/health shortcut) sees the key.
+// No secrets exposed, just booleans/lengths. Remove once the connectivity
+// issue is resolved.
+companionRouter.get('/debug-env', (_req, res) => {
+  const key = process.env.ANTHROPIC_API_KEY
+  res.json({
+    hasAnthropicKey: Boolean(key),
+    keyLength: key?.length ?? 0,
+    model: process.env.COMPANION_MODEL || 'claude-sonnet-5',
+    nodeEnv: process.env.NODE_ENV ?? null,
+  })
+})
+
 const MODEL = process.env.COMPANION_MODEL || 'claude-sonnet-5'
 const HISTORY_LIMIT = 50
 const CONTEXT_TURNS = 20
