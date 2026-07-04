@@ -805,17 +805,28 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
 
-        {/* ── Relationship OS hero: Today's moves, full width ───────────── */}
-        {maintenance && <div style={{ marginBottom: 28 }}>{maintenance}</div>}
+        {/* ── Relationship OS hero: the core of knotify ─────────────────── */}
+        {maintenance && (
+          <div style={{ marginBottom: 30 }}>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontFamily: T.display, fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em', color: T.ink }}>Your relationships</div>
+              <div style={{ fontSize: 13, color: T.inkMuted, marginTop: 2, fontFamily: T.text }}>Who to reconnect with today, and why — knotify keeps your network warm so opportunities find you.</div>
+            </div>
+            {maintenance}
+          </div>
+        )}
 
-        {/* ── Contribute: host an event / offer a gig (accessible, near top) ── */}
-        <div style={{ marginBottom: 32 }}>
+        {/* ── Events for you (personalized) ─────────────────────────────── */}
+        <EventsCarousel events={rankedEvents} interests={interests} onRsvp={toggleRsvp} onOpen={setSelectedEvent} onSeeAll={() => navigate('/events')} />
+
+        {/* ── Contribute: host an event / offer a gig ───────────────────── */}
+        <div style={{ marginBottom: 8 }}>
           <SectionLabel>Contribute</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
             <CreateEventInline onCreated={loadEvents} />
             {elig?.can_offer && <CreateGigInline onCreated={() => { loadGigs(); apiGet<Eligibility>('/api/gigs/eligibility').then(setElig).catch(() => {}) }} />}
             {elig && !elig.can_offer && (
-              <div style={{ padding: 18, borderRadius: 14, background: '#fff', boxShadow: 'var(--lift-1)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ padding: 18, borderRadius: 16, background: '#fff', boxShadow: 'var(--lift-1)', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <Lock size={16} color={T.inkFaint} />
                 <div>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: T.text }}>Offer gigs at {elig.unlock_at} credibility</div>
@@ -825,35 +836,6 @@ export function HomeHub({ maintenance }: { maintenance?: React.ReactNode } = {})
             )}
           </div>
         </div>
-
-        {/* ── Events carousel ───────────────────────────────────────────── */}
-        <EventsCarousel events={rankedEvents} interests={interests} onRsvp={toggleRsvp} onOpen={setSelectedEvent} onSeeAll={() => navigate('/events')} />
-
-        {/* ── People suggestions ────────────────────────────────────────── */}
-        {people.length > 0 && (
-          <div style={{ marginBottom: 32 }}>
-            <SectionLabel>People · suggested for you</SectionLabel>
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))' }}>
-              <AnimatePresence mode="popLayout">
-                {people.slice(0, 4).map((p, i) => (
-                  <PersonCard key={p.id} person={p} index={i} state={connecting[p.id] ?? 'idle'} onAsk={() => askIntro(p)} onView={() => navigate(`/profile/${p.id}`)} interests={interests} />
-                ))}
-              </AnimatePresence>
-            </div>
-          </div>
-        )}
-
-        {/* ── Gigs ──────────────────────────────────────────────────────── */}
-        {gigs.length > 0 && (
-          <div style={{ marginBottom: 32 }}>
-            <SectionLabel>Gigs · from your network</SectionLabel>
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))' }}>
-              <AnimatePresence mode="popLayout">
-                {gigs.slice(0, 4).map((g, i) => <GigCard key={g.id} gig={g} index={i} />)}
-              </AnimatePresence>
-            </div>
-          </div>
-        )}
 
       </motion.div>
     </>

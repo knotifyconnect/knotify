@@ -359,6 +359,7 @@ function OwnProfileView() {
   const [inviteCopied, setInviteCopied] = useState(false)
   const [bannerBusy, setBannerBusy] = useState(false)
   const [customizing, setCustomizing] = useState(false)
+  const [profileTab, setProfileTab] = useState<'overview' | 'resume'>('overview')
 
   useEffect(() => {
     apiGet<{ credibility_score: number; tier: string; next_tier: { name: string; at: number } | null; gig_unlocked: boolean; gig_unlock_at: number; weekly_delta?: number; percentile?: number | null }>('/api/quests')
@@ -831,6 +832,9 @@ function OwnProfileView() {
   // Customizable widgets: user can show/hide these (saved to the account).
   const hiddenWidgets = new Set((me.profile_layout ?? []).filter((w) => !w.visible).map((w) => w.id))
   const isWidgetVisible = (id: string) => !hiddenWidgets.has(id)
+  // Tabs keep the profile from being one long scroll. Edit mode shows all.
+  const showOverview = editMode || profileTab === 'overview'
+  const showResume = editMode || profileTab === 'resume'
   function toggleWidget(id: string) {
     const next = PROFILE_WIDGETS.map((w) => ({ id: w.id, visible: w.id === id ? hiddenWidgets.has(id) : !hiddenWidgets.has(w.id) }))
     setMe((m) => (m ? { ...m, profile_layout: next } : m))
@@ -966,8 +970,24 @@ function OwnProfileView() {
         <p style={{ fontSize: 15, lineHeight: 1.65, color: 'var(--ink-soft)', margin: 0, maxWidth: 720 }}>{me.bio}</p>
       ) : null}
 
+      {/* ─── Tabs (keeps the profile from being one long scroll) ─────────── */}
+      {!editMode && (
+        <div style={{ display: 'flex', gap: 0, borderBottom: '0.5px solid var(--rule-soft)' }}>
+          {([['overview', 'Overview'], ['resume', 'Experience & skills']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setProfileTab(key)}
+              style={{ background: 'none', border: 'none', padding: '10px 2px', marginRight: 22, cursor: 'pointer', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 14, fontWeight: profileTab === key ? 600 : 500, color: profileTab === key ? 'var(--ink)' : 'var(--ink-muted)', borderBottom: profileTab === key ? '2px solid var(--ink)' : '2px solid transparent', marginBottom: -1 }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ─── Credibility widget (moved from Home) ────────────────────────── */}
-      {isWidgetVisible('credibility') && credibility && (
+      {isWidgetVisible('credibility') && credibility && showOverview && (
         <button type="button" onClick={() => navigate('/quests')} style={{ textAlign: 'left', cursor: 'pointer', border: 'none', padding: 22, borderRadius: 18, background: 'var(--ink)', color: 'var(--paper-soft)', position: 'relative', overflow: 'hidden' }}>
           <div aria-hidden style={{ position: 'absolute', right: -30, top: -30, width: 160, height: 160, borderRadius: '50%', background: 'radial-gradient(circle, rgba(216,68,43,0.3) 0%, transparent 70%)' }} />
           <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
@@ -1050,7 +1070,7 @@ function OwnProfileView() {
       )}
 
       {/* ─── Working on now ─────────────────────────────────────────────────── */}
-      {isWidgetVisible('working') && (
+      {isWidgetVisible('working') && showOverview && (
       <div ref={updatesSectionRef} style={{ scrollMarginTop: 96 }}>
       <KCard style={{ padding: '20px 22px', outline: highlightedProfileSection === 'updates' ? '3px solid rgba(216,68,43,0.32)' : 'none', boxShadow: highlightedProfileSection === 'updates' ? '0 0 0 8px rgba(216,68,43,0.08)' : undefined }}>
         <SectionHead label="Working on now" action={updates[0] && !composingUpdate ? 'Post update' : undefined} onAction={() => setComposingUpdate(true)} />
@@ -1090,7 +1110,7 @@ function OwnProfileView() {
       )}
 
       {/* ─── Open asks ──────────────────────────────────────────────────────── */}
-      {isWidgetVisible('asks') && (
+      {isWidgetVisible('asks') && showOverview && (
       <KCard style={{ padding: '20px 22px' }}>
         <SectionHead label="Open asks" action={myAsks.length > 0 && !composingAsk ? 'Post ask' : undefined} onAction={() => setComposingAsk(true)} />
         {myAsks.length > 0 && (
@@ -1132,7 +1152,8 @@ function OwnProfileView() {
       </KCard>
       )}
 
-      {/* ─── Experience ─────────────────────────────────────────────────────── */}
+      {/* ─── Experience / Education / Skills / CV (résumé tab) ──────────────── */}
+      {showResume && (<>
       <div ref={experienceSectionRef} style={{ scrollMarginTop: 96 }}>
       <KCard style={{ padding: '18px 20px', marginBottom: 16, outline: highlightedProfileSection === 'experience' ? '3px solid rgba(216,68,43,0.32)' : 'none', boxShadow: highlightedProfileSection === 'experience' ? '0 0 0 8px rgba(216,68,43,0.08)' : undefined }}>
         <SectionHead
@@ -1423,9 +1444,10 @@ function OwnProfileView() {
         )}
 
       </KCard>
+      </>)}
 
       {/* ─── Links ──────────────────────────────────────────────────────────── */}
-      {!editMode && (me.website_url || me.github_url || me.linkedin_url) && (
+      {!editMode && showResume && (me.website_url || me.github_url || me.linkedin_url) && (
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
           <SectionHead label="Links" />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -1452,7 +1474,7 @@ function OwnProfileView() {
       )}
 
       {/* ─── Invite link (moved from Home) ──────────────────────────────────── */}
-      {isWidgetVisible('invite') && inviteUrl && (
+      {isWidgetVisible('invite') && inviteUrl && showOverview && (
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
           <SectionHead label="Invite your network" />
           <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>Share your personal link to bring people into Munich's professional graph.</p>
@@ -1466,7 +1488,7 @@ function OwnProfileView() {
       )}
 
       {/* ─── Availability & Asks ────────────────────────────────────────────── */}
-      {(
+      {showResume && (
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
           <SectionHead label="Availability" />
           {editMode ? (
@@ -1538,7 +1560,7 @@ function OwnProfileView() {
       )}
 
       {/* ─── Timeline (recent updates) ──────────────────────────────────────── */}
-      {updates.length > 1 && (
+      {updates.length > 1 && showOverview && (
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
           <SectionHead label="Timeline" />
           <div style={{ position: 'relative' }}>

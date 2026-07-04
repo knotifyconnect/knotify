@@ -1349,27 +1349,10 @@ export function MessagesPage() {
                       </div>
                     )}
                     <div
-                      style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 2, alignItems: 'center', gap: 6 }}
+                      style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 2 }}
                     >
-                      {/* Tiny react button, visible on hover, sits to the left of mine, right of others */}
-                      {msg.is_mine && hoveredMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
-                        <button
-                          type="button"
-                          onClick={() => setPickerOpenMsgId(pickerOpenMsgId === msg.id ? null : msg.id)}
-                          aria-label="Add reaction"
-                          style={{
-                            width: 24, height: 24, borderRadius: '50%',
-                            background: 'var(--paper)', border: '0.5px solid var(--rule)',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 12, padding: 0, boxShadow: '0 2px 6px rgba(26,24,21,0.08)',
-                            order: 0,
-                          }}
-                        >
-                          🙂
-                        </button>
-                      )}
                       <div
-                        style={{ maxWidth: '72%', position: 'relative' }}
+                        style={{ maxWidth: '76%', position: 'relative' }}
                         onMouseEnter={() => setHoveredMsgId(msg.id)}
                         onMouseLeave={() => setHoveredMsgId(null)}
                         onContextMenu={(event) => {
@@ -1380,6 +1363,23 @@ export function MessagesPage() {
                           }
                         }}
                       >
+                        {/* React button — absolutely positioned so hover never resizes the bubble */}
+                        {hoveredMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
+                          <button
+                            type="button"
+                            onClick={() => setPickerOpenMsgId(pickerOpenMsgId === msg.id ? null : msg.id)}
+                            aria-label="Add reaction"
+                            style={{
+                              position: 'absolute', top: 4, [msg.is_mine ? 'left' : 'right']: -32,
+                              width: 26, height: 26, borderRadius: '50%',
+                              background: 'var(--paper)', border: '0.5px solid var(--rule)',
+                              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 13, padding: 0, boxShadow: '0 2px 6px rgba(26,24,21,0.12)', zIndex: 3,
+                            }}
+                          >
+                            🙂
+                          </button>
+                        )}
                         {/* Bubble */}
                         <div
                           style={{
@@ -1506,23 +1506,6 @@ export function MessagesPage() {
                           </div>
                         )}
                       </div>
-
-                      {/* Tiny react button, right side for non-mine messages */}
-                      {!msg.is_mine && hoveredMsgId === msg.id && !isOpt(msg) && !isDeletedMessage && (
-                        <button
-                          type="button"
-                          onClick={() => setPickerOpenMsgId(pickerOpenMsgId === msg.id ? null : msg.id)}
-                          aria-label="Add reaction"
-                          style={{
-                            width: 24, height: 24, borderRadius: '50%',
-                            background: 'var(--paper)', border: '0.5px solid var(--rule)',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 12, padding: 0, boxShadow: '0 2px 6px rgba(26,24,21,0.08)',
-                          }}
-                        >
-                          🙂
-                        </button>
-                      )}
                     </div>
                     </>
                     )}

@@ -39,7 +39,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   const [requests, setRequests] = useState<Request[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
-  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null)
+  const [pos, setPos] = useState<React.CSSProperties | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -68,9 +68,13 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   function toggle() {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect()
-      // Anchor the panel near the bell; clamp to viewport.
-      const left = Math.min(r.left, window.innerWidth - 348)
-      setAnchor({ top: r.bottom + 8, left: Math.max(12, left) })
+      if (variant === 'floating') {
+        // Bottom FAB → open the panel upward, right-aligned to the button.
+        setPos({ bottom: Math.round(window.innerHeight - r.top + 8), right: Math.max(12, Math.round(window.innerWidth - r.right)) })
+      } else {
+        const left = Math.min(r.left, window.innerWidth - 348)
+        setPos({ top: r.bottom + 8, left: Math.max(12, left) })
+      }
       void load()
     }
     setOpen((o) => !o)
@@ -112,17 +116,17 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   return (
     <>
       {variant === 'floating' ? (
-        <div style={{ position: 'fixed', top: 'calc(12px + env(safe-area-inset-top))', right: 14, zIndex: 45 }}>{bellButton}</div>
+        <div style={{ position: 'fixed', bottom: 'max(84px, calc(72px + env(safe-area-inset-bottom)))', right: 16, zIndex: 45 }}>{bellButton}</div>
       ) : (
         bellButton
       )}
 
-      {open && anchor && createPortal(
+      {open && pos && createPortal(
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
           <div
             style={{
-              position: 'fixed', top: anchor.top, left: anchor.left, width: 336, maxHeight: '70vh', overflowY: 'auto',
+              position: 'fixed', ...pos, width: 'min(336px, calc(100vw - 24px))', maxHeight: '70vh', overflowY: 'auto',
               background: '#fff', borderRadius: 16, boxShadow: '0 20px 60px rgba(26,24,21,0.22)', zIndex: 9999, padding: 8,
               fontFamily: T.text,
             }}
