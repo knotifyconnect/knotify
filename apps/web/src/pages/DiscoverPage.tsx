@@ -178,10 +178,11 @@ export function DiscoverPage() {
     setError(null)
 
     try {
-      const [meResult, extendedResult, connectionsResult] = await Promise.all([
+      const [meResult, extendedResult, connectionsResult, suggestionsResult] = await Promise.all([
         apiGet<{ user: Me }>('/api/users/me'),
         apiGet<{ skills: Skill[] }>('/api/users/me/profile-extended'),
         apiGet<{ connections: Connection[] }>('/api/connections'),
+        apiGet<{ suggestions: DiscoverUser[] }>('/api/users/suggestions').catch(() => ({ suggestions: [] })),
       ])
 
       const state = buildRelationState(connectionsResult.connections ?? [], meResult.user.id)
@@ -193,7 +194,7 @@ export function DiscoverPage() {
       setIncomingRequests(state.incoming)
       setOutgoingRequests(state.outgoing)
       setAcceptedConnections(state.accepted)
-      setSuggestions([])
+      setSuggestions(suggestionsResult.suggestions ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load Discover')
     } finally {
