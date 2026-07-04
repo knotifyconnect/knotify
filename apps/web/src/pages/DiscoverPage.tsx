@@ -990,28 +990,28 @@ export function DiscoverPage() {
               Loading...
             </p>
           </KCard>
-        ) : !showResults ? (
-          <KCard style={{ padding: 48, textAlign: 'center' }}>
-            <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 20, color: 'var(--ink)', margin: '0 0 8px' }}>
-              Search for someone specific.
-            </p>
-            <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0, maxWidth: 380, marginInline: 'auto', lineHeight: 1.5 }}>
-              Type a name, company, or skill above to find people in the network.
-            </p>
-          </KCard>
         ) : visibleUsers.length > 0 ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start' }}>
             {visibleUsers.map((user) => (
               <PersonCard key={user.id} user={user} />
             ))}
           </div>
-        ) : (
+        ) : showResults ? (
           <KCard style={{ padding: 36, textAlign: 'center' }}>
             <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 18, color: 'var(--ink)', margin: '0 0 8px' }}>
               {`No results for "${query.trim()}".`}
             </p>
             <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0, maxWidth: 400, marginInline: 'auto', lineHeight: 1.5 }}>
               Try a different name, company, or skill.
+            </p>
+          </KCard>
+        ) : (
+          <KCard style={{ padding: 48, textAlign: 'center' }}>
+            <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 20, color: 'var(--ink)', margin: '0 0 8px' }}>
+              No recommendations yet.
+            </p>
+            <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0, maxWidth: 380, marginInline: 'auto', lineHeight: 1.5 }}>
+              Add interests, skills, and a headline to your profile so we can find people worth knowing — or search for someone specific above.
             </p>
           </KCard>
         )}
