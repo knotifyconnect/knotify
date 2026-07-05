@@ -98,22 +98,69 @@ type CompanionRow = {
 const VALID_ACTIONS = new Set(['open_message', 'open_coffee', 'open_profile', 'open_quests', 'open_events'])
 
 /**
+ * Companion replies aren't grammar-enforced JSON (unlike the CV extraction
+ * pipeline) because this call also uses tool-calling, and Gemini doesn't
+ * support combining native structured-output enforcement with tools — so
+ * the model is only ever "asked nicely" to emit JSON, not constrained to.
+ * A common way that goes wrong: a real newline/tab character sitting
+ * literally inside a string value instead of the escaped "\n"/"\t" it
+ * needs to be, which JSON.parse rejects outright ("Bad control character").
+ * This walks the text tracking JSON string boundaries (respecting escape
+ * sequences so it doesn't touch a already-escaped "\\n") and escapes any
+ * raw control character it finds while inside a string.
+ */
+function sanitizeJsonControlChars(text: string): string {
+  let result = ''
+  let inString = false
+  let escaped = false
+  for (const ch of text) {
+    if (inString) {
+      if (escaped) {
+        result += ch
+        escaped = false
+      } else if (ch === '\\') {
+        result += ch
+        escaped = true
+      } else if (ch === '"') {
+        result += ch
+        inString = false
+      } else if (ch === '\n') {
+        result += '\\n'
+      } else if (ch === '\r') {
+        result += '\\r'
+      } else if (ch === '\t') {
+        result += '\\t'
+      } else {
+        result += ch
+      }
+    } else {
+      result += ch
+      if (ch === '"') inString = true
+    }
+  }
+  return result
+}
+
+/**
  * Extract the {reply, suggestions, memory} object from the model's raw text.
  * Gemini usually returns pure JSON as instructed, but sometimes writes a
  * natural-language answer and THEN appends the JSON anyway — so this tries a
  * straight parse first, then falls back to slicing out the outermost
- * {...} block (first "{" to last "}") before giving up.
+ * {...} block (first "{" to last "}") before giving up. Runs on the
+ * control-char-sanitized text so a raw newline inside a string doesn't
+ * sink either attempt.
  */
 function extractJsonObject(text: string): unknown {
+  const safe = sanitizeJsonControlChars(text)
   try {
-    return JSON.parse(text)
+    return JSON.parse(safe)
   } catch { /* fall through */ }
 
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
+  const start = safe.indexOf('{')
+  const end = safe.lastIndexOf('}')
   if (start === -1 || end === -1 || end <= start) return null
   try {
-    return JSON.parse(text.slice(start, end + 1))
+    return JSON.parse(safe.slice(start, end + 1))
   } catch {
     return null
   }
@@ -128,7 +175,7 @@ function extractJsonObject(text: string): unknown {
  * is not.
  */
 function extractReplyFieldOnly(text: string): string | null {
-  const match = /"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/s.exec(text)
+  const match = /"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/s.exec(sanitizeJsonControlChars(text))
   if (!match) return null
   try {
     return JSON.parse(`"${match[1]}"`)
