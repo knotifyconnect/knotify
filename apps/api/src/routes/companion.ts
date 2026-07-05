@@ -29,25 +29,6 @@ import { sendMessage, proposeCoffee, rsvpEvent, createAsk, type ExecutedAction }
 
 export const companionRouter = Router()
 
-// TEMPORARY diagnostic: confirms whether THIS exact compiled module sees the
-// key (main.ts's /api/health check is separate code and has disagreed with
-// this module before). No secrets exposed. Remove once resolved.
-companionRouter.get('/debug-env', async (_req, res) => {
-  const key = process.env.GEMINI_API_KEY
-  let ping: { ok: boolean; detail: string } = { ok: false, detail: 'not attempted (no key)' }
-  if (key) {
-    try {
-      const { GoogleGenAI } = await import('@google/genai')
-      const client = new GoogleGenAI({ apiKey: key })
-      const r = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: [{ role: 'user', parts: [{ text: 'say ok' }] }] })
-      ping = { ok: true, detail: `model responded: "${(r.text ?? '').slice(0, 40)}"` }
-    } catch (err) {
-      ping = { ok: false, detail: err instanceof Error ? err.message : 'unknown error' }
-    }
-  }
-  res.json({ hasGeminiKey: Boolean(key), keyLength: key?.length ?? 0, ping })
-})
-
 const MODEL = process.env.COMPANION_MODEL || 'gemini-2.5-flash'
 const HISTORY_LIMIT = 50
 const CONTEXT_TURNS = 20
@@ -67,12 +48,20 @@ const MAX_MEMORY_FACT_LENGTH = 300
 // itself failing, which surfaces as a 500 with the real error instead).
 const FALLBACK_REPLY = "Companion setup issue: GEMINI_API_KEY is not configured on this server."
 
-let gemini: GoogleGenAI | null | undefined
+// Only the successful case is cached — a missing key is re-checked fresh on
+// every call (cheap: one process.env read) rather than latched permanently,
+// so a warm container that happened to start before the key was configured
+// can recover on its very next request instead of staying poisoned for its
+// whole lifetime.
+let gemini: GoogleGenAI | undefined
 function getGemini(): GoogleGenAI | null {
-  if (gemini !== undefined) return gemini
+  if (gemini) return gemini
   const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) console.error('[companion] GEMINI_API_KEY is not set in process.env for this runtime')
-  gemini = apiKey ? new GoogleGenAI({ apiKey }) : null
+  if (!apiKey) {
+    console.error('[companion] GEMINI_API_KEY is not set in process.env for this runtime')
+    return null
+  }
+  gemini = new GoogleGenAI({ apiKey })
   return gemini
 }
 
