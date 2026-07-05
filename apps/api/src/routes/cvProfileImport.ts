@@ -318,12 +318,17 @@ cvProfileImportRouter.post(
       }
 
       if (error instanceof CvProfilePreviewError) {
+        // error.cause carries the real underlying failure (e.g. the actual
+        // pdfjs-dist error behind a generic EXTRACTION_FAILED) — log it since
+        // the client only ever sees the generic message/code.
+        console.error('[cv-profile-import] preview failed', error.code, error.cause ?? error)
         return res.status(422).json({
           error: error.message,
           code: error.code,
         })
       }
 
+      console.error('[cv-profile-import] preview failed unexpectedly', error)
       return res.status(500).json({
         error: 'CV preview failed',
       })
