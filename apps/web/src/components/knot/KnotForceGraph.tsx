@@ -6,7 +6,9 @@ import {
   DESKTOP_SECOND_DEGREE_SIZE,
   layoutExpandedNodeSlots,
   rectForPoint,
+  svgPointForDomGraphPoint,
   type LayoutPoint,
+  type LayoutSize,
 } from './knotGraphLayout'
 
 export type KnotGraphTab = 'Connected' | 'Incoming' | 'Sent'
@@ -240,6 +242,28 @@ function viewportForPoint(stage: HTMLDivElement, point: { x: number; y: number }
     scale,
     x: -scale * (px - originX),
     y: -scale * (py - originY),
+  }
+}
+
+function viewportForZoomAtClient(
+  stage: HTMLDivElement,
+  clientX: number,
+  clientY: number,
+  prev: ViewportState,
+  nextScale: number
+): ViewportState {
+  const rect = stage.getBoundingClientRect()
+  const localX = clientX - rect.left
+  const localY = clientY - rect.top
+  const originX = rect.width / 2
+  const originY = rect.height / 2
+  const contentX = originX + ((localX - originX - prev.x) / prev.scale)
+  const contentY = originY + ((localY - originY - prev.y) / prev.scale)
+
+  return {
+    scale: nextScale,
+    x: localX - originX - nextScale * (contentX - originX),
+    y: localY - originY - nextScale * (contentY - originY),
   }
 }
 
@@ -631,9 +655,11 @@ export function KnotForceGraph({
   const viewportRef = useRef<ViewportState>({ scale: 1, x: 0, y: 0 })
   const previousQueryRef = useRef('')
   const layoutNodesRef = useRef<LayoutNode[]>([])
+  const layoutFrameRef = useRef<number | null>(null)
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [viewport, setViewport] = useState<ViewportState>({ scale: 1, x: 0, y: 0 })
   const [layoutRevision, setLayoutRevision] = useState(0)
+  const [stageSize, setStageSize] = useState<LayoutSize>({ width: VIEW_W, height: VIEW_H })
 
   const normalizedQuery = query.trim().toLowerCase()
   const hasQuery = normalizedQuery.length > 0
@@ -673,8 +699,9 @@ export function KnotForceGraph({
         total: siblings.length,
         bounds: DESKTOP_EXPANDED_BOUNDS,
         size: DESKTOP_SECOND_DEGREE_SIZE,
+        parentSize: DESKTOP_DIRECT_NODE_SIZE,
         avoid: occupiedRects,
-        maxColumns: compact ? 2 : 4,
+        maxColumns: compact ? 3 : Math.min(10, Math.max(4, Math.ceil(Math.sqrt(siblings.length * 2)))),
         rootGapX: compact ? 104 : 188,
         rootGapY: compact ? 64 : 88,
         columnGap: compact ? 18 : 28,
@@ -759,12 +786,25 @@ export function KnotForceGraph({
     const stage = stageRef.current
     if (!stage) return
 
-    const requestLayout = () => setLayoutRevision((value) => value + 1)
+    const requestLayout = () => {
+      if (layoutFrameRef.current !== null) return
+      layoutFrameRef.current = window.requestAnimationFrame(() => {
+        layoutFrameRef.current = null
+        const rect = stage.getBoundingClientRect()
+        setStageSize({ width: rect.width, height: rect.height })
+        setLayoutRevision((value) => value + 1)
+      })
+    }
+    requestLayout()
     const resizeObserver = new ResizeObserver(requestLayout)
     resizeObserver.observe(stage)
     window.addEventListener('orientationchange', requestLayout)
 
     return () => {
+      if (layoutFrameRef.current !== null) {
+        window.cancelAnimationFrame(layoutFrameRef.current)
+        layoutFrameRef.current = null
+      }
       resizeObserver.disconnect()
       window.removeEventListener('orientationchange', requestLayout)
     }
@@ -783,13 +823,13 @@ export function KnotForceGraph({
 
     const expandedRoots = new Set(expandedNodes.map((node) => `person:${node.expandedViaUserId}`))
     const focusNodes = currentLayoutNodes.filter((node) => node.degree === 'second' || expandedRoots.has(node.id))
-    const minX = Math.min(center.x, ...focusNodes.map((node) => node.x - (node.degree === 'second' ? 100 : 96)))
-    const maxX = Math.max(center.x, ...focusNodes.map((node) => node.x + (node.degree === 'second' ? 100 : 96)))
-    const minY = Math.min(center.y, ...focusNodes.map((node) => node.y - 58))
-    const maxY = Math.max(center.y, ...focusNodes.map((node) => node.y + 58))
+    const minX = Math.min(...focusNodes.map((node) => node.x - (node.degree === 'second' ? 100 : 96)))
+    const maxX = Math.max(...focusNodes.map((node) => node.x + (node.degree === 'second' ? 100 : 96)))
+    const minY = Math.min(...focusNodes.map((node) => node.y - 58))
+    const maxY = Math.max(...focusNodes.map((node) => node.y + 58))
 
     setViewport(viewportForBounds(stage, { minX, maxX, minY, maxY }))
-  }, [center.x, center.y, expandedSignature, hasQuery, layoutRevision])
+  }, [expandedSignature, hasQuery, layoutRevision])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -829,7 +869,7 @@ export function KnotForceGraph({
       setViewport((prev) => {
         const nextScale = clamp(prev.scale * (event.deltaY > 0 ? 0.90 : 1.11), MIN_ZOOM, MAX_ZOOM)
         const normalizedScale = Math.abs(nextScale - 1) < 0.035 ? 1 : nextScale
-        return { ...prev, scale: normalizedScale }
+        return viewportForZoomAtClient(stage, event.clientX, event.clientY, prev, normalizedScale)
       })
     }
 
@@ -1005,6 +1045,8 @@ export function KnotForceGraph({
     onResetGraph?.()
   }
 
+  const toSvgPoint = (point: LayoutPoint) => svgPointForDomGraphPoint(point, stageSize, { width: VIEW_W, height: VIEW_H })
+  const svgCenter = toSvgPoint(center)
   return (
     <motion.div
       ref={stageRef}
@@ -1049,7 +1091,7 @@ export function KnotForceGraph({
               </radialGradient>
             </defs>
 
-            <circle cx={center.x} cy={center.y} r="172" fill="url(#forceKnotCenterGlow)" />
+            <circle cx={svgCenter.x} cy={svgCenter.y} r="172" fill="url(#forceKnotCenterGlow)" />
 
             {layoutNodes.filter((node) => node.degree !== 'second').map((node, index) => {
               const selected = selectedNodeId === node.id
@@ -1076,11 +1118,14 @@ export function KnotForceGraph({
               const c1y = center.y + (node.y - center.y) * 0.28 - Math.cos(index * 1.4) * 28
               const c2x = center.x + (node.x - center.x) * 0.72 - Math.cos(index * 1.9) * 32
               const c2y = center.y + (node.y - center.y) * 0.74 + Math.sin(index * 1.2) * 24
+              const lineEnd = toSvgPoint(node)
+              const c1 = toSvgPoint({ x: c1x, y: c1y })
+              const c2 = toSvgPoint({ x: c2x, y: c2y })
 
               return (
                 <path
                   key={`strand-${node.id}`}
-                  d={`M ${center.x} ${center.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${node.x} ${node.y}`}
+                  d={`M ${svgCenter.x} ${svgCenter.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${lineEnd.x} ${lineEnd.y}`}
                   fill="none"
                   stroke={stroke}
                   strokeWidth={selected ? 1.2 : searchHit ? 1.25 : related ? 0.85 : muted || searchMuted ? 0.28 : node.tab === 'Connected' ? 0.85 : 1.1}
@@ -1104,11 +1149,14 @@ export function KnotForceGraph({
               const softY = midY + (midY - center.y) * 0.32 - Math.cos(index * 1.3) * 8
               const curveX = selected ? awayX : softX
               const curveY = selected ? awayY : softY
+              const sourcePoint = toSvgPoint(edge.source)
+              const targetPoint = toSvgPoint(edge.target)
+              const curvePoint = toSvgPoint({ x: curveX, y: curveY })
 
               return (
                 <path
                   key={`peer-${edge.id}`}
-                  d={`M ${edge.source.x} ${edge.source.y} Q ${curveX} ${curveY} ${edge.target.x} ${edge.target.y}`}
+                  d={`M ${sourcePoint.x} ${sourcePoint.y} Q ${curvePoint.x} ${curvePoint.y} ${targetPoint.x} ${targetPoint.y}`}
                   fill="none"
                   stroke={selected ? 'rgba(26,24,21,0.34)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
                   strokeWidth={selected ? 1.22 : 0.85}
@@ -1118,10 +1166,10 @@ export function KnotForceGraph({
               )
             })}
 
-            <circle cx={center.x} cy={center.y} r={compact ? 40 : 76} fill="rgba(244,239,230,0.16)" />
-            <circle cx={center.x} cy={center.y} r={compact ? 30 : 58} fill="rgba(255,252,246,0.18)" />
-            <circle cx={center.x} cy={center.y} r={compact ? 30 : 58} fill="none" stroke="rgba(84,72,58,0.075)" strokeWidth="0.9" />
-            <circle cx={center.x} cy={center.y} r={compact ? 22 : 44} fill="rgba(255,252,246,0.24)" />
+            <circle cx={svgCenter.x} cy={svgCenter.y} r={compact ? 40 : 76} fill="rgba(244,239,230,0.16)" />
+            <circle cx={svgCenter.x} cy={svgCenter.y} r={compact ? 30 : 58} fill="rgba(255,252,246,0.18)" />
+            <circle cx={svgCenter.x} cy={svgCenter.y} r={compact ? 30 : 58} fill="none" stroke="rgba(84,72,58,0.075)" strokeWidth="0.9" />
+            <circle cx={svgCenter.x} cy={svgCenter.y} r={compact ? 22 : 44} fill="rgba(255,252,246,0.24)" />
           </svg>
 
           <button

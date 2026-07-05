@@ -240,10 +240,11 @@ export function KnotMobileGraph({
   // Active touch points + pinch gesture state for two-finger zoom.
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
   const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null)
+  const layoutFrameRef = useRef<number | null>(null)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
   const [imgFail, setImgFail] = useState(new Set<string>())
-  const [, setLayoutRevision] = useState(0)
+  const [layoutRevision, setLayoutRevision] = useState(0)
 
   const direct = nodes.filter(n => n.degree !== 'second')
   const second = nodes.filter(n => n.degree === 'second')
@@ -273,13 +274,14 @@ export function KnotMobileGraph({
         total: second.length,
         bounds: MOBILE_EXPANDED_BOUNDS,
         size: MOBILE_SECOND_DEGREE_SIZE,
+        parentSize: { width: rootEntry.r * 2, height: rootEntry.r * 2 },
         avoid: directPositioned.map((item) => rectForPoint(item, MOBILE_SECOND_DEGREE_SIZE)),
-        maxColumns: 2,
+        maxColumns: Math.min(4, Math.max(2, Math.ceil(Math.sqrt(second.length)))),
         rootGapX: 62,
         rootGapY: 62,
         columnGap: 16,
         rowGap: 16,
-        constrainToBounds: true,
+        constrainToBounds: false,
       })
     : ring(second.length, 208, CX, CY)
 
@@ -289,14 +291,48 @@ export function KnotMobileGraph({
   ]
 
   useEffect(() => {
-    const requestLayout = () => setLayoutRevision((value) => value + 1)
+    const svg = svgRef.current
+    if (!svg) return
+
+    const requestLayout = () => {
+      if (layoutFrameRef.current !== null) return
+      layoutFrameRef.current = window.requestAnimationFrame(() => {
+        layoutFrameRef.current = null
+        setLayoutRevision((value) => value + 1)
+      })
+    }
+    const resizeObserver = new ResizeObserver(requestLayout)
+    resizeObserver.observe(svg)
     window.addEventListener('resize', requestLayout)
     window.addEventListener('orientationchange', requestLayout)
     return () => {
+      if (layoutFrameRef.current !== null) {
+        window.cancelAnimationFrame(layoutFrameRef.current)
+        layoutFrameRef.current = null
+      }
+      resizeObserver.disconnect()
       window.removeEventListener('resize', requestLayout)
       window.removeEventListener('orientationchange', requestLayout)
     }
   }, [])
+
+  const expandedSignature = second.map((node) => node.id).sort().join('|')
+
+  useEffect(() => {
+    if (!expandedMode || !rootEntry) return
+
+    const focusNodes = positioned.filter((item) => item.n.degree === 'second' || item.n.id === expandedRootId)
+    const minX = Math.min(...focusNodes.map((item) => item.x - item.r - 18))
+    const maxX = Math.max(...focusNodes.map((item) => item.x + item.r + 18))
+    const minY = Math.min(...focusNodes.map((item) => item.y - item.r - 18))
+    const maxY = Math.max(...focusNodes.map((item) => item.y + item.r + 30))
+    const focusX = (minX + maxX) / 2
+    const focusY = (minY + maxY) / 2
+
+    setPan({ x: -scale * (focusX - CX), y: -scale * (focusY - CY) })
+    // Refit only when expansion or container shape changes; user pan remains free afterward.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedRootId, expandedSignature, layoutRevision])
 
   // Search highlighting — mirrors the desktop graph: matching nodes stand out,
   // the rest dim, and the view pans to the first match.
