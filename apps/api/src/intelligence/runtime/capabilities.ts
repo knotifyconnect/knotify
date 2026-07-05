@@ -21,3 +21,15 @@ export const OLLAMA_GATEWAY_CAPABILITIES = Object.freeze({
   embeddings: false,
   toolCalls: false,
 }) satisfies ModelCapabilities
+
+export const GEMINI_GATEWAY_CAPABILITIES = Object.freeze({
+  availabilityCheck: true,
+  structuredGeneration: true,
+  timeout: true,
+  cancellation: true,
+  imageInput: true,
+  chat: true,
+  streaming: false,
+  embeddings: false,
+  toolCalls: true,
+}) satisfies ModelCapabilities

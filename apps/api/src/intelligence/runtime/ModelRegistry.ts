@@ -5,6 +5,7 @@ import {
 import type { ModelGateway } from './ModelGateway.js'
 import { ModelGatewayError } from './ModelGatewayError.js'
 import { OllamaModelGateway } from './OllamaModelGateway.js'
+import { GeminiModelGateway } from './GeminiModelGateway.js'
 
 export interface DocumentModelRuntime {
   config: IntelligenceConfig
@@ -18,6 +19,8 @@ export function createModelGateway(
   switch (config.provider) {
     case 'ollama':
       return new OllamaModelGateway(config)
+    case 'gemini':
+      return new GeminiModelGateway(config)
     default:
       throw new ModelGatewayError(
         'UNSUPPORTED_PROVIDER',

@@ -9,7 +9,11 @@ const optionalText = z.preprocess(
 )
 
 const environmentSchema = z.object({
-  LOCAL_AI_PROVIDER: z.enum(['ollama']).default('ollama'),
+  // 'gemini' is a hosted alternative to 'ollama' for environments (like
+  // Vercel) with no reachable local model server — see GeminiModelGateway.ts.
+  // It reuses GEMINI_API_KEY (already configured for the Companion chat)
+  // rather than a value in this schema.
+  LOCAL_AI_PROVIDER: z.enum(['ollama', 'gemini']).default('ollama'),
   LOCAL_AI_BASE_URL: z
     .string()
     .trim()
