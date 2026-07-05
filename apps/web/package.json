@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'No lint configured for web'",
     "smoke:cv-review-ux": "tsx src/scripts/smokeCvReviewUx.ts",
+    "smoke:knot-layout": "tsx src/scripts/smokeKnotGraphLayout.ts",
     "build:production": "node scripts/verify-production-env.mjs && npm run build"
   },
   "dependencies": {

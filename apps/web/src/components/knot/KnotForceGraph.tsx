@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { motion } from 'framer-motion'
+import {
+  DESKTOP_DIRECT_NODE_SIZE,
+  DESKTOP_EXPANDED_BOUNDS,
+  DESKTOP_SECOND_DEGREE_SIZE,
+  layoutExpandedNodeSlots,
+  rectForPoint,
+  type LayoutPoint,
+} from './knotGraphLayout'
 
 export type KnotGraphTab = 'Connected' | 'Incoming' | 'Sent'
 
@@ -613,6 +621,7 @@ export function KnotForceGraph({
   const previousQueryRef = useRef('')
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [viewport, setViewport] = useState<ViewportState>({ scale: 1, x: 0, y: 0 })
+  const [layoutRevision, setLayoutRevision] = useState(0)
 
   const normalizedQuery = query.trim().toLowerCase()
   const hasQuery = normalizedQuery.length > 0
@@ -633,28 +642,41 @@ export function KnotForceGraph({
       secondNodesByRoot.set(rootId, [...(secondNodesByRoot.get(rootId) ?? []), node])
     }
 
+    const secondPositions = new Map<string, LayoutPoint>()
+    const occupiedRects = directNodes.map((node) => {
+      const point = directPositions.get(node.id) ?? layoutPosition(0, 1, node.tab, compact)
+      return rectForPoint(point, DESKTOP_DIRECT_NODE_SIZE)
+    })
+
+    for (const [rootUserId, siblings] of secondNodesByRoot) {
+      const rootPosition = directPositions.get(`person:${rootUserId}`) ?? { x: BASE_CENTER_X, y: BASE_CENTER_Y }
+      const slots = layoutExpandedNodeSlots({
+        root: rootPosition,
+        center,
+        total: siblings.length,
+        bounds: DESKTOP_EXPANDED_BOUNDS,
+        size: DESKTOP_SECOND_DEGREE_SIZE,
+        avoid: occupiedRects,
+        maxColumns: compact ? 2 : 4,
+        rootGapX: compact ? 104 : 188,
+        rootGapY: compact ? 64 : 88,
+        columnGap: compact ? 18 : 28,
+        rowGap: compact ? 16 : 22,
+      })
+
+      siblings.forEach((sibling, index) => {
+        const position = slots[index]
+        if (!position) return
+        secondPositions.set(sibling.id, position)
+        occupiedRects.push(rectForPoint(position, DESKTOP_SECOND_DEGREE_SIZE))
+      })
+    }
+
     return nodes.map((node) => {
-      let position = dragPositions[node.id]
+      let position: LayoutPoint | undefined = dragPositions[node.id]
 
       if (!position && node.degree === 'second' && node.expandedViaUserId) {
-        const rootPosition = directPositions.get(`person:${node.expandedViaUserId}`) ?? { x: BASE_CENTER_X, y: BASE_CENTER_Y }
-        const siblings = secondNodesByRoot.get(node.expandedViaUserId) ?? []
-        const index = Math.max(0, siblings.findIndex((item) => item.id === node.id))
-        const total = Math.max(1, siblings.length)
-        const side = rootPosition.x >= center.x ? -1 : 1
-        const column = index % 3
-        const row = Math.floor(index / 3)
-        const stagger = row % 2 === 0 ? 0 : 26
-        const horizontalDistance = 104 + column * 92 + stagger
-        const verticalDistance = rootPosition.y >= center.y ? 86 + row * 68 : -(86 + row * 68)
-        const targetX = rootPosition.x + side * horizontalDistance
-        const targetY = rootPosition.y + verticalDistance
-        const panelSafeMaxX = 710
-
-        position = {
-          x: clamp(targetX, 42, panelSafeMaxX),
-          y: clamp(targetY, 46, 548),
-        }
+        position = secondPositions.get(node.id)
       }
 
       if (!position) {
@@ -668,7 +690,7 @@ export function KnotForceGraph({
         initial: initialFor(node.name),
       }
     })
-  }, [center.x, center.y, dragPositions, nodes])
+  }, [center.x, center.y, compact, dragPositions, layoutRevision, nodes])
 
   const nodesById = useMemo(() => new Map(layoutNodes.map((node) => [node.id, node])), [layoutNodes])
   const selectedNode = selectedNodeId ? nodesById.get(selectedNodeId) ?? null : null
@@ -711,6 +733,21 @@ export function KnotForceGraph({
   useEffect(() => {
     viewportRef.current = viewport
   }, [viewport])
+
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+
+    const requestLayout = () => setLayoutRevision((value) => value + 1)
+    const resizeObserver = new ResizeObserver(requestLayout)
+    resizeObserver.observe(stage)
+    window.addEventListener('orientationchange', requestLayout)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('orientationchange', requestLayout)
+    }
+  }, [])
 
   useEffect(() => {
     const stage = stageRef.current
