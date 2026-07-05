@@ -243,6 +243,17 @@ function viewportForPoint(stage: HTMLDivElement, point: { x: number; y: number }
   }
 }
 
+function viewportForBounds(stage: HTMLDivElement, bounds: { minX: number; maxX: number; minY: number; maxY: number }) {
+  const width = Math.max(1, bounds.maxX - bounds.minX)
+  const height = Math.max(1, bounds.maxY - bounds.minY)
+  const scale = clamp(Math.min((VIEW_W * 0.78) / width, (VIEW_H * 0.76) / height, 1.08), MIN_ZOOM, 1.08)
+
+  return viewportForPoint(stage, {
+    x: bounds.minX + width / 2,
+    y: bounds.minY + height / 2,
+  }, scale)
+}
+
 function Avatar({
   name,
   src,
@@ -619,6 +630,7 @@ export function KnotForceGraph({
   const draggedRef = useRef(false)
   const viewportRef = useRef<ViewportState>({ scale: 1, x: 0, y: 0 })
   const previousQueryRef = useRef('')
+  const layoutNodesRef = useRef<LayoutNode[]>([])
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [viewport, setViewport] = useState<ViewportState>({ scale: 1, x: 0, y: 0 })
   const [layoutRevision, setLayoutRevision] = useState(0)
@@ -626,6 +638,11 @@ export function KnotForceGraph({
   const normalizedQuery = query.trim().toLowerCase()
   const hasQuery = normalizedQuery.length > 0
   const center = dragPositions.me ?? { x: BASE_CENTER_X, y: BASE_CENTER_Y }
+  const expandedSignature = useMemo(() => nodes
+    .filter((node) => node.degree === 'second')
+    .map((node) => node.id)
+    .sort()
+    .join('|'), [nodes])
 
   const layoutNodes = useMemo<LayoutNode[]>(() => {
     const directNodes = nodes.filter((node) => node.degree !== 'second')
@@ -695,6 +712,10 @@ export function KnotForceGraph({
   const nodesById = useMemo(() => new Map(layoutNodes.map((node) => [node.id, node])), [layoutNodes])
   const selectedNode = selectedNodeId ? nodesById.get(selectedNodeId) ?? null : null
 
+  useEffect(() => {
+    layoutNodesRef.current = layoutNodes
+  }, [layoutNodes])
+
   const visiblePeerEdges = useMemo(() => {
     return peerEdges
       .map((edge) => {
@@ -748,6 +769,27 @@ export function KnotForceGraph({
       window.removeEventListener('orientationchange', requestLayout)
     }
   }, [])
+
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage || hasQuery) return
+
+    const currentLayoutNodes = layoutNodesRef.current
+    const expandedNodes = currentLayoutNodes.filter((node) => node.degree === 'second')
+    if (!expandedNodes.length) {
+      setViewport({ scale: 1, x: 0, y: 0 })
+      return
+    }
+
+    const expandedRoots = new Set(expandedNodes.map((node) => `person:${node.expandedViaUserId}`))
+    const focusNodes = currentLayoutNodes.filter((node) => node.degree === 'second' || expandedRoots.has(node.id))
+    const minX = Math.min(center.x, ...focusNodes.map((node) => node.x - (node.degree === 'second' ? 100 : 96)))
+    const maxX = Math.max(center.x, ...focusNodes.map((node) => node.x + (node.degree === 'second' ? 100 : 96)))
+    const minY = Math.min(center.y, ...focusNodes.map((node) => node.y - 58))
+    const maxY = Math.max(center.y, ...focusNodes.map((node) => node.y + 58))
+
+    setViewport(viewportForBounds(stage, { minX, maxX, minY, maxY }))
+  }, [center.x, center.y, expandedSignature, hasQuery, layoutRevision])
 
   useEffect(() => {
     const stage = stageRef.current

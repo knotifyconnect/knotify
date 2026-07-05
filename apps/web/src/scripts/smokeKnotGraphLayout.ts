@@ -52,7 +52,7 @@ const desktopRoots = [
 ]
 
 for (const { label, root } of desktopRoots) {
-  for (const total of [1, 2, 3, 6, 9, 12]) {
+  for (const total of [1, 2, 3, 6, 9, 12, 16]) {
     const avoid = [rectForPoint(root, DESKTOP_DIRECT_NODE_SIZE)]
     const points = layoutExpandedNodeSlots({
       root,
@@ -84,7 +84,7 @@ for (const { label, root } of mobileRoots) {
   const points = layoutExpandedNodeSlots({
     root,
     center: { x: 195, y: 300 },
-    total: 8,
+    total: 10,
     bounds: MOBILE_EXPANDED_BOUNDS,
     size: MOBILE_SECOND_DEGREE_SIZE,
     avoid,
@@ -95,7 +95,7 @@ for (const { label, root } of mobileRoots) {
     rowGap: 16,
   })
 
-  assert.equal(points.length, 8, `${label}: expected 8 points`)
+  assert.equal(points.length, 10, `${label}: expected 10 points`)
   assertLayout({
     label,
     points,
