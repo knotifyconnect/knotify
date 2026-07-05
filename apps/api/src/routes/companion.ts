@@ -36,17 +36,11 @@ const MAX_MESSAGE_LENGTH = 2000
 const MAX_MEMORY_FACTS_PER_TURN = 5
 const MAX_MEMORY_FACT_LENGTH = 300
 
-// ── Cost control ─────────────────────────────────────────────────────────────
-// Per-user rolling 24h cap on Companion turns, checked BEFORE any model call
-// so a capped-out request costs nothing. Admins are unlimited (covers
-// founder/testing accounts); premium users get a generous daily allowance;
-// everyone else gets a small free taste. All three tunable without a
-// redeploy via env vars. Gemini's free tier also has its own request-rate
-// ceiling on top of this — these caps keep usage well inside it.
-const FREE_DAILY_LIMIT = Number(process.env.COMPANION_FREE_DAILY_LIMIT ?? 10)
-const PREMIUM_DAILY_LIMIT = Number(process.env.COMPANION_PREMIUM_DAILY_LIMIT ?? 100)
-const LIMIT_REACHED_FREE = "You've used today's free Companion messages. Upgrade to premium for a lot more room, or come back tomorrow."
-const LIMIT_REACHED_PREMIUM = "You've hit today's Companion limit. It resets tomorrow."
+// No per-user daily cap: Gemini's free tier has no billing attached, so
+// there's no monetary cost to control. Its own free-tier request quota
+// (shared per API key, not per user) is the real backstop — if that's ever
+// hit, requests fail with a rate-limit error rather than a charge.
+
 // Deliberately distinct wording from the generic-failure path below, so a
 // screenshot immediately tells us which branch fired: this one means
 // getGemini() returned null, i.e. GEMINI_API_KEY isn't visible to this
@@ -235,26 +229,6 @@ async function persistMemory(userId: string, facts: string[]) {
   await supabase.from('companion_memory').insert(facts.map((fact) => ({ user_id: userId, fact })))
 }
 
-/** Checked before any model call so a capped-out request never costs anything. */
-async function checkDailyLimit(userId: string): Promise<{ allowed: true } | { allowed: false; message: string }> {
-  const { data: me } = await supabase.from('users').select('is_admin, is_premium').eq('id', userId).maybeSingle()
-  if (me?.is_admin) return { allowed: true }
-
-  const limit = me?.is_premium ? PREMIUM_DAILY_LIMIT : FREE_DAILY_LIMIT
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  const { count } = await supabase
-    .from('companion_messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('role', 'user')
-    .gte('created_at', since)
-
-  if ((count ?? 0) >= limit) {
-    return { allowed: false, message: me?.is_premium ? LIMIT_REACHED_PREMIUM : LIMIT_REACHED_FREE }
-  }
-  return { allowed: true }
-}
-
 // ── GET /messages ────────────────────────────────────────────────────────────
 companionRouter.get('/messages', requireAuth, async (req, res) => {
   const userId = req.appUserId
@@ -299,11 +273,6 @@ companionRouter.post('/messages', requireAuth, async (req, res) => {
   if (content.length > MAX_MESSAGE_LENGTH) return res.status(400).json({ error: `content must be ${MAX_MESSAGE_LENGTH} characters or fewer` })
 
   try {
-    const limitCheck = await checkDailyLimit(userId)
-    if (!limitCheck.allowed) {
-      return res.json({ reply: limitCheck.message, suggestions: [] })
-    }
-
     await persistMessage(userId, 'user', content)
 
     const client = getGemini()
