@@ -4,11 +4,8 @@ import type { KnotGraphNode, KnotHealthState } from './KnotForceGraph'
 import {
   MOBILE_EXPANDED_BOUNDS,
   MOBILE_SECOND_DEGREE_SIZE,
-  edgeAttachmentPoints,
   layoutExpandedNodeSlots,
   rectForPoint,
-  type LayoutPoint,
-  type LayoutSize,
 } from './knotGraphLayout'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -60,23 +57,18 @@ function ring(n: number, r: number, cx: number, cy: number) {
   })
 }
 
-// Quadratic bezier path between two visible node boundaries with a gentle perpendicular curve.
-function curvedPath(start: LayoutPoint, end: LayoutPoint, sourceCenter: LayoutPoint, targetCenter: LayoutPoint) {
-  const mx = (start.x + end.x) / 2
-  const my = (start.y + end.y) / 2
-  const dx = targetCenter.x - sourceCenter.x
-  const dy = targetCenter.y - sourceCenter.y
+// Quadratic bezier path between two points with a gentle perpendicular curve
+function curvedPath(x1: number, y1: number, x2: number, y2: number) {
+  const mx = (x1 + x2) / 2
+  const my = (y1 + y2) / 2
+  const dx = x2 - x1
+  const dy = y2 - y1
   const len = Math.sqrt(dx * dx + dy * dy) || 1
   // Perpendicular unit vector, curved outward by ~18% of length
   const off = len * 0.18
   const cpx = mx + (-dy / len) * off
   const cpy = my + (dx / len) * off
-  return `M ${start.x} ${start.y} Q ${cpx} ${cpy} ${end.x} ${end.y}`
-}
-
-function mobileNodeSize(radius: number, scale = 1): LayoutSize {
-  const size = radius * 2 * scale
-  return { width: size, height: size }
+  return `M ${x1} ${y1} Q ${cpx} ${cpy} ${x2} ${y2}`
 }
 
 // ── Generic draggable bottom sheet (portal) ────────────────────────────────
@@ -248,11 +240,10 @@ export function KnotMobileGraph({
   // Active touch points + pinch gesture state for two-finger zoom.
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
   const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null)
-  const layoutFrameRef = useRef<number | null>(null)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
   const [imgFail, setImgFail] = useState(new Set<string>())
-  const [layoutRevision, setLayoutRevision] = useState(0)
+  const [, setLayoutRevision] = useState(0)
 
   const direct = nodes.filter(n => n.degree !== 'second')
   const second = nodes.filter(n => n.degree === 'second')
@@ -282,14 +273,13 @@ export function KnotMobileGraph({
         total: second.length,
         bounds: MOBILE_EXPANDED_BOUNDS,
         size: MOBILE_SECOND_DEGREE_SIZE,
-        parentSize: mobileNodeSize(rootEntry.r),
         avoid: directPositioned.map((item) => rectForPoint(item, MOBILE_SECOND_DEGREE_SIZE)),
-        maxColumns: Math.min(4, Math.max(2, Math.ceil(Math.sqrt(second.length)))),
+        maxColumns: 2,
         rootGapX: 62,
         rootGapY: 62,
         columnGap: 16,
         rowGap: 16,
-        constrainToBounds: false,
+        constrainToBounds: true,
       })
     : ring(second.length, 208, CX, CY)
 
@@ -299,46 +289,14 @@ export function KnotMobileGraph({
   ]
 
   useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-
-    const requestLayout = () => {
-      if (layoutFrameRef.current !== null) return
-      layoutFrameRef.current = window.requestAnimationFrame(() => {
-        layoutFrameRef.current = null
-        setLayoutRevision((value) => value + 1)
-      })
-    }
-    const resizeObserver = new ResizeObserver(requestLayout)
-    resizeObserver.observe(svg)
+    const requestLayout = () => setLayoutRevision((value) => value + 1)
+    window.addEventListener('resize', requestLayout)
     window.addEventListener('orientationchange', requestLayout)
     return () => {
-      if (layoutFrameRef.current !== null) {
-        window.cancelAnimationFrame(layoutFrameRef.current)
-        layoutFrameRef.current = null
-      }
-      resizeObserver.disconnect()
+      window.removeEventListener('resize', requestLayout)
       window.removeEventListener('orientationchange', requestLayout)
     }
   }, [])
-
-  const expandedSignature = second.map((node) => node.id).sort().join('|')
-
-  useEffect(() => {
-    if (!expandedMode || !rootEntry) return
-
-    const focusNodes = positioned.filter((item) => item.n.degree === 'second' || item.n.id === expandedRootId)
-    const minX = Math.min(...focusNodes.map((item) => item.x - item.r - 18))
-    const maxX = Math.max(...focusNodes.map((item) => item.x + item.r + 18))
-    const minY = Math.min(...focusNodes.map((item) => item.y - item.r - 18))
-    const maxY = Math.max(...focusNodes.map((item) => item.y + item.r + 30))
-    const focusX = (minX + maxX) / 2
-    const focusY = (minY + maxY) / 2
-
-    setPan({ x: -scale * (focusX - CX), y: -scale * (focusY - CY) })
-    // Refit only when the expanded cluster or container changes; user pan remains free afterward.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expandedRootId, expandedSignature, layoutRevision])
 
   // Search highlighting — mirrors the desktop graph: matching nodes stand out,
   // the rest dim, and the view pans to the first match.
@@ -469,24 +427,15 @@ export function KnotMobileGraph({
         )}
 
         {/* Curved lines: 1st degree from "me", 2nd degree from the expanded root */}
-        {positioned.map(({ n, x, y, r }) => {
+        {positioned.map(({ n, x, y }) => {
           const isSecond = n.degree === 'second'
           const from = isSecond ? rootPos : { x: CX, y: CY }
           const sel = n.id === selectedNodeId
-          const searchHit = hasQuery && n.matchesQuery
           const searchMuted = hasQuery && !n.matchesQuery
-          const nodeScale = sel ? 1.55 : searchHit ? 1.3 : 1
-          const rootScale = rootEntry?.n.id === selectedNodeId ? 1.55 : rootEntry && hasQuery && rootEntry.n.matchesQuery ? 1.3 : 1
-          const { start, end } = edgeAttachmentPoints({
-            source: from,
-            target: { x, y },
-            sourceSize: isSecond && rootEntry ? mobileNodeSize(rootEntry.r, rootScale) : mobileNodeSize(34),
-            targetSize: mobileNodeSize(r, nodeScale),
-          })
           return (
             <path
               key={`ln-${n.id}`}
-              d={curvedPath(start, end, from, { x, y })}
+              d={curvedPath(from.x, from.y, x, y)}
               fill="none"
               stroke={sel ? 'rgba(216,68,43,0.35)' : isSecond ? 'rgba(31,107,94,0.40)' : 'rgba(84,72,58,0.16)'}
               strokeWidth={sel ? 1.6 : isSecond ? 1.2 : 0.8}
