@@ -17,6 +17,7 @@ type ExpandedSlotOptions = {
   total: number
   bounds: LayoutBounds
   size: LayoutSize
+  parentSize?: LayoutSize
   avoid?: LayoutRect[]
   maxColumns?: number
   rootGapX?: number
@@ -61,14 +62,32 @@ export function rectsOverlap(a: LayoutRect, b: LayoutRect, gap = 0) {
   )
 }
 
+export function svgPointForDomGraphPoint(point: LayoutPoint, stageSize: LayoutSize, viewBoxSize: LayoutSize): LayoutPoint {
+  const stageWidth = Math.max(stageSize.width, 1)
+  const stageHeight = Math.max(stageSize.height, 1)
+  const scale = Math.min(stageWidth / viewBoxSize.width, stageHeight / viewBoxSize.height) || 1
+  const renderedWidth = viewBoxSize.width * scale
+  const renderedHeight = viewBoxSize.height * scale
+  const offsetX = (stageWidth - renderedWidth) / 2
+  const offsetY = (stageHeight - renderedHeight) / 2
+  const domX = (point.x / viewBoxSize.width) * stageWidth
+  const domY = (point.y / viewBoxSize.height) * stageHeight
+
+  return {
+    x: (domX - offsetX) / scale,
+    y: (domY - offsetY) / scale,
+  }
+}
+
 export function layoutExpandedNodeSlots({
   root,
   center,
   total,
   bounds,
   size,
+  parentSize = size,
   avoid = [],
-  maxColumns = 4,
+  maxColumns,
   rootGapX = 188,
   rootGapY = 88,
   columnGap = 28,
@@ -78,20 +97,21 @@ export function layoutExpandedNodeSlots({
   if (total <= 0) return []
 
   const collisionGap = 8
-  const rootRect = rectForPoint(root, size)
+  const rootRect = rectForPoint(root, parentSize)
   const candidates = makeBackstageCandidates({
     root,
     center,
     bounds,
     size,
+    parentSize,
     total,
-    maxColumns,
-    rootGap: Math.max(rootGapX, rootGapY),
+    maxColumns: maxColumns ?? Math.min(12, Math.max(3, Math.ceil(Math.sqrt(total * 1.8)))),
+    rootGap: Math.max(24, Math.min(rootGapX, rootGapY)),
     columnGap,
     rowGap,
     constrainToBounds,
   })
-  const used = [rootRect, ...avoid]
+  const hardUsed = [rootRect]
   const points: LayoutPoint[] = []
 
   for (let index = 0; index < total; index += 1) {
@@ -101,8 +121,10 @@ export function layoutExpandedNodeSlots({
       if (points.some((point) => point.x === candidate.point.x && point.y === candidate.point.y)) continue
 
       const rect = rectForPoint(candidate.point, size)
-      const collisionScore = used.reduce((score, obstacle) => {
-        return score + (rectsOverlap(rect, obstacle, collisionGap) ? 1_000_000 : 0)
+      if (hardUsed.some((obstacle) => rectsOverlap(rect, obstacle, collisionGap))) continue
+
+      const collisionScore = avoid.reduce((score, obstacle) => {
+        return score + (rectsOverlap(rect, obstacle, collisionGap) ? 100_000 : 0)
       }, 0)
       const score = collisionScore + candidate.score
 
@@ -114,7 +136,7 @@ export function layoutExpandedNodeSlots({
 
     if (!best) break
     points.push(best.point)
-    used.push(rectForPoint(best.point, size))
+    hardUsed.push(rectForPoint(best.point, size))
   }
 
   return points
@@ -125,6 +147,7 @@ function makeBackstageCandidates({
   center,
   bounds,
   size,
+  parentSize,
   total,
   maxColumns,
   rootGap,
@@ -136,6 +159,7 @@ function makeBackstageCandidates({
   center: LayoutPoint
   bounds: LayoutBounds
   size: LayoutSize
+  parentSize: LayoutSize
   total: number
   maxColumns: number
   rootGap: number
@@ -149,16 +173,17 @@ function makeBackstageCandidates({
   const length = Math.hypot(dx, dy) || 1
   const outward = { x: dx / length, y: dy / length }
   const across = { x: -outward.y, y: outward.x }
-  const step = Math.max(size.width + columnGap, size.height + rowGap)
-  const firstRowDistance = Math.max(rootGap, step * 0.82)
+  const acrossStep = axisAlignedSeparationStep(across, size, columnGap)
+  const rowStep = axisAlignedSeparationStep(outward, size, rowGap)
+  const firstRowDistance = Math.max(rootGap, halfExtentAlong(parentSize, outward) + halfExtentAlong(size, outward) + rowGap)
   const columns = Math.max(1, Math.min(maxColumns, total))
-  const rows = Math.ceil(total / columns) + 4
+  const rows = Math.ceil(total / columns) + 12
   const seen = new Set<string>()
 
   for (let row = 0; row < rows; row += 1) {
-    const rowDistance = firstRowDistance + row * step
+    const rowDistance = firstRowDistance + row * rowStep
     const rowColumns = Math.min(columns + Math.floor(row / 2), total)
-    const offsets = centeredOffsets(rowColumns, step)
+    const offsets = centeredOffsets(rowColumns, acrossStep)
 
     for (const offset of offsets) {
       const raw = add(root, scale(outward, rowDistance), scale(across, offset))
@@ -172,7 +197,7 @@ function makeBackstageCandidates({
       const rawShift = Math.hypot(point.x - raw.x, point.y - raw.y)
       candidates.push({
         point,
-        score: row * 100 + Math.abs(offset) + rawShift * 500,
+        score: row * rowStep * 8 + Math.abs(offset) + rawShift * 500,
       })
     }
   }
@@ -183,19 +208,32 @@ function makeBackstageCandidates({
 
     for (let y = bounds.minY; y <= bounds.maxY; y += gridStepY) {
       for (let x = bounds.minX; x <= bounds.maxX; x += gridStepX) {
+        const projection = (x - root.x) * outward.x + (y - root.y) * outward.y
+        if (projection <= 0) continue
+
         const key = `${Math.round(x)}:${Math.round(y)}`
         if (seen.has(key)) continue
         seen.add(key)
 
         candidates.push({
           point: { x, y },
-          score: 10_000 + Math.hypot(x - root.x, y - root.y),
+          score: 500_000 + Math.hypot(x - root.x, y - root.y),
         })
       }
     }
   }
 
   return candidates
+}
+
+function halfExtentAlong(size: LayoutSize, axis: LayoutPoint) {
+  return (Math.abs(axis.x) * size.width + Math.abs(axis.y) * size.height) / 2
+}
+
+function axisAlignedSeparationStep(axis: LayoutPoint, size: LayoutSize, gap: number) {
+  const xStep = Math.abs(axis.x) < 0.0001 ? Number.POSITIVE_INFINITY : (size.width + gap) / Math.abs(axis.x)
+  const yStep = Math.abs(axis.y) < 0.0001 ? Number.POSITIVE_INFINITY : (size.height + gap) / Math.abs(axis.y)
+  return Math.min(xStep, yStep)
 }
 
 function centeredOffsets(count: number, step: number) {
