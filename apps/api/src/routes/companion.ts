@@ -29,6 +29,25 @@ import { sendMessage, proposeCoffee, rsvpEvent, createAsk, type ExecutedAction }
 
 export const companionRouter = Router()
 
+// TEMPORARY diagnostic: confirms whether THIS exact compiled module sees the
+// key (main.ts's /api/health check is separate code and has disagreed with
+// this module before). No secrets exposed. Remove once resolved.
+companionRouter.get('/debug-env', async (_req, res) => {
+  const key = process.env.GEMINI_API_KEY
+  let ping: { ok: boolean; detail: string } = { ok: false, detail: 'not attempted (no key)' }
+  if (key) {
+    try {
+      const { GoogleGenAI } = await import('@google/genai')
+      const client = new GoogleGenAI({ apiKey: key })
+      const r = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: [{ role: 'user', parts: [{ text: 'say ok' }] }] })
+      ping = { ok: true, detail: `model responded: "${(r.text ?? '').slice(0, 40)}"` }
+    } catch (err) {
+      ping = { ok: false, detail: err instanceof Error ? err.message : 'unknown error' }
+    }
+  }
+  res.json({ hasGeminiKey: Boolean(key), keyLength: key?.length ?? 0, ping })
+})
+
 const MODEL = process.env.COMPANION_MODEL || 'gemini-2.5-flash'
 const HISTORY_LIMIT = 50
 const CONTEXT_TURNS = 20
