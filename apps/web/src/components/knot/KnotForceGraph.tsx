@@ -4,11 +4,9 @@ import {
   DESKTOP_DIRECT_NODE_SIZE,
   DESKTOP_EXPANDED_BOUNDS,
   DESKTOP_SECOND_DEGREE_SIZE,
-  edgeAttachmentPoints,
   layoutExpandedNodeSlots,
   rectForPoint,
   type LayoutPoint,
-  type LayoutSize,
 } from './knotGraphLayout'
 
 export type KnotGraphTab = 'Connected' | 'Incoming' | 'Sent'
@@ -169,46 +167,6 @@ function cardSize(total: number, selected: boolean, searchHit: boolean, related:
   return 'card'
 }
 
-function stageCardSize({
-  total,
-  selected,
-  searchHit,
-  related,
-  secondDegree,
-  compact,
-}: {
-  total: number
-  selected: boolean
-  searchHit: boolean
-  related: boolean
-  secondDegree: boolean
-  compact?: boolean
-}): LayoutSize {
-  if (compact && !selected && !searchHit) {
-    const avatarSize = secondDegree ? 26 : related ? 38 : 34
-    return { width: Math.max(44, avatarSize), height: avatarSize + 15 }
-  }
-
-  const mode = cardSize(total, selected, searchHit, related)
-  if (mode === 'dot') {
-    const size = selected || searchHit ? 18 : 12
-    return { width: size, height: size }
-  }
-  if (mode === 'pill') {
-    return { width: selected || searchHit ? 126 : related ? 116 : 104, height: 38 }
-  }
-
-  return {
-    width: selected ? 196 : searchHit ? 190 : related ? 180 : secondDegree ? 158 : 166,
-    height: 54,
-  }
-}
-
-function centerCardSize(compact?: boolean): LayoutSize {
-  const size = compact ? 56 : 104
-  return { width: size, height: size }
-}
-
 function layoutPosition(index: number, total: number, tab: KnotGraphTab, compact?: boolean) {
   if (total <= 0) return { x: BASE_CENTER_X, y: BASE_CENTER_Y }
 
@@ -282,28 +240,6 @@ function viewportForPoint(stage: HTMLDivElement, point: { x: number; y: number }
     scale,
     x: -scale * (px - originX),
     y: -scale * (py - originY),
-  }
-}
-
-function viewportForZoomAtClient(
-  stage: HTMLDivElement,
-  clientX: number,
-  clientY: number,
-  prev: ViewportState,
-  nextScale: number
-): ViewportState {
-  const rect = stage.getBoundingClientRect()
-  const localX = clientX - rect.left
-  const localY = clientY - rect.top
-  const originX = rect.width / 2
-  const originY = rect.height / 2
-  const contentX = originX + ((localX - originX - prev.x) / prev.scale)
-  const contentY = originY + ((localY - originY - prev.y) / prev.scale)
-
-  return {
-    scale: nextScale,
-    x: localX - originX - nextScale * (contentX - originX),
-    y: localY - originY - nextScale * (contentY - originY),
   }
 }
 
@@ -695,7 +631,6 @@ export function KnotForceGraph({
   const viewportRef = useRef<ViewportState>({ scale: 1, x: 0, y: 0 })
   const previousQueryRef = useRef('')
   const layoutNodesRef = useRef<LayoutNode[]>([])
-  const layoutFrameRef = useRef<number | null>(null)
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [viewport, setViewport] = useState<ViewportState>({ scale: 1, x: 0, y: 0 })
   const [layoutRevision, setLayoutRevision] = useState(0)
@@ -738,9 +673,8 @@ export function KnotForceGraph({
         total: siblings.length,
         bounds: DESKTOP_EXPANDED_BOUNDS,
         size: DESKTOP_SECOND_DEGREE_SIZE,
-        parentSize: DESKTOP_DIRECT_NODE_SIZE,
         avoid: occupiedRects,
-        maxColumns: compact ? 3 : Math.min(10, Math.max(4, Math.ceil(Math.sqrt(siblings.length * 2)))),
+        maxColumns: compact ? 2 : 4,
         rootGapX: compact ? 104 : 188,
         rootGapY: compact ? 64 : 88,
         columnGap: compact ? 18 : 28,
@@ -825,22 +759,12 @@ export function KnotForceGraph({
     const stage = stageRef.current
     if (!stage) return
 
-    const requestLayout = () => {
-      if (layoutFrameRef.current !== null) return
-      layoutFrameRef.current = window.requestAnimationFrame(() => {
-        layoutFrameRef.current = null
-        setLayoutRevision((value) => value + 1)
-      })
-    }
+    const requestLayout = () => setLayoutRevision((value) => value + 1)
     const resizeObserver = new ResizeObserver(requestLayout)
     resizeObserver.observe(stage)
     window.addEventListener('orientationchange', requestLayout)
 
     return () => {
-      if (layoutFrameRef.current !== null) {
-        window.cancelAnimationFrame(layoutFrameRef.current)
-        layoutFrameRef.current = null
-      }
       resizeObserver.disconnect()
       window.removeEventListener('orientationchange', requestLayout)
     }
@@ -859,13 +783,13 @@ export function KnotForceGraph({
 
     const expandedRoots = new Set(expandedNodes.map((node) => `person:${node.expandedViaUserId}`))
     const focusNodes = currentLayoutNodes.filter((node) => node.degree === 'second' || expandedRoots.has(node.id))
-    const minX = Math.min(...focusNodes.map((node) => node.x - (node.degree === 'second' ? 100 : 96)))
-    const maxX = Math.max(...focusNodes.map((node) => node.x + (node.degree === 'second' ? 100 : 96)))
-    const minY = Math.min(...focusNodes.map((node) => node.y - 58))
-    const maxY = Math.max(...focusNodes.map((node) => node.y + 58))
+    const minX = Math.min(center.x, ...focusNodes.map((node) => node.x - (node.degree === 'second' ? 100 : 96)))
+    const maxX = Math.max(center.x, ...focusNodes.map((node) => node.x + (node.degree === 'second' ? 100 : 96)))
+    const minY = Math.min(center.y, ...focusNodes.map((node) => node.y - 58))
+    const maxY = Math.max(center.y, ...focusNodes.map((node) => node.y + 58))
 
     setViewport(viewportForBounds(stage, { minX, maxX, minY, maxY }))
-  }, [expandedSignature, hasQuery, layoutRevision])
+  }, [center.x, center.y, expandedSignature, hasQuery, layoutRevision])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -905,7 +829,7 @@ export function KnotForceGraph({
       setViewport((prev) => {
         const nextScale = clamp(prev.scale * (event.deltaY > 0 ? 0.90 : 1.11), MIN_ZOOM, MAX_ZOOM)
         const normalizedScale = Math.abs(nextScale - 1) < 0.035 ? 1 : nextScale
-        return viewportForZoomAtClient(stage, event.clientX, event.clientY, prev, normalizedScale)
+        return { ...prev, scale: normalizedScale }
       })
     }
 
@@ -1113,7 +1037,7 @@ export function KnotForceGraph({
         >
           <svg
             viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-            preserveAspectRatio="none"
+            preserveAspectRatio="xMidYMid meet"
             aria-hidden="true"
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}
           >
@@ -1133,20 +1057,6 @@ export function KnotForceGraph({
               const muted = Boolean(selectedNodeId) && !selected && !related
               const searchHit = hasQuery && node.matchesQuery
               const searchMuted = hasQuery && !node.matchesQuery
-              const targetSize = stageCardSize({
-                total: layoutNodes.length,
-                selected,
-                searchHit,
-                related,
-                secondDegree: false,
-                compact,
-              })
-              const { start, end } = edgeAttachmentPoints({
-                source: center,
-                target: node,
-                sourceSize: centerCardSize(compact),
-                targetSize,
-              })
 
               const stroke = selected
                 ? 'rgba(26,24,21,0.28)'
@@ -1170,7 +1080,7 @@ export function KnotForceGraph({
               return (
                 <path
                   key={`strand-${node.id}`}
-                  d={`M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`}
+                  d={`M ${center.x} ${center.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${node.x} ${node.y}`}
                   fill="none"
                   stroke={stroke}
                   strokeWidth={selected ? 1.2 : searchHit ? 1.25 : related ? 0.85 : muted || searchMuted ? 0.28 : node.tab === 'Connected' ? 0.85 : 1.1}
@@ -1186,35 +1096,6 @@ export function KnotForceGraph({
               if (selectedNodeId && !selected) return null
               if (hasQuery && !edge.source.matchesQuery && !edge.target.matchesQuery) return null
 
-              const sourceSelected = selectedNodeId === edge.source.id
-              const targetSelected = selectedNodeId === edge.target.id
-              const sourceSearchHit = hasQuery && edge.source.matchesQuery
-              const targetSearchHit = hasQuery && edge.target.matchesQuery
-              const sourceRelated = selectedPeerIds.has(edge.source.id)
-              const targetRelated = selectedPeerIds.has(edge.target.id)
-              const sourceSize = stageCardSize({
-                total: layoutNodes.length,
-                selected: sourceSelected,
-                searchHit: sourceSearchHit,
-                related: sourceRelated,
-                secondDegree: edge.source.degree === 'second',
-                compact,
-              })
-              const targetSize = stageCardSize({
-                total: layoutNodes.length,
-                selected: targetSelected,
-                searchHit: targetSearchHit,
-                related: targetRelated,
-                secondDegree: edge.target.degree === 'second',
-                compact,
-              })
-              const { start, end } = edgeAttachmentPoints({
-                source: edge.source,
-                target: edge.target,
-                sourceSize,
-                targetSize,
-              })
-
               const midX = (edge.source.x + edge.target.x) / 2
               const midY = (edge.source.y + edge.target.y) / 2
               const awayX = midX + (midX - center.x) * 0.34 + Math.sin(index * 1.7) * 12
@@ -1227,7 +1108,7 @@ export function KnotForceGraph({
               return (
                 <path
                   key={`peer-${edge.id}`}
-                  d={`M ${start.x} ${start.y} Q ${curveX} ${curveY} ${end.x} ${end.y}`}
+                  d={`M ${edge.source.x} ${edge.source.y} Q ${curveX} ${curveY} ${edge.target.x} ${edge.target.y}`}
                   fill="none"
                   stroke={selected ? 'rgba(26,24,21,0.34)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
                   strokeWidth={selected ? 1.22 : 0.85}
