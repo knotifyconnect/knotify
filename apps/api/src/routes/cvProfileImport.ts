@@ -11,6 +11,33 @@ import type {
   CvExistingProfileSnapshot,
 } from '../services/cvProfileReview.js'
 
+/** Innermost Error.cause in a chain — the actual root failure, not a wrapper's generic message. */
+function deepestCauseMessage(error: unknown): string {
+  let current = error
+  let message = error instanceof Error ? error.message : String(error)
+  const seen = new Set<unknown>()
+  while (current instanceof Error && current.cause && !seen.has(current.cause)) {
+    seen.add(current.cause)
+    current = current.cause
+    message = current instanceof Error ? current.message : String(current)
+  }
+  return message
+}
+
+/** Full "OuterMessage -> MiddleMessage -> InnerMessage" chain, for context alongside deepestCauseMessage. */
+function causeChainSummary(error: unknown): string {
+  const parts: string[] = []
+  let current = error
+  const seen = new Set<unknown>()
+  while (current instanceof Error) {
+    parts.push(`${current.name}: ${current.message}`)
+    if (!current.cause || seen.has(current.cause)) break
+    seen.add(current.cause)
+    current = current.cause
+  }
+  return parts.join(' -> ')
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -318,10 +345,11 @@ cvProfileImportRouter.post(
       }
 
       if (error instanceof CvProfilePreviewError) {
-        // error.cause carries the real underlying failure (e.g. the actual
-        // pdfjs-dist error behind a generic EXTRACTION_FAILED) — log it since
-        // the client only ever sees the generic message/code.
-        console.error('[cv-profile-import] preview failed', error.code, error.cause ?? error)
+        // Walk the Error.cause chain (CvProfilePreviewError -> PdfLayoutError
+        // -> the real pdfjs-dist error) and log the innermost message FIRST
+        // and on one line — Vercel's log list view truncates long entries,
+        // so anything after the visible prefix is lost otherwise.
+        console.error(`[cv-profile-import] preview failed: ${deepestCauseMessage(error)} (chain: ${causeChainSummary(error)})`)
         return res.status(422).json({
           error: error.message,
           code: error.code,
