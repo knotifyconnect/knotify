@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { KnotGraphNode, KnotHealthState } from './KnotForceGraph'
+import {
+  MOBILE_EXPANDED_BOUNDS,
+  MOBILE_SECOND_DEGREE_SIZE,
+  layoutExpandedNodeSlots,
+  rectForPoint,
+} from './knotGraphLayout'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type MeNode = { id: 'me'; name: string; avatarUrl: string | null }
@@ -237,6 +243,7 @@ export function KnotMobileGraph({
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
   const [imgFail, setImgFail] = useState(new Set<string>())
+  const [, setLayoutRevision] = useState(0)
 
   const direct = nodes.filter(n => n.degree !== 'second')
   const second = nodes.filter(n => n.degree === 'second')
@@ -246,19 +253,49 @@ export function KnotMobileGraph({
   // A direct node is dimmed in expanded mode unless it's the root we expanded from
   const isDimmed = (n: KnotGraphNode) => expandedMode && n.degree !== 'second' && n.id !== expandedRootId
   const r1Nodes = direct.slice(0, 10)
-  const r2Nodes = [...direct.slice(10), ...second]
+  const r2Nodes = direct.slice(10)
   const r1Pos = ring(r1Nodes.length, 132, CX, CY)
   const r2Pos = ring(r2Nodes.length, 208, CX, CY)
 
-  const positioned = [
+  const directPositioned = [
     ...r1Nodes.map((n, i) => ({ n, x: r1Pos[i].x, y: r1Pos[i].y, r: 22 })),
     ...r2Nodes.map((n, i) => ({ n, x: r2Pos[i].x, y: r2Pos[i].y, r: 17 })),
   ]
 
   // In expanded mode, second-degree edges originate from the expanded root node
   // (not "me"), so it's visually clear they belong to that person's network.
-  const rootEntry = expandedRootId ? positioned.find(p => p.n.id === expandedRootId) : undefined
+  const rootEntry = expandedRootId ? directPositioned.find(p => p.n.id === expandedRootId) : undefined
   const rootPos = rootEntry ? { x: rootEntry.x, y: rootEntry.y } : { x: CX, y: CY }
+  const secondSlots = rootEntry
+    ? layoutExpandedNodeSlots({
+        root: rootPos,
+        center: { x: CX, y: CY },
+        total: second.length,
+        bounds: MOBILE_EXPANDED_BOUNDS,
+        size: MOBILE_SECOND_DEGREE_SIZE,
+        avoid: directPositioned.map((item) => rectForPoint(item, MOBILE_SECOND_DEGREE_SIZE)),
+        maxColumns: 2,
+        rootGapX: 62,
+        rootGapY: 62,
+        columnGap: 16,
+        rowGap: 16,
+      })
+    : ring(second.length, 208, CX, CY)
+
+  const positioned = [
+    ...directPositioned,
+    ...second.map((n, i) => ({ n, x: secondSlots[i].x, y: secondSlots[i].y, r: 17 })),
+  ]
+
+  useEffect(() => {
+    const requestLayout = () => setLayoutRevision((value) => value + 1)
+    window.addEventListener('resize', requestLayout)
+    window.addEventListener('orientationchange', requestLayout)
+    return () => {
+      window.removeEventListener('resize', requestLayout)
+      window.removeEventListener('orientationchange', requestLayout)
+    }
+  }, [])
 
   // Search highlighting — mirrors the desktop graph: matching nodes stand out,
   // the rest dim, and the view pans to the first match.
