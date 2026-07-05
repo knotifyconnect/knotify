@@ -10,8 +10,8 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { apiGet, apiPost } from '../lib/api'
-import { KAvatar } from '../lib/knotify'
-import { T, SectionLabel } from '../lib/desk'
+import { KAvatar, KnotifyMark } from '../lib/knotify'
+import { T } from '../lib/desk'
 import { Send, MessageSquare, Coffee, User, Trophy, CalendarDays } from 'lucide-react'
 
 export type Suggestion = {
@@ -105,12 +105,17 @@ export function CompanionHero({
   }
 
   return (
-    <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
-      <SectionLabel>Companion</SectionLabel>
+    <div style={{ padding: 14, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 4px 10px' }}>
+        <div style={{ width: 26, height: 26, borderRadius: 999, background: T.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <KnotifyMark size={14} color={T.paperSoft} />
+        </div>
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: T.text }}>Companion</span>
+      </div>
 
       <div
         ref={scrollRef}
-        style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 560, overflowY: 'auto', padding: '4px 2px 8px' }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 340, overflowY: 'auto', padding: '2px 2px 6px' }}
       >
         {loadingHistory ? (
           <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 13.5, color: T.inkMuted, padding: '10px 2px' }}>
@@ -118,9 +123,9 @@ export function CompanionHero({
           </div>
         ) : (
           messages.map((m) => (
-            <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: 6 }}>
+            <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: 5 }}>
               {m.actions && m.actions.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: '94%' }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: '90%' }}>
                   {m.actions.map((a, i) => (
                     <span
                       key={i}
@@ -137,23 +142,29 @@ export function CompanionHero({
                   ))}
                 </div>
               )}
-              <div
-                style={{
-                  maxWidth: m.role === 'user' ? '80%' : '94%',
-                  padding: '9px 13px',
-                  borderRadius: 14,
-                  fontSize: 13.5,
-                  lineHeight: 1.55,
-                  fontFamily: T.text,
-                  whiteSpace: 'pre-wrap',
-                  background: m.role === 'user' ? T.ink : T.paperDeep,
-                  color: m.role === 'user' ? T.paperSoft : T.ink,
-                }}
-              >
-                {m.content}
+              <div style={{ display: 'flex', gap: 7, maxWidth: '90%', flexDirection: m.role === 'user' ? 'row-reverse' : 'row' }}>
+                {m.role === 'assistant' && (
+                  <div style={{ width: 22, height: 22, borderRadius: 999, background: T.paperDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                    <KnotifyMark size={12} color={T.ink} />
+                  </div>
+                )}
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 13,
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    fontFamily: T.text,
+                    whiteSpace: 'pre-wrap',
+                    background: m.role === 'user' ? T.ink : T.paperDeep,
+                    color: m.role === 'user' ? T.paperSoft : T.ink,
+                  }}
+                >
+                  {m.content}
+                </div>
               </div>
               {m.role === 'assistant' && m.suggestions && m.suggestions.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: '94%' }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxWidth: '90%', paddingLeft: 29 }}>
                   {m.suggestions.map((s, i) => {
                     const Icon = ACTION_ICON[s.action]
                     const peer = s.peerId ? peers.get(s.peerId) : undefined
@@ -164,12 +175,12 @@ export function CompanionHero({
                         onClick={() => onSuggestion(s)}
                         style={{
                           display: 'inline-flex', alignItems: 'center', gap: 6,
-                          padding: '6px 12px', borderRadius: 999, border: 'none',
-                          background: T.paperSoft, color: T.ink, fontSize: 12.5,
+                          padding: '5px 11px', borderRadius: 999, border: 'none',
+                          background: T.paperSoft, color: T.ink, fontSize: 12,
                           fontFamily: T.text, fontWeight: 600, cursor: 'pointer',
                         }}
                       >
-                        {peer ? <KAvatar name={peer.full_name} src={peer.avatar_url} size={16} /> : <Icon size={13} />}
+                        {peer ? <KAvatar name={peer.full_name} src={peer.avatar_url} size={15} /> : <Icon size={12} />}
                         {s.label}
                       </button>
                     )
@@ -180,23 +191,28 @@ export function CompanionHero({
           ))
         )}
         {sending && (
-          <div style={{ alignSelf: 'flex-start', padding: '9px 13px', borderRadius: 14, background: T.paperDeep, color: T.inkMuted, fontSize: 13, fontFamily: T.display, fontStyle: 'italic' }}>
-            Companion is typing…
+          <div style={{ display: 'flex', gap: 7 }}>
+            <div style={{ width: 22, height: 22, borderRadius: 999, background: T.paperDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <KnotifyMark size={12} color={T.ink} />
+            </div>
+            <div style={{ padding: '8px 12px', borderRadius: 13, background: T.paperDeep, color: T.inkMuted, fontSize: 13, fontFamily: T.display, fontStyle: 'italic' }}>
+              typing…
+            </div>
           </div>
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 8, borderTop: `0.5px solid ${T.ruleSoft}`, paddingTop: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 6, borderTop: `0.5px solid ${T.ruleSoft}`, paddingTop: 10 }}>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask anything about your network…"
+          placeholder="Message your Companion…"
           rows={1}
           style={{
             flex: 1, resize: 'none', border: 'none', outline: 'none',
-            background: T.paperSoft, borderRadius: 12, padding: '10px 14px',
-            fontSize: 13.5, fontFamily: T.text, color: T.ink, maxHeight: 100,
+            background: T.paperSoft, borderRadius: 12, padding: '9px 13px',
+            fontSize: 13, fontFamily: T.text, color: T.ink, maxHeight: 80,
           }}
         />
         <button
@@ -205,13 +221,13 @@ export function CompanionHero({
           disabled={!input.trim() || sending}
           aria-label="Send"
           style={{
-            flexShrink: 0, width: 38, height: 38, borderRadius: 999, border: 'none',
+            flexShrink: 0, width: 34, height: 34, borderRadius: 999, border: 'none',
             background: T.ink, color: T.paperSoft, cursor: input.trim() && !sending ? 'pointer' : 'default',
             opacity: input.trim() && !sending ? 1 : 0.5,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
-          <Send size={15} />
+          <Send size={14} />
         </button>
       </div>
     </div>
