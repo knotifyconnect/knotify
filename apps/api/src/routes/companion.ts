@@ -9,13 +9,19 @@
  * are persisted separately so future conversations stay grounded in durable
  * things the Companion has learned about this person, not just recent turns.
  *
- * The Companion is a real agent: it runs a Claude tool-use loop and can send
- * a message, propose a coffee, RSVP to an event, or post an ask on the user's
- * behalf (companionActions.ts). The system prompt enforces explicit user
- * confirmation in-conversation before any outward-facing action.
+ * The Companion is a real agent: it runs a Gemini function-calling loop and
+ * can send a message, propose a coffee, RSVP to an event, or post an ask on
+ * the user's behalf (companionActions.ts). The system prompt enforces
+ * explicit user confirmation in-conversation before any outward-facing
+ * action.
+ *
+ * Runs on Google's Gemini API (free tier) rather than Anthropic — a
+ * deliberate choice so this feature has zero marginal cost by default. See
+ * apps/api/src/engine/relationshipPriority.ts for the separate, still-Claude
+ * "Layer 2" insight cache, which is untouched by this.
  */
 import { Router } from 'express'
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenAI, type Content, type FunctionDeclaration, type Part } from '@google/genai'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
 import { buildCompanionContext, buildCompanionSystemPrompt, type CompanionContext } from '../services/companionContext.js'
@@ -23,7 +29,7 @@ import { sendMessage, proposeCoffee, rsvpEvent, createAsk, type ExecutedAction }
 
 export const companionRouter = Router()
 
-const MODEL = process.env.COMPANION_MODEL || 'claude-sonnet-5'
+const MODEL = process.env.COMPANION_MODEL || 'gemini-2.5-flash'
 const HISTORY_LIMIT = 50
 const CONTEXT_TURNS = 20
 const MAX_MESSAGE_LENGTH = 2000
@@ -31,29 +37,30 @@ const MAX_MEMORY_FACTS_PER_TURN = 5
 const MAX_MEMORY_FACT_LENGTH = 300
 
 // ── Cost control ─────────────────────────────────────────────────────────────
-// Per-user rolling 24h cap on Companion turns, checked BEFORE any Claude call
+// Per-user rolling 24h cap on Companion turns, checked BEFORE any model call
 // so a capped-out request costs nothing. Admins are unlimited (covers
 // founder/testing accounts); premium users get a generous daily allowance;
 // everyone else gets a small free taste. All three tunable without a
-// redeploy via env vars.
+// redeploy via env vars. Gemini's free tier also has its own request-rate
+// ceiling on top of this — these caps keep usage well inside it.
 const FREE_DAILY_LIMIT = Number(process.env.COMPANION_FREE_DAILY_LIMIT ?? 10)
 const PREMIUM_DAILY_LIMIT = Number(process.env.COMPANION_PREMIUM_DAILY_LIMIT ?? 100)
 const LIMIT_REACHED_FREE = "You've used today's free Companion messages. Upgrade to premium for a lot more room, or come back tomorrow."
 const LIMIT_REACHED_PREMIUM = "You've hit today's Companion limit. It resets tomorrow."
 // Deliberately distinct wording from the generic-failure path below, so a
 // screenshot immediately tells us which branch fired: this one means
-// getAnthropic() returned null, i.e. ANTHROPIC_API_KEY isn't visible to this
-// runtime at all (as opposed to the key being present but the API call itself
-// failing, which surfaces as a 500 with the real error message instead).
-const FALLBACK_REPLY = "Companion setup issue: ANTHROPIC_API_KEY is not configured on this server."
+// getGemini() returned null, i.e. GEMINI_API_KEY isn't visible to this
+// runtime at all (as opposed to the key being present but the API call
+// itself failing, which surfaces as a 500 with the real error instead).
+const FALLBACK_REPLY = "Companion setup issue: GEMINI_API_KEY is not configured on this server."
 
-let anthropic: Anthropic | null | undefined
-function getAnthropic(): Anthropic | null {
-  if (anthropic !== undefined) return anthropic
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) console.error('[companion] ANTHROPIC_API_KEY is not set in process.env for this runtime')
-  anthropic = apiKey ? new Anthropic({ apiKey }) : null
-  return anthropic
+let gemini: GoogleGenAI | null | undefined
+function getGemini(): GoogleGenAI | null {
+  if (gemini !== undefined) return gemini
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) console.error('[companion] GEMINI_API_KEY is not set in process.env for this runtime')
+  gemini = apiKey ? new GoogleGenAI({ apiKey }) : null
+  return gemini
 }
 
 type Suggestion = {
@@ -95,12 +102,15 @@ function parseModelReply(raw: string, ctx: CompanionContext): { reply: string; s
 }
 
 // ── Agent tools ──────────────────────────────────────────────────────────────
+// parametersJsonSchema takes a raw JSON Schema object directly (Gemini's
+// alternative to building a Schema/Type-enum tree), so these definitions are
+// the same shape Anthropic's input_schema would use.
 
-const AGENT_TOOLS: Anthropic.Tool[] = [
+const AGENT_TOOLS: FunctionDeclaration[] = [
   {
     name: 'send_message',
     description: 'Send a direct message to one of the user\'s accepted connections, on the user\'s behalf. Only after the user explicitly confirmed the exact text in this conversation. peerId must come from CONTEXT.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object',
       properties: {
         peerId: { type: 'string', description: 'UUID of the connection, exactly as it appears in CONTEXT' },
@@ -112,7 +122,7 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
   {
     name: 'propose_coffee',
     description: 'Propose a coffee meeting to a connection (they still have to confirm). Only after the user confirmed person, time and place. peerId must come from CONTEXT.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object',
       properties: {
         peerId: { type: 'string', description: 'UUID of the connection from CONTEXT' },
@@ -125,7 +135,7 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
   {
     name: 'rsvp_event',
     description: 'RSVP the user to an upcoming event they clearly asked to join. eventId must come from CONTEXT.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object',
       properties: {
         eventId: { type: 'string', description: 'UUID of the event from CONTEXT' },
@@ -136,7 +146,7 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
   {
     name: 'create_ask',
     description: 'Post an ask (a request for help) to the user\'s network, visible to their connections. Only after the user confirmed the exact wording.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object',
       properties: {
         content: { type: 'string', description: 'The ask text, 5-280 characters, as the user approved it' },
@@ -163,47 +173,50 @@ async function executeTool(userId: string, ctx: CompanionContext, name: string, 
 const MAX_AGENT_TURNS = 3
 
 async function callCompanion(
-  client: Anthropic,
+  client: GoogleGenAI,
   userId: string,
   ctx: CompanionContext,
   history: Array<{ role: 'user' | 'assistant'; content: string }>
 ): Promise<{ reply: string; suggestions: Suggestion[]; memory: string[]; actions: ExecutedAction[] }> {
   const system = buildCompanionSystemPrompt(ctx)
-  const messages: Anthropic.MessageParam[] = history.length
-    ? history.map((m) => ({ role: m.role, content: m.content }))
-    : [{ role: 'user', content: 'The user just opened the Companion. Greet them briefly and, if CONTEXT has something concrete worth raising, lead with that. Otherwise just offer a warm, low-key opener.' }]
+  const contents: Content[] = history.length
+    ? history.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
+    : [{ role: 'user', parts: [{ text: 'The user just opened the Companion. Greet them briefly and, if CONTEXT has something concrete worth raising, lead with that. Otherwise just offer a warm, low-key opener.' }] }]
 
   const actions: ExecutedAction[] = []
 
   for (let turn = 0; turn < MAX_AGENT_TURNS; turn++) {
-    const response = await client.messages.create({
+    const response = await client.models.generateContent({
       model: MODEL,
-      max_tokens: 1500,
-      system,
-      tools: AGENT_TOOLS,
-      messages,
+      contents,
+      config: {
+        systemInstruction: system,
+        tools: [{ functionDeclarations: AGENT_TOOLS }],
+        maxOutputTokens: 1500,
+      },
     })
 
-    if (response.stop_reason !== 'tool_use') {
-      const raw = response.content.find((b) => b.type === 'text')?.text ?? ''
-      return { ...parseModelReply(raw, ctx), actions }
+    const calls = response.functionCalls
+    if (!calls || !calls.length) {
+      return { ...parseModelReply(response.text ?? '', ctx), actions }
     }
 
     // Execute every tool call in this turn, feed results back, continue the loop.
-    const toolResults: Anthropic.ToolResultBlockParam[] = []
-    for (const block of response.content) {
-      if (block.type !== 'tool_use') continue
-      const result = await executeTool(userId, ctx, block.name, (block.input ?? {}) as Record<string, unknown>)
-      actions.push({ tool: block.name, detail: result.detail, ok: result.ok })
-      toolResults.push({
-        type: 'tool_result',
-        tool_use_id: block.id,
-        content: JSON.stringify(result),
-        is_error: !result.ok,
+    const modelParts = response.candidates?.[0]?.content?.parts ?? calls.map((c) => ({ functionCall: c }) as Part)
+    const resultParts: Part[] = []
+    for (const call of calls) {
+      const result = await executeTool(userId, ctx, call.name ?? '', call.args ?? {})
+      actions.push({ tool: call.name ?? 'unknown', detail: result.detail, ok: result.ok })
+      resultParts.push({
+        functionResponse: {
+          id: call.id,
+          name: call.name,
+          response: { ok: result.ok, detail: result.detail },
+        },
       })
     }
-    messages.push({ role: 'assistant', content: response.content })
-    messages.push({ role: 'user', content: toolResults })
+    contents.push({ role: 'model', parts: modelParts })
+    contents.push({ role: 'user', parts: resultParts })
   }
 
   // Loop cap hit: surface what did happen rather than an opaque error.
@@ -222,7 +235,7 @@ async function persistMemory(userId: string, facts: string[]) {
   await supabase.from('companion_memory').insert(facts.map((fact) => ({ user_id: userId, fact })))
 }
 
-/** Checked before any Claude call so a capped-out request never costs anything. */
+/** Checked before any model call so a capped-out request never costs anything. */
 async function checkDailyLimit(userId: string): Promise<{ allowed: true } | { allowed: false; message: string }> {
   const { data: me } = await supabase.from('users').select('is_admin, is_premium').eq('id', userId).maybeSingle()
   if (me?.is_admin) return { allowed: true }
@@ -259,7 +272,7 @@ companionRouter.get('/messages', requireAuth, async (req, res) => {
     if (messages.length) return res.json({ messages })
 
     // Empty history — generate the proactive opener.
-    const client = getAnthropic()
+    const client = getGemini()
     if (!client) {
       return res.json({ messages: [{ id: 'fallback', role: 'assistant', content: FALLBACK_REPLY, suggestions: null, created_at: new Date().toISOString() }] })
     }
@@ -293,7 +306,7 @@ companionRouter.post('/messages', requireAuth, async (req, res) => {
 
     await persistMessage(userId, 'user', content)
 
-    const client = getAnthropic()
+    const client = getGemini()
     if (!client) {
       return res.json({ reply: FALLBACK_REPLY, suggestions: [] })
     }

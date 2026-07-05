@@ -54,6 +54,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           SUPABASE_URL: present('SUPABASE_URL'),
           SUPABASE_SERVICE_ROLE_KEY: present('SUPABASE_SERVICE_ROLE_KEY'),
           ANTHROPIC_API_KEY: present('ANTHROPIC_API_KEY'),
+          GEMINI_API_KEY: present('GEMINI_API_KEY'),
           ADMIN_PANEL_SECRET: present('ADMIN_PANEL_SECRET'),
           DATABASE_URL: present('DATABASE_URL'),
         },

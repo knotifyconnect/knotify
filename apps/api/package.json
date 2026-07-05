@@ -45,29 +45,30 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",
+    "@google/genai": "^2.10.0",
     "@nodenet/shared": "file:../../packages/shared",
     "@supabase/supabase-js": "2.110.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "4.22.2",
     "express-rate-limit": "^7.4.1",
+    "html-to-text": "^9.0.5",
     "multer": "2.2.0",
     "pdf-parse": "^1.1.1",
     "pdfjs-dist": "5.7.284",
     "pg": "^8.13.1",
     "resend": "^6.14.0",
-    "zod": "^3.23.8",
-    "html-to-text": "^9.0.5"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/html-to-text": "^9.0.4",
     "@types/multer": "2.2.0",
     "@types/node": "^22.10.1",
     "@types/pdf-parse": "^1.1.4",
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3",
-    "@types/html-to-text": "^9.0.4"
+    "typescript": "^5.6.3"
   }
 }
