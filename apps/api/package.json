@@ -46,6 +46,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",
     "@google/genai": "^2.10.0",
+    "@napi-rs/canvas": "^0.1.100",
     "@nodenet/shared": "file:../../packages/shared",
     "@supabase/supabase-js": "2.110.0",
     "cors": "^2.8.5",
