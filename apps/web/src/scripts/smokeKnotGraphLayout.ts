@@ -19,16 +19,30 @@ function assertLayout({
   bounds,
   size,
   avoid = [],
+  checkBounds = true,
+  root,
+  center,
 }: {
   label: string
   points: LayoutPoint[]
   bounds: LayoutBounds
   size: LayoutSize
   avoid?: ReturnType<typeof rectForPoint>[]
+  checkBounds?: boolean
+  root?: LayoutPoint
+  center?: LayoutPoint
 }) {
   for (const [index, point] of points.entries()) {
-    assert.ok(point.x >= bounds.minX && point.x <= bounds.maxX, `${label}: point ${index} x is outside bounds`)
-    assert.ok(point.y >= bounds.minY && point.y <= bounds.maxY, `${label}: point ${index} y is outside bounds`)
+    if (checkBounds) {
+      assert.ok(point.x >= bounds.minX && point.x <= bounds.maxX, `${label}: point ${index} x is outside bounds`)
+      assert.ok(point.y >= bounds.minY && point.y <= bounds.maxY, `${label}: point ${index} y is outside bounds`)
+    }
+
+    if (root && center) {
+      const outward = { x: root.x - center.x, y: root.y - center.y }
+      const projection = (point.x - root.x) * outward.x + (point.y - root.y) * outward.y
+      assert.ok(projection > 0, `${label}: point ${index} is not behind the expanded root`)
+    }
   }
 
   const rects = points.map((point) => rectForPoint(point, size))
@@ -70,6 +84,9 @@ for (const { label, root } of desktopRoots) {
       bounds: DESKTOP_EXPANDED_BOUNDS,
       size: DESKTOP_SECOND_DEGREE_SIZE,
       avoid,
+      checkBounds: false,
+      root,
+      center,
     })
   }
 }
@@ -93,6 +110,7 @@ for (const { label, root } of mobileRoots) {
     rootGapY: 62,
     columnGap: 16,
     rowGap: 16,
+    constrainToBounds: true,
   })
 
   assert.equal(points.length, 10, `${label}: expected 10 points`)

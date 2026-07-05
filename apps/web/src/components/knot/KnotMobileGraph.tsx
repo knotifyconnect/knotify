@@ -279,6 +279,7 @@ export function KnotMobileGraph({
         rootGapY: 62,
         columnGap: 16,
         rowGap: 16,
+        constrainToBounds: true,
       })
     : ring(second.length, 208, CX, CY)
 
