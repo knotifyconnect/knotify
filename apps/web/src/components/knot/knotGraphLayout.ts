@@ -23,6 +23,7 @@ type ExpandedSlotOptions = {
   rootGapY?: number
   columnGap?: number
   rowGap?: number
+  constrainToBounds?: boolean
 }
 
 export const DESKTOP_SECOND_DEGREE_SIZE: LayoutSize = { width: 158, height: 54 }
@@ -72,26 +73,23 @@ export function layoutExpandedNodeSlots({
   rootGapY = 88,
   columnGap = 28,
   rowGap = 22,
+  constrainToBounds = false,
 }: ExpandedSlotOptions): LayoutPoint[] {
   if (total <= 0) return []
 
   const collisionGap = 8
-  const radialStep = Math.max(size.width + columnGap, size.height + rowGap)
-  const rootDistance = Math.max(1, Math.hypot(root.x - center.x, root.y - center.y))
-  const outwardAngle = Math.atan2(root.y - center.y, root.x - center.x)
-  const maxCandidates = Math.max(total * 18, 72)
   const rootRect = rectForPoint(root, size)
-  const candidates = makeRadialCandidates({
+  const candidates = makeBackstageCandidates({
     root,
     center,
     bounds,
     size,
-    total: maxCandidates,
-    baseRadius: Math.max(rootGapX, rootGapY, radialStep * 0.82),
-    radiusStep: radialStep,
-    outwardAngle,
-    rootDistance,
+    total,
     maxColumns,
+    rootGap: Math.max(rootGapX, rootGapY),
+    columnGap,
+    rowGap,
+    constrainToBounds,
   })
   const used = [rootRect, ...avoid]
   const points: LayoutPoint[] = []
@@ -106,8 +104,7 @@ export function layoutExpandedNodeSlots({
       const collisionScore = used.reduce((score, obstacle) => {
         return score + (rectsOverlap(rect, obstacle, collisionGap) ? 1_000_000 : 0)
       }, 0)
-      const fanScore = Math.abs(candidate.angleOffset) * 10 + candidate.ring * 34 + candidate.edgePenalty
-      const score = collisionScore + fanScore
+      const score = collisionScore + candidate.score
 
       if (!best || score < best.score) {
         best = { point: candidate.point, score }
@@ -123,93 +120,95 @@ export function layoutExpandedNodeSlots({
   return points
 }
 
-function makeRadialCandidates({
+function makeBackstageCandidates({
   root,
   center,
   bounds,
   size,
   total,
-  baseRadius,
-  radiusStep,
-  outwardAngle,
-  rootDistance,
   maxColumns,
+  rootGap,
+  columnGap,
+  rowGap,
+  constrainToBounds,
 }: {
   root: LayoutPoint
   center: LayoutPoint
   bounds: LayoutBounds
   size: LayoutSize
   total: number
-  baseRadius: number
-  radiusStep: number
-  outwardAngle: number
-  rootDistance: number
   maxColumns: number
+  rootGap: number
+  columnGap: number
+  rowGap: number
+  constrainToBounds: boolean
 }) {
-  const candidates: Array<{ point: LayoutPoint; angleOffset: number; ring: number; edgePenalty: number }> = []
-  const angleStep = Math.PI / 8
-  const offsets = Array.from({ length: 17 }, (_, index) => {
-    if (index === 0) return 0
-    const distance = Math.ceil(index / 2) * angleStep
-    return index % 2 === 1 ? -distance : distance
-  })
-  const ringCount = Math.max(5, Math.ceil(total / Math.max(1, maxColumns)) + 2)
+  const candidates: Array<{ point: LayoutPoint; score: number }> = []
+  const dx = root.x - center.x
+  const dy = root.y - center.y
+  const length = Math.hypot(dx, dy) || 1
+  const outward = { x: dx / length, y: dy / length }
+  const across = { x: -outward.y, y: outward.x }
+  const step = Math.max(size.width + columnGap, size.height + rowGap)
+  const firstRowDistance = Math.max(rootGap, step * 0.82)
+  const columns = Math.max(1, Math.min(maxColumns, total))
+  const rows = Math.ceil(total / columns) + 4
   const seen = new Set<string>()
 
-  for (let ring = 0; ring < ringCount; ring += 1) {
-    const radius = baseRadius + ring * radiusStep
-    for (const angleOffset of offsets) {
-      const angle = outwardAngle + angleOffset
-      const raw = {
-        x: root.x + Math.cos(angle) * radius,
-        y: root.y + Math.sin(angle) * radius,
-      }
-      const point = {
-        x: clamp(raw.x, bounds.minX, bounds.maxX),
-        y: clamp(raw.y, bounds.minY, bounds.maxY),
-      }
+  for (let row = 0; row < rows; row += 1) {
+    const rowDistance = firstRowDistance + row * step
+    const rowColumns = Math.min(columns + Math.floor(row / 2), total)
+    const offsets = centeredOffsets(rowColumns, step)
+
+    for (const offset of offsets) {
+      const raw = add(root, scale(outward, rowDistance), scale(across, offset))
+      const point = constrainToBounds
+        ? { x: clamp(raw.x, bounds.minX, bounds.maxX), y: clamp(raw.y, bounds.minY, bounds.maxY) }
+        : raw
       const key = `${Math.round(point.x)}:${Math.round(point.y)}`
       if (seen.has(key)) continue
       seen.add(key)
 
       const rawShift = Math.hypot(point.x - raw.x, point.y - raw.y)
-      const fromCenter = Math.hypot(point.x - center.x, point.y - center.y)
-
       candidates.push({
         point,
-        angleOffset,
-        ring,
-        edgePenalty: rawShift * 2 + (fromCenter < rootDistance ? 80 : 0),
+        score: row * 100 + Math.abs(offset) + rawShift * 500,
       })
     }
   }
 
-  const gridStepX = size.width + 24
-  const gridStepY = size.height + 18
-  for (let y = bounds.minY; y <= bounds.maxY; y += gridStepY) {
-    for (let x = bounds.minX; x <= bounds.maxX; x += gridStepX) {
-      const key = `${Math.round(x)}:${Math.round(y)}`
-      if (seen.has(key)) continue
-      seen.add(key)
+  if (constrainToBounds) {
+    const gridStepX = size.width + Math.max(12, columnGap)
+    const gridStepY = size.height + Math.max(12, rowGap)
 
-      const angle = Math.atan2(y - root.y, x - root.x)
-      const distance = Math.hypot(x - root.x, y - root.y)
-      const fromCenter = Math.hypot(x - center.x, y - center.y)
+    for (let y = bounds.minY; y <= bounds.maxY; y += gridStepY) {
+      for (let x = bounds.minX; x <= bounds.maxX; x += gridStepX) {
+        const key = `${Math.round(x)}:${Math.round(y)}`
+        if (seen.has(key)) continue
+        seen.add(key)
 
-      candidates.push({
-        point: { x, y },
-        angleOffset: signedAngleDiff(angle, outwardAngle),
-        ring: ringCount + Math.floor(distance / Math.max(1, radiusStep)),
-        edgePenalty: 120 + (fromCenter < rootDistance ? 80 : 0),
-      })
+        candidates.push({
+          point: { x, y },
+          score: 10_000 + Math.hypot(x - root.x, y - root.y),
+        })
+      }
     }
   }
 
   return candidates
 }
 
-function signedAngleDiff(angle: number, target: number) {
-  return Math.atan2(Math.sin(angle - target), Math.cos(angle - target))
+function centeredOffsets(count: number, step: number) {
+  const start = -((count - 1) * step) / 2
+  return Array.from({ length: count }, (_, index) => start + index * step)
+}
+
+function add(a: LayoutPoint, b: LayoutPoint, c: LayoutPoint): LayoutPoint {
+  return { x: a.x + b.x + c.x, y: a.y + b.y + c.y }
+}
+
+function scale(point: LayoutPoint, amount: number): LayoutPoint {
+  return { x: point.x * amount, y: point.y * amount }
 }
 
 function clamp(value: number, min: number, max: number) {

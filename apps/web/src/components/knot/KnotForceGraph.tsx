@@ -1039,7 +1039,7 @@ export function KnotForceGraph({
             viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
             preserveAspectRatio="xMidYMid meet"
             aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}
           >
             <defs>
               <radialGradient id="forceKnotCenterGlow" cx="50%" cy="50%" r="50%">
