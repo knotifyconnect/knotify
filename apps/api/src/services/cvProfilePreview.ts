@@ -8,6 +8,10 @@ import type {
   CvNormalizedDate,
 } from '../intelligence/cv/contracts.js'
 import {
+  CvGeminiExtractionError,
+  extractCvDirectlyFromPdf,
+} from '../intelligence/cv/extractCvDirectFromPdf.js'
+import {
   extractPdfLayout,
   PdfLayoutError,
 } from '../intelligence/document/extractPdfLayout.js'
@@ -84,7 +88,7 @@ export interface CvProfilePreview {
 }
 
 export interface CvProfilePreviewAnalysis {
-  provider: 'local'
+  provider: 'local' | 'gemini'
   summary: string
   experienceLevel: 'student' | 'junior' | 'mid'
   careerPaths: Array<{
@@ -97,7 +101,7 @@ export interface CvProfilePreviewAnalysis {
     }>
   }>
   intelligence: {
-    pipeline: 'structured-local-v1'
+    pipeline: 'structured-local-v1' | 'gemini-direct-v1'
     pageCount: number
     blockCount: number
     processingDurationMs: number
@@ -117,6 +121,7 @@ export type CvProfilePreviewErrorCode =
   | 'SPAN_LIMIT'
   | 'EMPTY_DOCUMENT'
   | 'EXTRACTION_FAILED'
+  | 'MODEL_UNAVAILABLE'
 
 export class CvProfilePreviewError extends Error {
   readonly name = 'CvProfilePreviewError'
@@ -519,6 +524,78 @@ export async function createCvProfilePreview(
         processingDurationMs: Date.now() - startedAt,
         model: analysis.model,
         warnings: [...new Set(combinedWarnings)],
+      },
+    },
+  }
+}
+
+export interface CreateCvProfilePreviewFromPdfOptions {
+  catalog: CvSkillCatalogEntry[]
+  apiKey: string
+  model: string
+  timeoutMs?: number
+  signal?: AbortSignal
+  existingProfile?: CvExistingProfileSnapshot | null
+}
+
+/**
+ * The current profile-import pipeline: sends the PDF directly to Gemini
+ * (no pdfjs-dist, no deterministic regex pass) and reuses mapPreview() /
+ * buildCvProfileReview() unchanged, so the review-and-confirm UI and the
+ * /apply write path are identical to before. See extractCvDirectFromPdf.ts
+ * for why this replaced the old text-extraction + heuristics pipeline.
+ *
+ * Career-path suggestions (a minor bonus feature of the old pipeline, driven
+ * by the legacy analyseCv() heuristic) are not reproduced here — the
+ * frontend already hides that panel when the list is empty, so this is a
+ * clean no-op, not a broken state.
+ */
+export async function createCvProfilePreviewFromPdf(
+  buffer: Buffer,
+  options: CreateCvProfilePreviewFromPdfOptions
+): Promise<CvProfilePreviewResult> {
+  const startedAt = Date.now()
+
+  if (buffer.length < 5 || buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+    throw new CvProfilePreviewError('INVALID_PDF', 'The uploaded file is not a valid PDF')
+  }
+
+  let analysis: CvAnalysisResult
+  try {
+    analysis = await extractCvDirectlyFromPdf(buffer, {
+      apiKey: options.apiKey,
+      model: options.model,
+      timeoutMs: options.timeoutMs,
+      signal: options.signal,
+    })
+  } catch (error) {
+    if (error instanceof CvGeminiExtractionError) {
+      throw new CvProfilePreviewError(
+        'MODEL_UNAVAILABLE',
+        'CV extraction is temporarily unavailable, please try again shortly',
+        { cause: error }
+      )
+    }
+    throw error
+  }
+
+  const experienceCount = analysis.candidates.experience.length
+  const warnings = [...analysis.warnings]
+
+  return {
+    preview: mapPreview(analysis, options.catalog, [], warnings, options.existingProfile),
+    analysis: {
+      provider: 'gemini',
+      summary: 'Extracted directly from your CV using Gemini.',
+      experienceLevel: experienceCount === 0 ? 'student' : experienceCount === 1 ? 'junior' : 'mid',
+      careerPaths: [],
+      intelligence: {
+        pipeline: 'gemini-direct-v1',
+        pageCount: 0,
+        blockCount: 0,
+        processingDurationMs: Date.now() - startedAt,
+        model: analysis.model,
+        warnings: [...new Set(warnings)],
       },
     },
   }

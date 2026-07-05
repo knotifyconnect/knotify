@@ -4,9 +4,12 @@ import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
 import {
-  createCvProfilePreview,
+  createCvProfilePreviewFromPdf,
   CvProfilePreviewError,
 } from '../services/cvProfilePreview.js'
+
+const CV_EXTRACTION_MODEL = process.env.COMPANION_MODEL || 'gemini-2.5-flash'
+const CV_EXTRACTION_TIMEOUT_MS = 45_000
 import type {
   CvExistingProfileSnapshot,
 } from '../services/cvProfileReview.js'
@@ -302,6 +305,15 @@ cvProfileImportRouter.post(
 
     res.once('close', cancelIfDisconnected)
 
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) {
+      console.error('[cv-profile-import] GEMINI_API_KEY is not set in process.env for this runtime')
+      return res.status(422).json({
+        error: 'CV extraction is not configured on this server',
+        code: 'MODEL_UNAVAILABLE',
+      })
+    }
+
     try {
       const catalogResult = await supabase
         .from('skill_catalog')
@@ -325,7 +337,7 @@ cvProfileImportRouter.post(
         return
       }
 
-      const result = await createCvProfilePreview(
+      const result = await createCvProfilePreviewFromPdf(
         req.file.buffer,
         {
           catalog: (catalogResult.data ?? []).map((item) => ({
@@ -334,6 +346,9 @@ cvProfileImportRouter.post(
             category: String(item.category),
           })),
           existingProfile,
+          apiKey,
+          model: CV_EXTRACTION_MODEL,
+          timeoutMs: CV_EXTRACTION_TIMEOUT_MS,
           signal: abortController.signal,
         }
       )
