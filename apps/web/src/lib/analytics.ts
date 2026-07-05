@@ -1,4 +1,4 @@
-import posthog from 'posthog-js'
+import type posthog from 'posthog-js'
 import type { User } from '@supabase/supabase-js'
 
 const CONSENT_KEY = 'knotify:analytics-consent'
@@ -8,6 +8,20 @@ const POSTHOG_HOST = (import.meta.env.VITE_POSTHOG_HOST as string | undefined) |
 export type ConsentChoice = 'granted' | 'denied'
 
 let initialized = false
+let posthogClient: typeof posthog | null = null
+let initPromise: Promise<void> | null = null
+
+function withPostHog(action: (client: typeof posthog) => void) {
+  if (initialized && posthogClient) {
+    action(posthogClient)
+    return
+  }
+
+  initAnalytics()
+  initPromise?.then(() => {
+    if (initialized && posthogClient) action(posthogClient)
+  })
+}
 
 export function getConsent(): ConsentChoice | null {
   try {
@@ -25,7 +39,7 @@ export function setConsent(choice: ConsentChoice) {
     // If localStorage is unavailable, fall back to in-memory only for this tab.
   }
   if (choice === 'granted') initAnalytics()
-  else if (initialized) posthog.opt_out_capturing()
+  else if (initialized) posthogClient?.opt_out_capturing()
 }
 
 export function initAnalytics() {
@@ -33,31 +47,34 @@ export function initAnalytics() {
   if (!POSTHOG_KEY) return
   if (getConsent() !== 'granted') return
 
-  posthog.init(POSTHOG_KEY, {
-    api_host: POSTHOG_HOST,
-    person_profiles: 'identified_only',
-    capture_pageview: false,
-    capture_pageleave: true,
+  initPromise ??= import('posthog-js').then(({ default: posthog }) => {
+    if (initialized || getConsent() !== 'granted') return
+    posthog.init(POSTHOG_KEY, {
+      api_host: POSTHOG_HOST,
+      person_profiles: 'identified_only',
+      capture_pageview: false,
+      capture_pageleave: true,
+    })
+    posthogClient = posthog
+    initialized = true
+  }).catch(() => {
+    initPromise = null
   })
-  initialized = true
 }
 
 export function trackPageview(path: string) {
-  if (!initialized) return
-  posthog.capture('$pageview', { $current_url: path })
+  withPostHog((posthog) => posthog.capture('$pageview', { $current_url: path }))
 }
 
 export function trackEvent(name: string, properties?: Record<string, unknown>) {
-  if (!initialized) return
-  posthog.capture(name, properties)
+  withPostHog((posthog) => posthog.capture(name, properties))
 }
 
 export function identifyUser(user: User) {
-  if (!initialized) return
-  posthog.identify(user.id, { email: user.email })
+  withPostHog((posthog) => posthog.identify(user.id, { email: user.email }))
 }
 
 export function resetAnalyticsUser() {
-  if (!initialized) return
-  posthog.reset()
+  if (!initialized || !posthogClient) return
+  posthogClient.reset()
 }

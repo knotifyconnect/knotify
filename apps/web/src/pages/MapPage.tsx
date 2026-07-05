@@ -4,6 +4,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { KnotForceGraph, type KnotGraphNode, type KnotGraphPeerEdge, type KnotHealthState } from '../components/knot/KnotForceGraph'
 import { KnotMobileGraph, MobileBottomSheet, MobileNodeOverlay, type MeNode } from '../components/knot/KnotMobileGraph'
+import 'leaflet/dist/leaflet.css'
 
 type UserStatus = 'studying' | 'open_to_work' | 'employed' | string
 type ConnectionStatus = 'pending' | 'accepted' | 'declined'
