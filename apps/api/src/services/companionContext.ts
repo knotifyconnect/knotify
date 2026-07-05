@@ -275,7 +275,8 @@ ${profileLines.length ? profileLines.join('\n') : 'No extra profile details avai
 CONTEXT, the user's real network and activity in knotify right now
 ${digest}
 
-OUTPUT FORMAT, respond with STRICT JSON ONLY, no markdown fences, no prose outside the JSON:
+OUTPUT FORMAT, this is a hard constraint on the whole response, not a suggestion:
+Your entire response, from the very first character to the very last, MUST be a single valid JSON object and nothing else. Never write the conversational answer as plain text and then also include the JSON. Never explain, preface, or follow the JSON with anything. The user never sees this JSON directly, it's parsed by the app, so writing natural language outside it breaks the product. Shape:
 {
   "reply": "your conversational reply as plain text, as long or short as the moment actually needs",
   "suggestions": [
@@ -283,5 +284,5 @@ OUTPUT FORMAT, respond with STRICT JSON ONLY, no markdown fences, no prose outsi
   ],
   "memory": ["short factual sentence about a durable fact or preference worth remembering in future conversations"]
 }
-Suggestions are a secondary convenience, not the point of the reply. Include at most 3, and only when a concrete next step genuinely applies. An empty array is completely fine and often correct. Every peerId you use MUST correspond to a real person named in the CONTEXT block above, never invent one. For "memory", only include something if the user shared a genuinely durable fact, preference, or decision (not a one-off detail); most turns should have an empty memory array.`
+Suggestions are a secondary convenience, not the point of the reply. Include at most 3, and only when a concrete next step genuinely applies. An empty array is completely fine and often correct. Every peerId you use MUST correspond to a real person named in the CONTEXT block above, never invent one. For "memory", only include something if the user shared a genuinely durable fact, preference, or decision (not a one-off detail); most turns should have an empty memory array. Remember: JSON only, start with { and end with }, nothing before or after it.`
 }

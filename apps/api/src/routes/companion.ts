@@ -97,25 +97,44 @@ type CompanionRow = {
 
 const VALID_ACTIONS = new Set(['open_message', 'open_coffee', 'open_profile', 'open_quests', 'open_events'])
 
+/**
+ * Extract the {reply, suggestions, memory} object from the model's raw text.
+ * Gemini usually returns pure JSON as instructed, but sometimes writes a
+ * natural-language answer and THEN appends the JSON anyway — so this tries a
+ * straight parse first, then falls back to slicing out the outermost
+ * {...} block (first "{" to last "}") before giving up.
+ */
+function extractJsonObject(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch { /* fall through */ }
+
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) return null
+  try {
+    return JSON.parse(text.slice(start, end + 1))
+  } catch {
+    return null
+  }
+}
+
 /** Defensive JSON parse of the model's reply — same discipline as the Layer 2 engine. */
 function parseModelReply(raw: string, ctx: CompanionContext): { reply: string; suggestions: Suggestion[]; memory: string[] } {
   const cleaned = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
-  try {
-    const parsed = JSON.parse(cleaned) as { reply?: string; suggestions?: Suggestion[]; memory?: string[] }
-    if (!parsed.reply) return { reply: raw, suggestions: [], memory: [] }
-    const suggestions = (Array.isArray(parsed.suggestions) ? parsed.suggestions : [])
-      .filter((s) => s && typeof s.label === 'string' && VALID_ACTIONS.has(s.action))
-      // Safety net: never let a hallucinated person through — peerId must be a real connection.
-      .filter((s) => !s.peerId || ctx.home.peerProfiles.has(s.peerId))
-      .slice(0, 3)
-    const memory = (Array.isArray(parsed.memory) ? parsed.memory : [])
-      .filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
-      .map((f) => f.trim().slice(0, MAX_MEMORY_FACT_LENGTH))
-      .slice(0, MAX_MEMORY_FACTS_PER_TURN)
-    return { reply: parsed.reply, suggestions, memory }
-  } catch {
-    return { reply: raw, suggestions: [], memory: [] }
-  }
+  const parsed = extractJsonObject(cleaned) as { reply?: string; suggestions?: Suggestion[]; memory?: string[] } | null
+  if (!parsed || !parsed.reply) return { reply: raw, suggestions: [], memory: [] }
+
+  const suggestions = (Array.isArray(parsed.suggestions) ? parsed.suggestions : [])
+    .filter((s) => s && typeof s.label === 'string' && VALID_ACTIONS.has(s.action))
+    // Safety net: never let a hallucinated person through — peerId must be a real connection.
+    .filter((s) => !s.peerId || ctx.home.peerProfiles.has(s.peerId))
+    .slice(0, 3)
+  const memory = (Array.isArray(parsed.memory) ? parsed.memory : [])
+    .filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+    .map((f) => f.trim().slice(0, MAX_MEMORY_FACT_LENGTH))
+    .slice(0, MAX_MEMORY_FACTS_PER_TURN)
+  return { reply: parsed.reply, suggestions, memory }
 }
 
 // ── Agent tools ──────────────────────────────────────────────────────────────
