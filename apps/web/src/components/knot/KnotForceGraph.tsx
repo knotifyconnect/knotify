@@ -738,7 +738,7 @@ export function KnotForceGraph({
     if (!stage) return
 
     const handleNativeWheel = (event: globalThis.WheelEvent) => {
-      const shouldZoomGraph = event.ctrlKey || event.metaKey || event.altKey
+      const shouldZoomGraph = event.ctrlKey || event.altKey
 
       if (!shouldZoomGraph) {
         return
