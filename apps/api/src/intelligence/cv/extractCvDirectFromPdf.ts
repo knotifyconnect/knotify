@@ -10,13 +10,16 @@
  * a real model to read the document.
  *
  * The PDF bytes go straight to Gemini (no local parsing at all). The schema
- * is deliberately FLAT: plain nullable strings for dates (not nested
- * {year, month} objects) and no per-field numeric confidence scores. A
- * first version with bounded integers and nested date objects hit Gemini's
- * "schema produces a constraint that has too many states for serving"
- * error — its structured-output mode has real complexity limits, and dates-
- * as-strings plus heuristic confidence (computed after the fact, not asked
- * of the model) sidesteps that entirely.
+ * is deliberately FLAT and SMALL: plain nullable strings for dates (not
+ * nested {year, month} objects), no per-field numeric confidence scores,
+ * and modest maxItems on every array. Gemini's structured-output mode has a
+ * real complexity ceiling on the schema itself (its own error: "schema
+ * produces a constraint that has too many states for serving") — this hit
+ * it twice: first from bounded integers nested inside per-item date
+ * objects, then again from array maxItems that were still too generous
+ * (10-30 real-world CV entries is plenty; nobody has 20 distinct jobs).
+ * If a future change to this schema starts failing the same way, shrink
+ * array limits and remove any bounded numbers before anything else.
  *
  * The result still gets mapped into CvCandidateSet — the exact shape
  * buildCvProfileReview() and mapPreview() already consume, so the review
@@ -67,10 +70,10 @@ const extractionSchema = z
   .object({
     headline: nullableString,
     summary: nullableString,
-    experience: z.array(experienceSchema).max(20),
-    education: z.array(educationSchema).max(15),
-    skills: z.array(z.string().trim().min(1)).max(40),
-    languages: z.array(z.object({ name: z.string().trim().min(1), proficiency: nullableString })).max(15),
+    experience: z.array(experienceSchema).max(10),
+    education: z.array(educationSchema).max(8),
+    skills: z.array(z.string().trim().min(1)).max(25),
+    languages: z.array(z.object({ name: z.string().trim().min(1), proficiency: nullableString })).max(8),
   })
   .strict()
 
@@ -91,7 +94,7 @@ const cvDirectExtractionOutput = defineStructuredOutput<CvDirectExtraction>(
       summary: nullableStringSchema,
       experience: {
         type: 'array',
-        maxItems: 20,
+        maxItems: 10,
         items: {
           type: 'object',
           additionalProperties: false,
@@ -108,7 +111,7 @@ const cvDirectExtractionOutput = defineStructuredOutput<CvDirectExtraction>(
       },
       education: {
         type: 'array',
-        maxItems: 15,
+        maxItems: 8,
         items: {
           type: 'object',
           additionalProperties: false,
@@ -126,12 +129,12 @@ const cvDirectExtractionOutput = defineStructuredOutput<CvDirectExtraction>(
       },
       skills: {
         type: 'array',
-        maxItems: 40,
+        maxItems: 25,
         items: { type: 'string' },
       },
       languages: {
         type: 'array',
-        maxItems: 15,
+        maxItems: 8,
         items: {
           type: 'object',
           additionalProperties: false,
