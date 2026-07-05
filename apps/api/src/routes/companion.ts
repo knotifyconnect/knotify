@@ -29,6 +29,21 @@ import { sendMessage, proposeCoffee, rsvpEvent, createAsk, type ExecutedAction }
 
 export const companionRouter = Router()
 
+// TEMPORARY: pins down exactly which deployment/instance is answering a
+// given request, since identical requests have been giving inconsistent
+// results. No secrets exposed. Remove once resolved.
+companionRouter.get('/debug-env', (_req, res) => {
+  res.json({
+    hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+    keyLength: process.env.GEMINI_API_KEY?.length ?? 0,
+    commitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    deploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,
+    region: process.env.VERCEL_REGION ?? null,
+    env: process.env.VERCEL_ENV ?? null,
+    now: new Date().toISOString(),
+  })
+})
+
 const MODEL = process.env.COMPANION_MODEL || 'gemini-2.5-flash'
 const HISTORY_LIMIT = 50
 const CONTEXT_TURNS = 20
