@@ -119,11 +119,32 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
+/**
+ * Last resort when the JSON is malformed beyond repair (truncated mid-object
+ * from hitting the token limit, or an unescaped quote inside the model's own
+ * prose breaking the string) — pull just the "reply" field's text out with a
+ * regex instead of showing the user a wall of broken JSON. Losing the
+ * suggestion pills in this case is an acceptable trade, showing raw JSON
+ * is not.
+ */
+function extractReplyFieldOnly(text: string): string | null {
+  const match = /"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/s.exec(text)
+  if (!match) return null
+  try {
+    return JSON.parse(`"${match[1]}"`)
+  } catch {
+    return null
+  }
+}
+
 /** Defensive JSON parse of the model's reply — same discipline as the Layer 2 engine. */
 function parseModelReply(raw: string, ctx: CompanionContext): { reply: string; suggestions: Suggestion[]; memory: string[] } {
   const cleaned = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
   const parsed = extractJsonObject(cleaned) as { reply?: string; suggestions?: Suggestion[]; memory?: string[] } | null
-  if (!parsed || !parsed.reply) return { reply: raw, suggestions: [], memory: [] }
+  if (!parsed || !parsed.reply) {
+    const replyOnly = extractReplyFieldOnly(cleaned)
+    return { reply: replyOnly ?? raw, suggestions: [], memory: [] }
+  }
 
   const suggestions = (Array.isArray(parsed.suggestions) ? parsed.suggestions : [])
     .filter((s) => s && typeof s.label === 'string' && VALID_ACTIONS.has(s.action))
@@ -228,7 +249,7 @@ async function callCompanion(
       config: {
         systemInstruction: system,
         tools: [{ functionDeclarations: AGENT_TOOLS }],
-        maxOutputTokens: 1500,
+        maxOutputTokens: 2500,
       },
     })
 
