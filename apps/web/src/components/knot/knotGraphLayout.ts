@@ -28,10 +28,10 @@ type ExpandedSlotOptions = {
 export const DESKTOP_SECOND_DEGREE_SIZE: LayoutSize = { width: 158, height: 54 }
 export const DESKTOP_DIRECT_NODE_SIZE: LayoutSize = { width: 180, height: 62 }
 export const DESKTOP_EXPANDED_BOUNDS: LayoutBounds = {
-  minX: DESKTOP_SECOND_DEGREE_SIZE.width / 2 + 24,
-  maxX: 710,
-  minY: DESKTOP_SECOND_DEGREE_SIZE.height / 2 + 54,
-  maxY: 590 - DESKTOP_SECOND_DEGREE_SIZE.height / 2 - 42,
+  minX: DESKTOP_SECOND_DEGREE_SIZE.width / 2 + 28,
+  maxX: 1000 - DESKTOP_SECOND_DEGREE_SIZE.width / 2 - 28,
+  minY: DESKTOP_SECOND_DEGREE_SIZE.height / 2 + 58,
+  maxY: 590 - DESKTOP_SECOND_DEGREE_SIZE.height / 2 - 34,
 }
 
 export const MOBILE_SECOND_DEGREE_SIZE: LayoutSize = { width: 54, height: 50 }
@@ -75,95 +75,143 @@ export function layoutExpandedNodeSlots({
 }: ExpandedSlotOptions): LayoutPoint[] {
   if (total <= 0) return []
 
-  const stepX = size.width + columnGap
-  const stepY = size.height + rowGap
-  const preferredSide = root.x >= center.x ? -1 : 1
-  const outwardY = root.y >= center.y ? 1 : -1
-  const sideOrder = [preferredSide, -preferredSide]
-  const verticalOrder = [outwardY, -outwardY, 0]
+  const collisionGap = 8
+  const radialStep = Math.max(size.width + columnGap, size.height + rowGap)
+  const rootDistance = Math.max(1, Math.hypot(root.x - center.x, root.y - center.y))
+  const outwardAngle = Math.atan2(root.y - center.y, root.x - center.x)
+  const maxCandidates = Math.max(total * 18, 72)
   const rootRect = rectForPoint(root, size)
+  const candidates = makeRadialCandidates({
+    root,
+    center,
+    bounds,
+    size,
+    total: maxCandidates,
+    baseRadius: Math.max(rootGapX, rootGapY, radialStep * 0.82),
+    radiusStep: radialStep,
+    outwardAngle,
+    rootDistance,
+    maxColumns,
+  })
+  const used = [rootRect, ...avoid]
+  const points: LayoutPoint[] = []
 
-  let best: { points: LayoutPoint[]; score: number } | null = null
+  for (let index = 0; index < total; index += 1) {
+    let best: { point: LayoutPoint; score: number } | null = null
 
-  for (const side of sideOrder) {
-    const available = side < 0 ? root.x - bounds.minX : bounds.maxX - root.x
-    const fitColumns = Math.max(1, Math.min(maxColumns, total, Math.floor((available - rootGapX) / stepX) + 1))
-    const columnOrder = Array.from({ length: fitColumns }, (_, index) => fitColumns - index)
+    for (const candidate of candidates) {
+      if (points.some((point) => point.x === candidate.point.x && point.y === candidate.point.y)) continue
 
-    for (const columns of columnOrder) {
-      for (const vertical of verticalOrder) {
-        const points = normalizePoints(makeGrid(root, total, columns, side, vertical, rootGapX, rootGapY, stepX, stepY), bounds)
-        const score = scorePoints(points, size, [rootRect, ...avoid])
+      const rect = rectForPoint(candidate.point, size)
+      const collisionScore = used.reduce((score, obstacle) => {
+        return score + (rectsOverlap(rect, obstacle, collisionGap) ? 1_000_000 : 0)
+      }, 0)
+      const fanScore = Math.abs(candidate.angleOffset) * 10 + candidate.ring * 34 + candidate.edgePenalty
+      const score = collisionScore + fanScore
 
-        if (!best || score < best.score) {
-          best = { points, score }
-          if (score === 0) return points
-        }
+      if (!best || score < best.score) {
+        best = { point: candidate.point, score }
+        if (score < 1) break
       }
     }
+
+    if (!best) break
+    points.push(best.point)
+    used.push(rectForPoint(best.point, size))
   }
 
-  return best?.points ?? []
+  return points
 }
 
-function makeGrid(
-  root: LayoutPoint,
-  total: number,
-  columns: number,
-  side: number,
-  vertical: number,
-  rootGapX: number,
-  rootGapY: number,
-  stepX: number,
-  stepY: number
-) {
-  const rows = Math.ceil(total / columns)
-  const centeredStartY = root.y - ((rows - 1) * stepY) / 2
-
-  return Array.from({ length: total }, (_, index) => {
-    const column = index % columns
-    const row = Math.floor(index / columns)
-    const y = vertical === 0
-      ? centeredStartY + row * stepY
-      : root.y + vertical * (rootGapY + row * stepY)
-
-    return {
-      x: root.x + side * (rootGapX + column * stepX),
-      y,
-    }
+function makeRadialCandidates({
+  root,
+  center,
+  bounds,
+  size,
+  total,
+  baseRadius,
+  radiusStep,
+  outwardAngle,
+  rootDistance,
+  maxColumns,
+}: {
+  root: LayoutPoint
+  center: LayoutPoint
+  bounds: LayoutBounds
+  size: LayoutSize
+  total: number
+  baseRadius: number
+  radiusStep: number
+  outwardAngle: number
+  rootDistance: number
+  maxColumns: number
+}) {
+  const candidates: Array<{ point: LayoutPoint; angleOffset: number; ring: number; edgePenalty: number }> = []
+  const angleStep = Math.PI / 8
+  const offsets = Array.from({ length: 17 }, (_, index) => {
+    if (index === 0) return 0
+    const distance = Math.ceil(index / 2) * angleStep
+    return index % 2 === 1 ? -distance : distance
   })
-}
+  const ringCount = Math.max(5, Math.ceil(total / Math.max(1, maxColumns)) + 2)
+  const seen = new Set<string>()
 
-function normalizePoints(points: LayoutPoint[], bounds: LayoutBounds) {
-  const minX = Math.min(...points.map((point) => point.x))
-  const maxX = Math.max(...points.map((point) => point.x))
-  const minY = Math.min(...points.map((point) => point.y))
-  const maxY = Math.max(...points.map((point) => point.y))
-  let shiftX = 0
-  let shiftY = 0
+  for (let ring = 0; ring < ringCount; ring += 1) {
+    const radius = baseRadius + ring * radiusStep
+    for (const angleOffset of offsets) {
+      const angle = outwardAngle + angleOffset
+      const raw = {
+        x: root.x + Math.cos(angle) * radius,
+        y: root.y + Math.sin(angle) * radius,
+      }
+      const point = {
+        x: clamp(raw.x, bounds.minX, bounds.maxX),
+        y: clamp(raw.y, bounds.minY, bounds.maxY),
+      }
+      const key = `${Math.round(point.x)}:${Math.round(point.y)}`
+      if (seen.has(key)) continue
+      seen.add(key)
 
-  if (minX < bounds.minX) shiftX = bounds.minX - minX
-  else if (maxX > bounds.maxX) shiftX = bounds.maxX - maxX
+      const rawShift = Math.hypot(point.x - raw.x, point.y - raw.y)
+      const fromCenter = Math.hypot(point.x - center.x, point.y - center.y)
 
-  if (minY < bounds.minY) shiftY = bounds.minY - minY
-  else if (maxY > bounds.maxY) shiftY = bounds.maxY - maxY
-
-  return points.map((point) => ({ x: point.x + shiftX, y: point.y + shiftY }))
-}
-
-function scorePoints(points: LayoutPoint[], size: LayoutSize, avoid: LayoutRect[]) {
-  const rects = points.map((point) => rectForPoint(point, size))
-  let score = 0
-
-  for (let i = 0; i < rects.length; i += 1) {
-    for (let j = i + 1; j < rects.length; j += 1) {
-      if (rectsOverlap(rects[i], rects[j], 8)) score += 1000
-    }
-
-    for (const obstacle of avoid) {
-      if (rectsOverlap(rects[i], obstacle, 10)) score += 1
+      candidates.push({
+        point,
+        angleOffset,
+        ring,
+        edgePenalty: rawShift * 2 + (fromCenter < rootDistance ? 80 : 0),
+      })
     }
   }
 
-  return score
+  const gridStepX = size.width + 24
+  const gridStepY = size.height + 18
+  for (let y = bounds.minY; y <= bounds.maxY; y += gridStepY) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += gridStepX) {
+      const key = `${Math.round(x)}:${Math.round(y)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      const angle = Math.atan2(y - root.y, x - root.x)
+      const distance = Math.hypot(x - root.x, y - root.y)
+      const fromCenter = Math.hypot(x - center.x, y - center.y)
+
+      candidates.push({
+        point: { x, y },
+        angleOffset: signedAngleDiff(angle, outwardAngle),
+        ring: ringCount + Math.floor(distance / Math.max(1, radiusStep)),
+        edgePenalty: 120 + (fromCenter < rootDistance ? 80 : 0),
+      })
+    }
+  }
+
+  return candidates
+}
+
+function signedAngleDiff(angle: number, target: number) {
+  return Math.atan2(Math.sin(angle - target), Math.cos(angle - target))
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
 }
