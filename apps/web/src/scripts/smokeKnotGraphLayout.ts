@@ -3,9 +3,12 @@ import {
   DESKTOP_DIRECT_NODE_SIZE,
   DESKTOP_EXPANDED_BOUNDS,
   DESKTOP_SECOND_DEGREE_SIZE,
+  edgeEndpointsForRects,
+  layoutSizeForDomSize,
   MOBILE_EXPANDED_BOUNDS,
   MOBILE_SECOND_DEGREE_SIZE,
   layoutExpandedNodeSlots,
+  offsetLayoutPoint,
   pointOnRectBoundary,
   rectForPoint,
   rectsOverlap,
@@ -211,6 +214,35 @@ function assertPointNearlyEqual(actual: LayoutPoint, expected: LayoutPoint, labe
   assert.ok(Math.abs(actual.y - expected.y) < 0.0001, `${label}: y mismatch`)
 }
 
+function assertScreenEndpointTouchesCard({
+  label,
+  endpoint,
+  cardCenter,
+  cardDomSize,
+  stage,
+  viewBox,
+}: {
+  label: string
+  endpoint: LayoutPoint
+  cardCenter: LayoutPoint
+  cardDomSize: LayoutSize
+  stage: LayoutSize
+  viewBox: LayoutSize
+}) {
+  const endpointScreen = domScreenPoint(endpoint, stage, viewBox)
+  const centerScreen = domScreenPoint(cardCenter, stage, viewBox)
+  const left = centerScreen.x - cardDomSize.width / 2
+  const right = centerScreen.x + cardDomSize.width / 2
+  const top = centerScreen.y - cardDomSize.height / 2
+  const bottom = centerScreen.y + cardDomSize.height / 2
+  const onXEdge = Math.abs(endpointScreen.x - left) < 0.0001 || Math.abs(endpointScreen.x - right) < 0.0001
+  const onYEdge = Math.abs(endpointScreen.y - top) < 0.0001 || Math.abs(endpointScreen.y - bottom) < 0.0001
+
+  assert.ok(onXEdge || onYEdge, `${label}: endpoint does not touch card boundary`)
+  assert.ok(endpointScreen.x >= left - 0.0001 && endpointScreen.x <= right + 0.0001, `${label}: endpoint x is outside card bounds`)
+  assert.ok(endpointScreen.y >= top - 0.0001 && endpointScreen.y <= bottom + 0.0001, `${label}: endpoint y is outside card bounds`)
+}
+
 for (const stage of [{ width: 1000, height: 590 }, { width: 1280, height: 720 }, { width: 820, height: 720 }]) {
   const graphPoint = { x: 760, y: 120 }
   const svgPoint = svgPointForDomGraphPoint(graphPoint, stage, { width: 1000, height: 590 })
@@ -244,5 +276,62 @@ for (const stage of [{ width: 1000, height: 590 }, { width: 1280, height: 720 },
     `edge endpoint remains attached after resize/orientation at ${stage.width}x${stage.height}`,
   )
 }
+
+const desktopViewBox = { width: 1000, height: 590 }
+const measuredSourceDomSize = { width: 180, height: 62 }
+const measuredChildDomSize = { width: 158, height: 54 }
+const source = { x: 760, y: 120 }
+const target = { x: 1015, y: -84 }
+for (const stage of [{ width: 1000, height: 590 }, { width: 1280, height: 720 }, { width: 820, height: 720 }, { width: 390, height: 600 }]) {
+  const sourceSize = layoutSizeForDomSize(measuredSourceDomSize, stage, desktopViewBox, DESKTOP_DIRECT_NODE_SIZE)
+  const targetSize = layoutSizeForDomSize(measuredChildDomSize, stage, desktopViewBox, DESKTOP_SECOND_DEGREE_SIZE)
+  const endpoints = edgeEndpointsForRects(source, sourceSize, target, targetSize)
+
+  assertScreenEndpointTouchesCard({
+    label: `source endpoint touches measured card after resize ${stage.width}x${stage.height}`,
+    endpoint: endpoints.source,
+    cardCenter: source,
+    cardDomSize: measuredSourceDomSize,
+    stage,
+    viewBox: desktopViewBox,
+  })
+  assertScreenEndpointTouchesCard({
+    label: `target endpoint touches measured child card after resize ${stage.width}x${stage.height}`,
+    endpoint: endpoints.target,
+    cardCenter: target,
+    cardDomSize: measuredChildDomSize,
+    stage,
+    viewBox: desktopViewBox,
+  })
+}
+
+const clickedChildOptions = {
+  root: { x: 245, y: 120 },
+  center,
+  total: 12,
+  bounds: DESKTOP_EXPANDED_BOUNDS,
+  size: DESKTOP_SECOND_DEGREE_SIZE,
+  parentSize: DESKTOP_DIRECT_NODE_SIZE,
+  avoid: [rectForPoint({ x: 245, y: 120 }, DESKTOP_DIRECT_NODE_SIZE)],
+  maxColumns: Math.min(10, Math.max(4, Math.ceil(Math.sqrt(12 * 2)))),
+}
+const beforeClick = layoutExpandedNodeSlots(clickedChildOptions)
+const afterChildClick = layoutExpandedNodeSlots(clickedChildOptions)
+assert.deepEqual(afterChildClick, beforeClick, 'child click/selection does not change expanded child layout')
+
+const outOfBoundsChild = beforeClick.find((point) => point.x < 40 || point.x > 960 || point.y < 30 || point.y > 560)
+assert.ok(outOfBoundsChild, 'test fixture includes a child outside the old drag clamp')
+const pointerPoint = { x: outOfBoundsChild.x - 12, y: outOfBoundsChild.y + 9 }
+const pointerOffset = { x: 12, y: -9 }
+assert.deepEqual(
+  offsetLayoutPoint(pointerPoint, pointerOffset, null),
+  outOfBoundsChild,
+  'second-degree child drag preserves world position without viewport clamp',
+)
+assert.notDeepEqual(
+  offsetLayoutPoint(pointerPoint, pointerOffset, { minX: 40, maxX: 960, minY: 30, maxY: 560 }),
+  outOfBoundsChild,
+  'old viewport clamp would have snapped the child to a boundary row',
+)
 
 console.log('KNOT GRAPH LAYOUT SMOKE: PASS')

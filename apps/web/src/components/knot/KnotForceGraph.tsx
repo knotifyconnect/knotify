@@ -4,10 +4,13 @@ import {
   DESKTOP_DIRECT_NODE_SIZE,
   DESKTOP_EXPANDED_BOUNDS,
   DESKTOP_SECOND_DEGREE_SIZE,
+  edgeEndpointsForRects,
   layoutExpandedNodeSlots,
-  pointOnRectBoundary,
+  layoutSizeForDomSize,
+  offsetLayoutPoint,
   rectForPoint,
   svgPointForDomGraphPoint,
+  type LayoutBounds,
   type LayoutPoint,
   type LayoutSize,
 } from './knotGraphLayout'
@@ -58,6 +61,7 @@ type DragState = {
   startClientY: number
   offsetX: number
   offsetY: number
+  bounds: LayoutBounds | null
 }
 
 type PanState = {
@@ -281,15 +285,6 @@ function viewportForBounds(stage: HTMLDivElement, bounds: { minX: number; maxX: 
   }, scale)
 }
 
-function graphSizeForDomSize(domSize: LayoutSize | undefined, stageSize: LayoutSize, fallback: LayoutSize): LayoutSize {
-  if (!domSize) return fallback
-
-  return {
-    width: (domSize.width / Math.max(stageSize.width, 1)) * VIEW_W,
-    height: (domSize.height / Math.max(stageSize.height, 1)) * VIEW_H,
-  }
-}
-
 function measuredNodeSize(
   node: LayoutNode,
   nodeDomSizes: NodeDomSizes,
@@ -297,23 +292,11 @@ function measuredNodeSize(
   compact?: boolean,
 ): LayoutSize {
   if (nodeDomSizes[node.id]) {
-    return graphSizeForDomSize(nodeDomSizes[node.id], stageSize, DESKTOP_SECOND_DEGREE_SIZE)
+    return layoutSizeForDomSize(nodeDomSizes[node.id], stageSize, { width: VIEW_W, height: VIEW_H }, DESKTOP_SECOND_DEGREE_SIZE)
   }
 
   if (compact) return node.degree === 'second' ? { width: 44, height: 48 } : { width: 56, height: 58 }
   return node.degree === 'second' ? DESKTOP_SECOND_DEGREE_SIZE : DESKTOP_DIRECT_NODE_SIZE
-}
-
-function edgeEndpoints(
-  source: LayoutPoint,
-  sourceSize: LayoutSize,
-  target: LayoutPoint,
-  targetSize: LayoutSize,
-) {
-  return {
-    source: pointOnRectBoundary(source, target, sourceSize),
-    target: pointOnRectBoundary(target, source, targetSize),
-  }
 }
 
 function Avatar({
@@ -700,6 +683,7 @@ export function KnotForceGraph({
   const previousQueryRef = useRef('')
   const layoutNodesRef = useRef<LayoutNode[]>([])
   const layoutFrameRef = useRef<number | null>(null)
+  const nodeMeasureCleanupRef = useRef<Record<string, () => void>>({})
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [viewport, setViewport] = useState<ViewportState>({ scale: 1, x: 0, y: 0 })
   const [layoutRevision, setLayoutRevision] = useState(0)
@@ -710,7 +694,7 @@ export function KnotForceGraph({
   const hasQuery = normalizedQuery.length > 0
   const center = dragPositions.me ?? { x: BASE_CENTER_X, y: BASE_CENTER_Y }
   const centerDomSize = nodeDomSizes.me
-  const centerSize = graphSizeForDomSize(centerDomSize, stageSize, compact ? { width: 56, height: 56 } : { width: 104, height: 104 })
+  const centerSize = layoutSizeForDomSize(centerDomSize, stageSize, { width: VIEW_W, height: VIEW_H }, compact ? { width: 56, height: 56 } : { width: 104, height: 104 })
   const expandedSignature = useMemo(() => nodes
     .filter((node) => node.degree === 'second')
     .map((node) => node.id)
@@ -832,7 +816,21 @@ export function KnotForceGraph({
       }
       return next
     })
+
+    const activeIds = new Set(['me', ...nodes.map((node) => node.id)])
+    for (const [nodeId, cleanup] of Object.entries(nodeMeasureCleanupRef.current)) {
+      if (activeIds.has(nodeId)) continue
+      cleanup()
+      delete nodeMeasureCleanupRef.current[nodeId]
+    }
   }, [nodes])
+
+  useEffect(() => {
+    return () => {
+      for (const cleanup of Object.values(nodeMeasureCleanupRef.current)) cleanup()
+      nodeMeasureCleanupRef.current = {}
+    }
+  }, [])
 
   useEffect(() => {
     viewportRef.current = viewport
@@ -1004,18 +1002,23 @@ export function KnotForceGraph({
     if (moved > 4) draggedRef.current = true
 
     const point = clientToViewBox(stage, clientX, clientY, viewportRef.current)
-    const minX = drag.nodeId === 'me' ? 210 : 40
-    const maxX = drag.nodeId === 'me' ? 790 : 960
-    const minY = drag.nodeId === 'me' ? 130 : 30
-    const maxY = drag.nodeId === 'me' ? 460 : 560
+    const next = offsetLayoutPoint(point, { x: drag.offsetX, y: drag.offsetY }, drag.bounds)
 
     setDragPositions((prev) => ({
       ...prev,
-      [drag.nodeId]: {
-        x: clamp(point.x + drag.offsetX, minX, maxX),
-        y: clamp(point.y + drag.offsetY, minY, maxY),
-      },
+      [drag.nodeId]: next,
     }))
+  }
+
+  function dragBoundsForNode(nodeId: string): LayoutBounds | null {
+    if (nodeId === 'me') {
+      return { minX: 210, maxX: 790, minY: 130, maxY: 460 }
+    }
+
+    const node = layoutNodesRef.current.find((item) => item.id === nodeId)
+    if (node?.degree === 'second') return null
+
+    return { minX: 40, maxX: 960, minY: 30, maxY: 560 }
   }
 
   function beginDrag(nodeId: string, event: PointerEvent<HTMLButtonElement>) {
@@ -1032,6 +1035,7 @@ export function KnotForceGraph({
       startClientY: event.clientY,
       offsetX: point && currentNode ? currentNode.x - point.x : 0,
       offsetY: point && currentNode ? currentNode.y - point.y : 0,
+      bounds: dragBoundsForNode(nodeId),
     }
     draggedRef.current = false
 
@@ -1108,23 +1112,37 @@ export function KnotForceGraph({
   }
 
   const measureGraphNode = useCallback((nodeId: string, element: HTMLElement | null) => {
+    nodeMeasureCleanupRef.current[nodeId]?.()
+    delete nodeMeasureCleanupRef.current[nodeId]
+
     if (!element) return
 
-    const width = element.offsetWidth
-    const height = element.offsetHeight
-    if (!width || !height) return
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect()
+      const width = rect.width
+      const height = rect.height
+      if (!width || !height) return
 
-    setNodeDomSizes((prev) => {
-      const previous = prev[nodeId]
-      if (previous && Math.abs(previous.width - width) < 0.5 && Math.abs(previous.height - height) < 0.5) {
-        return prev
-      }
+      setNodeDomSizes((prev) => {
+        const previous = prev[nodeId]
+        if (previous && Math.abs(previous.width - width) < 0.5 && Math.abs(previous.height - height) < 0.5) {
+          return prev
+        }
 
-      return {
-        ...prev,
-        [nodeId]: { width, height },
-      }
-    })
+        return {
+          ...prev,
+          [nodeId]: { width, height },
+        }
+      })
+    }
+
+    updateSize()
+
+    if (typeof ResizeObserver === 'undefined') return
+
+    const resizeObserver = new ResizeObserver(updateSize)
+    resizeObserver.observe(element)
+    nodeMeasureCleanupRef.current[nodeId] = () => resizeObserver.disconnect()
   }, [])
 
   const toSvgPoint = (point: LayoutPoint) => svgPointForDomGraphPoint(point, stageSize, { width: VIEW_W, height: VIEW_H })
@@ -1201,7 +1219,7 @@ export function KnotForceGraph({
               const c2x = center.x + (node.x - center.x) * 0.72 - Math.cos(index * 1.9) * 32
               const c2y = center.y + (node.y - center.y) * 0.74 + Math.sin(index * 1.2) * 24
               const targetSize = measuredNodeSize(node, nodeDomSizes, stageSize, compact)
-              const endpoints = edgeEndpoints(center, centerSize, node, targetSize)
+              const endpoints = edgeEndpointsForRects(center, centerSize, node, targetSize)
               const lineStart = toSvgPoint(endpoints.source)
               const lineEnd = toSvgPoint(endpoints.target)
               const c1 = toSvgPoint({ x: c1x, y: c1y })
@@ -1236,7 +1254,7 @@ export function KnotForceGraph({
               const softY = midY + (midY - center.y) * 0.32 - Math.cos(index * 1.3) * 8
               const curveX = selected ? awayX : softX
               const curveY = selected ? awayY : softY
-              const endpoints = edgeEndpoints(
+              const endpoints = edgeEndpointsForRects(
                 edge.source,
                 measuredNodeSize(edge.source, nodeDomSizes, stageSize, compact),
                 edge.target,

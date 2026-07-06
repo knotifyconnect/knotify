@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { KnotGraphNode, KnotHealthState } from './KnotForceGraph'
 import {
+  edgeEndpointsForRects,
   MOBILE_EXPANDED_BOUNDS,
   MOBILE_SECOND_DEGREE_SIZE,
   layoutExpandedNodeSlots,
-  pointOnRectBoundary,
   rectForPoint,
 } from './knotGraphLayout'
 
@@ -70,10 +70,6 @@ function curvedPath(x1: number, y1: number, x2: number, y2: number) {
   const cpx = mx + (-dy / len) * off
   const cpy = my + (dx / len) * off
   return `M ${x1} ${y1} Q ${cpx} ${cpy} ${x2} ${y2}`
-}
-
-function nodeBoundaryPoint(from: { x: number; y: number }, to: { x: number; y: number }, radius: number) {
-  return pointOnRectBoundary(from, to, { width: radius * 2, height: radius * 2 })
 }
 
 // ── Generic draggable bottom sheet (portal) ────────────────────────────────
@@ -472,15 +468,19 @@ export function KnotMobileGraph({
           const isSecond = n.degree === 'second'
           const from = isSecond ? rootPos : { x: CX, y: CY }
           const fromRadius = isSecond ? rootEntry?.r ?? 22 : 34
-          const source = nodeBoundaryPoint(from, { x, y }, fromRadius)
-          const target = nodeBoundaryPoint({ x, y }, from, r)
+          const endpoints = edgeEndpointsForRects(
+            from,
+            { width: fromRadius * 2, height: fromRadius * 2 },
+            { x, y },
+            { width: r * 2, height: r * 2 },
+          )
           const sel = n.id === selectedNodeId
           const searchMuted = hasQuery && !n.matchesQuery
           return (
             <path
               key={`ln-${n.id}`}
               data-graph-line={n.id}
-              d={curvedPath(source.x, source.y, target.x, target.y)}
+              d={curvedPath(endpoints.source.x, endpoints.source.y, endpoints.target.x, endpoints.target.y)}
               fill="none"
               stroke={sel ? 'rgba(216,68,43,0.35)' : isSecond ? 'rgba(31,107,94,0.40)' : 'rgba(84,72,58,0.16)'}
               strokeWidth={sel ? 1.6 : isSecond ? 1.2 : 0.8}
