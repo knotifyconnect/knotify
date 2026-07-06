@@ -169,10 +169,30 @@ export function MobileNodeOverlay({
   onClose: () => void
   children: React.ReactNode
 }) {
+  const backdropTapRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
+
   if (!open) return null
   return createPortal(
     <div
       onClick={onClose}
+      onPointerDown={(e) => {
+        if (e.target !== e.currentTarget) return
+        backdropTapRef.current = { x: e.clientX, y: e.clientY, moved: false }
+      }}
+      onPointerMove={(e) => {
+        const tap = backdropTapRef.current
+        if (!tap) return
+        if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 6) tap.moved = true
+      }}
+      onPointerUp={(e) => {
+        const tap = backdropTapRef.current
+        backdropTapRef.current = null
+        if (!tap || tap.moved || e.target !== e.currentTarget) return
+        onClose()
+      }}
+      onPointerCancel={() => {
+        backdropTapRef.current = null
+      }}
       style={{
         position: 'fixed',
         inset: 0,
@@ -225,6 +245,7 @@ export function KnotMobileGraph({
   expandedRootId = null,
   expandedRootName = null,
   onCollapse,
+  onResetGraph,
 }: {
   me: MeNode
   nodes: KnotGraphNode[]
@@ -235,6 +256,7 @@ export function KnotMobileGraph({
   expandedRootId?: string | null
   expandedRootName?: string | null
   onCollapse?: () => void
+  onResetGraph?: () => void
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const panRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null)
@@ -483,7 +505,7 @@ export function KnotMobileGraph({
       return
     }
 
-    if ((e.target as Element).closest('[data-node],[data-graph-line],[data-graph-control],button')) return
+    if ((e.target as Element).closest('[data-node],[data-graph-control],button')) return
     panRef.current = { startX: e.clientX, startY: e.clientY, ox: pan.x, oy: pan.y, moved: false }
   }
   function onBgMove(e: React.PointerEvent<SVGSVGElement>) {
@@ -511,6 +533,19 @@ export function KnotMobileGraph({
     if (pointersRef.current.size < 2) pinchRef.current = null
     if (panRef.current && !panRef.current.moved) onClearSelection()
     panRef.current = null
+  }
+
+  function resetGraph() {
+    panRef.current = null
+    nodeDragRef.current = null
+    pinchRef.current = null
+    pointersRef.current.clear()
+    suppressNodeClickRef.current = false
+    setDragPositions({})
+    setPan({ x: 0, y: 0 })
+    setScale(1)
+    onClearSelection()
+    onResetGraph?.()
   }
 
   return (
@@ -559,6 +594,31 @@ export function KnotMobileGraph({
         </button>
       </div>
     )}
+    <button
+      type="button"
+      data-graph-control="reset"
+      onClick={resetGraph}
+      style={{
+        position: 'absolute',
+        right: 12,
+        bottom: 'calc(86px + env(safe-area-inset-bottom))',
+        zIndex: 9,
+        border: '0.5px solid rgba(84,72,58,0.22)',
+        background: 'rgba(244,239,230,0.92)',
+        color: 'var(--ink)',
+        borderRadius: 999,
+        padding: '7px 11px',
+        fontSize: 12,
+        fontWeight: 700,
+        cursor: 'pointer',
+        fontFamily: "'IBM Plex Sans', sans-serif",
+        boxShadow: '0 10px 26px rgba(26,24,21,0.10)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+      }}
+    >
+      Reset
+    </button>
     <svg
       ref={svgRef}
       viewBox={`0 0 ${VW} ${VH}`}

@@ -1302,6 +1302,7 @@ function KnotStage({
                 expandedRootId={expandedRootUserId ? `person:${expandedRootUserId}` : null}
                 expandedRootName={expandedRootUserId ? expandedRootName : null}
                 onCollapse={onCollapseExpanded}
+                onResetGraph={onResetGraphState}
               />
               <MobileNodeOverlay
                 open={!!(selectedConnection || selectedSecondDegreeUser)}
