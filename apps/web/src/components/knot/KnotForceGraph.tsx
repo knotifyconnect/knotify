@@ -1128,10 +1128,10 @@ export function KnotForceGraph({
     if (!element) return
     nodeMeasureElementsRef.current[nodeId] = element
 
-    const updateSize = () => {
-      const rect = element.getBoundingClientRect()
-      const width = rect.width
-      const height = rect.height
+    const updateSize = (entry?: ResizeObserverEntry) => {
+      const observedSize = entry?.contentRect
+      const width = observedSize?.width || element.offsetWidth
+      const height = observedSize?.height || element.offsetHeight
       if (!width || !height) return
 
       setNodeDomSizes((prev) => {
@@ -1151,7 +1151,9 @@ export function KnotForceGraph({
 
     if (typeof ResizeObserver === 'undefined') return
 
-    const resizeObserver = new ResizeObserver(updateSize)
+    const resizeObserver = new ResizeObserver((entries) => {
+      updateSize(entries[0])
+    })
     resizeObserver.observe(element)
     nodeMeasureCleanupRef.current[nodeId] = () => resizeObserver.disconnect()
   }, [])
