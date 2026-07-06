@@ -11,6 +11,8 @@ export type LayoutBounds = {
 
 export type LayoutRect = LayoutPoint & LayoutSize
 
+export type LayoutDragBounds = LayoutBounds | null
+
 type ExpandedSlotOptions = {
   root: LayoutPoint
   center: LayoutPoint
@@ -78,6 +80,41 @@ export function pointOnRectBoundary(center: LayoutPoint, toward: LayoutPoint, si
   return {
     x: center.x + dx * scale,
     y: center.y + dy * scale,
+  }
+}
+
+export function edgeEndpointsForRects(
+  source: LayoutPoint,
+  sourceSize: LayoutSize,
+  target: LayoutPoint,
+  targetSize: LayoutSize,
+) {
+  return {
+    source: pointOnRectBoundary(source, target, sourceSize),
+    target: pointOnRectBoundary(target, source, targetSize),
+  }
+}
+
+export function layoutSizeForDomSize(domSize: LayoutSize | undefined, stageSize: LayoutSize, viewBoxSize: LayoutSize, fallback: LayoutSize): LayoutSize {
+  if (!domSize) return fallback
+
+  return {
+    width: (domSize.width / Math.max(stageSize.width, 1)) * viewBoxSize.width,
+    height: (domSize.height / Math.max(stageSize.height, 1)) * viewBoxSize.height,
+  }
+}
+
+export function offsetLayoutPoint(point: LayoutPoint, offset: LayoutPoint, bounds: LayoutDragBounds): LayoutPoint {
+  const next = {
+    x: point.x + offset.x,
+    y: point.y + offset.y,
+  }
+
+  if (!bounds) return next
+
+  return {
+    x: clamp(next.x, bounds.minX, bounds.maxX),
+    y: clamp(next.y, bounds.minY, bounds.maxY),
   }
 }
 
