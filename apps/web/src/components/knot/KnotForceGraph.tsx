@@ -369,7 +369,7 @@ function StageCard({
   secondDegree,
   onSelect,
   onPointerDown,
-  measureRef,
+  onMeasureNode,
   compact,
 }: {
   node: LayoutNode
@@ -383,9 +383,13 @@ function StageCard({
   secondDegree: boolean
   onSelect: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
-  measureRef: (element: HTMLElement | null) => void
+  onMeasureNode: (nodeId: string, element: HTMLElement | null) => void
   compact?: boolean
 }) {
+  const cardRef = useCallback((element: HTMLElement | null) => {
+    onMeasureNode(node.id, element)
+  }, [node.id, onMeasureNode])
+
   // Compact mode: round avatar bubble with name label — selected node still shows full card
   if (compact && !selected && !searchHit) {
     const sz = secondDegree ? 26 : related ? 38 : 34
@@ -394,7 +398,7 @@ function StageCard({
     // Position the bubble at the node center; name label goes below WITHOUT shifting center
     return (
       <div
-        ref={measureRef}
+        ref={cardRef}
         style={{
           position: 'absolute',
           left: `${node.x / 10}%`,
@@ -467,7 +471,7 @@ function StageCard({
     return (
       <button
         type="button"
-        ref={measureRef}
+        ref={cardRef}
         onClick={onSelect}
         onPointerDown={onPointerDown}
         style={{
@@ -496,7 +500,7 @@ function StageCard({
     return (
       <button
         type="button"
-        ref={measureRef}
+        ref={cardRef}
         onClick={onSelect}
         onPointerDown={onPointerDown}
         style={{
@@ -562,7 +566,7 @@ function StageCard({
   return (
     <button
       type="button"
-      ref={measureRef}
+      ref={cardRef}
       onClick={onSelect}
       onPointerDown={onPointerDown}
       style={{
@@ -684,6 +688,7 @@ export function KnotForceGraph({
   const layoutNodesRef = useRef<LayoutNode[]>([])
   const layoutFrameRef = useRef<number | null>(null)
   const nodeMeasureCleanupRef = useRef<Record<string, () => void>>({})
+  const nodeMeasureElementsRef = useRef<Record<string, HTMLElement>>({})
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [viewport, setViewport] = useState<ViewportState>({ scale: 1, x: 0, y: 0 })
   const [layoutRevision, setLayoutRevision] = useState(0)
@@ -822,6 +827,7 @@ export function KnotForceGraph({
       if (activeIds.has(nodeId)) continue
       cleanup()
       delete nodeMeasureCleanupRef.current[nodeId]
+      delete nodeMeasureElementsRef.current[nodeId]
     }
   }, [nodes])
 
@@ -829,6 +835,7 @@ export function KnotForceGraph({
     return () => {
       for (const cleanup of Object.values(nodeMeasureCleanupRef.current)) cleanup()
       nodeMeasureCleanupRef.current = {}
+      nodeMeasureElementsRef.current = {}
     }
   }, [])
 
@@ -1112,10 +1119,14 @@ export function KnotForceGraph({
   }
 
   const measureGraphNode = useCallback((nodeId: string, element: HTMLElement | null) => {
+    if (element && nodeMeasureElementsRef.current[nodeId] === element) return
+
     nodeMeasureCleanupRef.current[nodeId]?.()
     delete nodeMeasureCleanupRef.current[nodeId]
+    delete nodeMeasureElementsRef.current[nodeId]
 
     if (!element) return
+    nodeMeasureElementsRef.current[nodeId] = element
 
     const updateSize = () => {
       const rect = element.getBoundingClientRect()
@@ -1144,6 +1155,9 @@ export function KnotForceGraph({
     resizeObserver.observe(element)
     nodeMeasureCleanupRef.current[nodeId] = () => resizeObserver.disconnect()
   }, [])
+  const measureCenterNode = useCallback((element: HTMLElement | null) => {
+    measureGraphNode('me', element)
+  }, [measureGraphNode])
 
   const toSvgPoint = (point: LayoutPoint) => svgPointForDomGraphPoint(point, stageSize, { width: VIEW_W, height: VIEW_H })
   const svgCenter = toSvgPoint(center)
@@ -1287,7 +1301,7 @@ export function KnotForceGraph({
 
           <button
             type="button"
-            ref={(element) => measureGraphNode('me', element)}
+            ref={measureCenterNode}
             onPointerDown={(event) => beginDrag('me', event)}
             onClick={() => {
               if (draggedRef.current) return
@@ -1375,7 +1389,7 @@ export function KnotForceGraph({
                 secondDegree={node.degree === 'second'}
                 compact={compact}
                 onPointerDown={(event) => beginDrag(node.id, event)}
-                measureRef={(element) => measureGraphNode(node.id, element)}
+                onMeasureNode={measureGraphNode}
                 onSelect={() => {
                   if (draggedRef.current) return
                   onSelectNode(node)
