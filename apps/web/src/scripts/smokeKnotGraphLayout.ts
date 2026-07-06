@@ -243,6 +243,33 @@ function assertScreenEndpointTouchesCard({
   assert.ok(endpointScreen.y >= top - 0.0001 && endpointScreen.y <= bottom + 0.0001, `${label}: endpoint y is outside card bounds`)
 }
 
+function assertScreenEndpointMissesCard({
+  label,
+  endpoint,
+  cardCenter,
+  cardDomSize,
+  stage,
+  viewBox,
+}: {
+  label: string
+  endpoint: LayoutPoint
+  cardCenter: LayoutPoint
+  cardDomSize: LayoutSize
+  stage: LayoutSize
+  viewBox: LayoutSize
+}) {
+  const endpointScreen = domScreenPoint(endpoint, stage, viewBox)
+  const centerScreen = domScreenPoint(cardCenter, stage, viewBox)
+  const left = centerScreen.x - cardDomSize.width / 2
+  const right = centerScreen.x + cardDomSize.width / 2
+  const top = centerScreen.y - cardDomSize.height / 2
+  const bottom = centerScreen.y + cardDomSize.height / 2
+  const onXEdge = Math.abs(endpointScreen.x - left) < 0.0001 || Math.abs(endpointScreen.x - right) < 0.0001
+  const onYEdge = Math.abs(endpointScreen.y - top) < 0.0001 || Math.abs(endpointScreen.y - bottom) < 0.0001
+
+  assert.equal(onXEdge || onYEdge, false, `${label}: transformed measurement unexpectedly touched the true card boundary`)
+}
+
 for (const stage of [{ width: 1000, height: 590 }, { width: 1280, height: 720 }, { width: 820, height: 720 }]) {
   const graphPoint = { x: 760, y: 120 }
   const svgPoint = svgPointForDomGraphPoint(graphPoint, stage, { width: 1000, height: 590 })
@@ -304,6 +331,27 @@ for (const stage of [{ width: 1000, height: 590 }, { width: 1280, height: 720 },
     viewBox: desktopViewBox,
   })
 }
+
+const focusedViewportScale = 1.18
+const transformedChildDomSize = {
+  width: measuredChildDomSize.width * focusedViewportScale,
+  height: measuredChildDomSize.height * focusedViewportScale,
+}
+const transformedTargetSize = layoutSizeForDomSize(transformedChildDomSize, desktopViewBox, desktopViewBox, DESKTOP_SECOND_DEGREE_SIZE)
+const transformedEndpoint = edgeEndpointsForRects(
+  source,
+  DESKTOP_DIRECT_NODE_SIZE,
+  target,
+  transformedTargetSize,
+).target
+assertScreenEndpointMissesCard({
+  label: 'using transformed getBoundingClientRect size creates the visible child-card line gap',
+  endpoint: transformedEndpoint,
+  cardCenter: target,
+  cardDomSize: measuredChildDomSize,
+  stage: desktopViewBox,
+  viewBox: desktopViewBox,
+})
 
 const clickedChildOptions = {
   root: { x: 245, y: 120 },
