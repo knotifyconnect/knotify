@@ -238,6 +238,16 @@ export function KnotMobileGraph({
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const panRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null)
+  const nodeDragRef = useRef<{
+    nodeId: string
+    pointerId: number
+    startX: number
+    startY: number
+    offsetX: number
+    offsetY: number
+    moved: boolean
+  } | null>(null)
+  const suppressNodeClickRef = useRef(false)
   // Active touch points + pinch gesture state for two-finger zoom.
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
   const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null)
@@ -246,6 +256,7 @@ export function KnotMobileGraph({
   const [scale, setScale] = useState(1)
   const [imgFail, setImgFail] = useState(new Set<string>())
   const [layoutRevision, setLayoutRevision] = useState(0)
+  const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({})
 
   const direct = nodes.filter(n => n.degree !== 'second')
   const second = nodes.filter(n => n.degree === 'second')
@@ -260,8 +271,8 @@ export function KnotMobileGraph({
   const r2Pos = ring(r2Nodes.length, 208, CX, CY)
 
   const directPositioned = [
-    ...r1Nodes.map((n, i) => ({ n, x: r1Pos[i].x, y: r1Pos[i].y, r: 22 })),
-    ...r2Nodes.map((n, i) => ({ n, x: r2Pos[i].x, y: r2Pos[i].y, r: 17 })),
+    ...r1Nodes.map((n, i) => ({ n, x: dragPositions[n.id]?.x ?? r1Pos[i].x, y: dragPositions[n.id]?.y ?? r1Pos[i].y, r: 22 })),
+    ...r2Nodes.map((n, i) => ({ n, x: dragPositions[n.id]?.x ?? r2Pos[i].x, y: dragPositions[n.id]?.y ?? r2Pos[i].y, r: 17 })),
   ]
 
   // In expanded mode, second-degree edges originate from the expanded root node
@@ -288,8 +299,24 @@ export function KnotMobileGraph({
 
   const positioned = [
     ...directPositioned,
-    ...second.map((n, i) => ({ n, x: secondSlots[i].x, y: secondSlots[i].y, r: 17 })),
+    ...second.map((n, i) => ({ n, x: dragPositions[n.id]?.x ?? secondSlots[i].x, y: dragPositions[n.id]?.y ?? secondSlots[i].y, r: 17 })),
   ]
+
+  useEffect(() => {
+    const liveIds = new Set(nodes.map((node) => node.id))
+    setDragPositions((prev) => {
+      let changed = false
+      const next: Record<string, { x: number; y: number }> = {}
+      for (const [id, point] of Object.entries(prev)) {
+        if (liveIds.has(id)) {
+          next[id] = point
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [nodes])
 
   useEffect(() => {
     const svg = svgRef.current
@@ -354,6 +381,89 @@ export function KnotMobileGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [normalizedQuery])
 
+  function clientToGraphPoint(clientX: number, clientY: number) {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect || rect.width === 0 || rect.height === 0) return null
+    const viewportX = ((clientX - rect.left) / rect.width) * VW
+    const viewportY = ((clientY - rect.top) / rect.height) * VH
+    const pannedX = viewportX - pan.x
+    const pannedY = viewportY - pan.y
+    return {
+      x: CX + (pannedX - CX) / scale,
+      y: CY + (pannedY - CY) / scale,
+    }
+  }
+
+  function onNodeDown(e: React.PointerEvent<SVGGElement>, nodeId: string, x: number, y: number) {
+    e.stopPropagation()
+    const point = clientToGraphPoint(e.clientX, e.clientY)
+    if (!point) return
+
+    suppressNodeClickRef.current = false
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    e.currentTarget.setPointerCapture(e.pointerId)
+    panRef.current = null
+    nodeDragRef.current = {
+      nodeId,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: x - point.x,
+      offsetY: y - point.y,
+      moved: false,
+    }
+  }
+
+  function onNodeMove(e: React.PointerEvent<SVGGElement>) {
+    const drag = nodeDragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    e.stopPropagation()
+    e.preventDefault()
+
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointersRef.current.size > 1 || pinchRef.current) {
+      if (drag.moved) {
+        window.setTimeout(() => {
+          suppressNodeClickRef.current = false
+        }, 0)
+      }
+      nodeDragRef.current = null
+      return
+    }
+
+    const dx = e.clientX - drag.startX
+    const dy = e.clientY - drag.startY
+    if (!drag.moved && Math.hypot(dx, dy) > 4) {
+      drag.moved = true
+      suppressNodeClickRef.current = true
+    }
+
+    if (!drag.moved) return
+    const point = clientToGraphPoint(e.clientX, e.clientY)
+    if (!point) return
+    setDragPositions((prev) => ({
+      ...prev,
+      [drag.nodeId]: { x: point.x + drag.offsetX, y: point.y + drag.offsetY },
+    }))
+  }
+
+  function onNodeUp(e: React.PointerEvent<SVGGElement>) {
+    const drag = nodeDragRef.current
+    if (drag?.pointerId === e.pointerId) {
+      e.stopPropagation()
+      if (drag.moved) e.preventDefault()
+      if (drag.moved) {
+        suppressNodeClickRef.current = true
+        window.setTimeout(() => {
+          suppressNodeClickRef.current = false
+        }, 0)
+      }
+      nodeDragRef.current = null
+    }
+    pointersRef.current.delete(e.pointerId)
+    if (pointersRef.current.size < 2) pinchRef.current = null
+  }
+
   function onBgDown(e: React.PointerEvent<SVGSVGElement>) {
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     svgRef.current?.setPointerCapture(e.pointerId)
@@ -363,6 +473,13 @@ export function KnotMobileGraph({
       const [a, b] = [...pointersRef.current.values()]
       pinchRef.current = { startDist: Math.hypot(a.x - b.x, a.y - b.y) || 1, startScale: scale }
       panRef.current = null
+      const activeDrag = nodeDragRef.current
+      if (activeDrag?.moved) {
+        window.setTimeout(() => {
+          suppressNodeClickRef.current = false
+        }, 0)
+      }
+      nodeDragRef.current = null
       return
     }
 
@@ -514,8 +631,16 @@ export function KnotMobileGraph({
               key={n.id}
               data-node={n.id}
               transform={`translate(${x},${y}) scale(${nodeScale})`}
-              onClick={(e) => { e.stopPropagation(); sel ? onClearSelection() : onSelectNode(n) }}
-              style={{ cursor: 'pointer', transformOrigin: `${x}px ${y}px`, opacity: searchMuted ? 0.16 : isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
+              onPointerDown={(e) => onNodeDown(e, n.id, x, y)}
+              onPointerMove={onNodeMove}
+              onPointerUp={onNodeUp}
+              onPointerCancel={onNodeUp}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (suppressNodeClickRef.current) return
+                sel ? onClearSelection() : onSelectNode(n)
+              }}
+              style={{ cursor: 'pointer', touchAction: 'none', transformOrigin: `${x}px ${y}px`, opacity: searchMuted ? 0.16 : isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
             >
               {/* Outer selection / search-match / expanded-root / health ring */}
               {sel && <circle cx={0} cy={0} r={r + 5} fill="rgba(216,68,43,0.12)" stroke="#D8442B" strokeWidth={1.5} />}
