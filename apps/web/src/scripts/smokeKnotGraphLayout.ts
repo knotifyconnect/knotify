@@ -6,6 +6,7 @@ import {
   MOBILE_EXPANDED_BOUNDS,
   MOBILE_SECOND_DEGREE_SIZE,
   layoutExpandedNodeSlots,
+  pointOnRectBoundary,
   rectForPoint,
   rectsOverlap,
   svgPointForDomGraphPoint,
@@ -24,6 +25,7 @@ function assertLayout({
   root,
   center,
   maxDistance,
+  assertNoClamp,
 }: {
   label: string
   points: LayoutPoint[]
@@ -34,6 +36,7 @@ function assertLayout({
   root?: LayoutPoint
   center?: LayoutPoint
   maxDistance?: number
+  assertNoClamp?: boolean
 }) {
   for (const [index, point] of points.entries()) {
     if (checkBounds) {
@@ -50,6 +53,25 @@ function assertLayout({
     if (root && maxDistance) {
       assert.ok(Math.hypot(point.x - root.x, point.y - root.y) <= maxDistance, `${label}: point ${index} is too far from root`)
     }
+  }
+
+  if (assertNoClamp && points.length > 1) {
+    const pinned = points.filter((point) => (
+      Math.abs(point.x - bounds.minX) < 0.5 ||
+      Math.abs(point.x - bounds.maxX) < 0.5 ||
+      Math.abs(point.y - bounds.minY) < 0.5 ||
+      Math.abs(point.y - bounds.maxY) < 0.5
+    ))
+    assert.equal(pinned.length, 0, `${label}: points are pinned to an artificial viewport boundary`)
+
+    const sameRoundedX = new Map<number, number>()
+    const sameRoundedY = new Map<number, number>()
+    for (const point of points) {
+      sameRoundedX.set(Math.round(point.x), (sameRoundedX.get(Math.round(point.x)) ?? 0) + 1)
+      sameRoundedY.set(Math.round(point.y), (sameRoundedY.get(Math.round(point.y)) ?? 0) + 1)
+    }
+    const maxAligned = Math.max(...sameRoundedX.values(), ...sameRoundedY.values())
+    assert.ok(maxAligned < points.length, `${label}: all children collapsed into a straight boundary row`)
   }
 
   const rects = points.map((point) => rectForPoint(point, size))
@@ -101,6 +123,7 @@ for (const { label, root } of desktopRoots) {
       root,
       center,
       maxDistance: total <= 16 ? 720 : undefined,
+      assertNoClamp: total <= 16,
     })
   }
 }
@@ -146,8 +169,24 @@ for (const { label, root } of mobileRoots) {
       root,
       center: { x: 195, y: 300 },
       maxDistance: 430,
+      assertNoClamp: true,
     })
   }
+}
+
+function assertBoundaryEndpoint(label: string, center: LayoutPoint, toward: LayoutPoint, size: LayoutSize) {
+  const point = pointOnRectBoundary(center, toward, size)
+  const rect = rectForPoint(center, size)
+  const onHorizontalBoundary = Math.abs(point.x - rect.x) < 0.001 || Math.abs(point.x - (rect.x + rect.width)) < 0.001
+  const onVerticalBoundary = Math.abs(point.y - rect.y) < 0.001 || Math.abs(point.y - (rect.y + rect.height)) < 0.001
+  assert.ok(onHorizontalBoundary || onVerticalBoundary, `${label}: endpoint is not on the card boundary`)
+  assert.ok(
+    point.x >= rect.x - 0.001 &&
+      point.x <= rect.x + rect.width + 0.001 &&
+      point.y >= rect.y - 0.001 &&
+      point.y <= rect.y + rect.height + 0.001,
+    `${label}: endpoint is outside the card edge`,
+  )
 }
 
 function domScreenPoint(point: LayoutPoint, stage: LayoutSize, viewBox: LayoutSize) {
@@ -167,6 +206,11 @@ function meetScreenPoint(point: LayoutPoint, stage: LayoutSize, viewBox: LayoutS
   }
 }
 
+function assertPointNearlyEqual(actual: LayoutPoint, expected: LayoutPoint, label: string) {
+  assert.ok(Math.abs(actual.x - expected.x) < 0.0001, `${label}: x mismatch`)
+  assert.ok(Math.abs(actual.y - expected.y) < 0.0001, `${label}: y mismatch`)
+}
+
 for (const stage of [{ width: 1000, height: 590 }, { width: 1280, height: 720 }, { width: 820, height: 720 }]) {
   const graphPoint = { x: 760, y: 120 }
   const svgPoint = svgPointForDomGraphPoint(graphPoint, stage, { width: 1000, height: 590 })
@@ -174,6 +218,30 @@ for (const stage of [{ width: 1000, height: 590 }, { width: 1280, height: 720 },
     meetScreenPoint(svgPoint, stage, { width: 1000, height: 590 }),
     domScreenPoint(graphPoint, stage, { width: 1000, height: 590 }),
     `svg/card coordinate systems stay attached at ${stage.width}x${stage.height}`,
+  )
+}
+
+for (const size of [DESKTOP_DIRECT_NODE_SIZE, DESKTOP_SECOND_DEGREE_SIZE, MOBILE_SECOND_DEGREE_SIZE]) {
+  for (const toward of [
+    { x: 820, y: 330 },
+    { x: 180, y: 330 },
+    { x: 530, y: 80 },
+    { x: 530, y: 540 },
+    { x: 820, y: 80 },
+  ]) {
+    assertBoundaryEndpoint(`edge endpoint ${size.width}x${size.height} toward ${toward.x},${toward.y}`, center, toward, size)
+  }
+}
+
+const resizeSource = { x: 245, y: 120 }
+const resizeTarget = { x: 80, y: -42 }
+const resizeEndpoint = pointOnRectBoundary(resizeTarget, resizeSource, DESKTOP_SECOND_DEGREE_SIZE)
+for (const stage of [{ width: 1000, height: 590 }, { width: 1280, height: 720 }, { width: 390, height: 600 }]) {
+  const svgEndpoint = svgPointForDomGraphPoint(resizeEndpoint, stage, { width: 1000, height: 590 })
+  assertPointNearlyEqual(
+    meetScreenPoint(svgEndpoint, stage, { width: 1000, height: 590 }),
+    domScreenPoint(resizeEndpoint, stage, { width: 1000, height: 590 }),
+    `edge endpoint remains attached after resize/orientation at ${stage.width}x${stage.height}`,
   )
 }
 

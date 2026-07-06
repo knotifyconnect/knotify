@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { motion } from 'framer-motion'
 import {
   DESKTOP_DIRECT_NODE_SIZE,
   DESKTOP_EXPANDED_BOUNDS,
   DESKTOP_SECOND_DEGREE_SIZE,
   layoutExpandedNodeSlots,
+  pointOnRectBoundary,
   rectForPoint,
   svgPointForDomGraphPoint,
   type LayoutPoint,
@@ -72,6 +73,8 @@ type ViewportState = {
   x: number
   y: number
 }
+
+type NodeDomSizes = Record<string, LayoutSize>
 
 type Props = {
   me: CenterNode
@@ -278,6 +281,41 @@ function viewportForBounds(stage: HTMLDivElement, bounds: { minX: number; maxX: 
   }, scale)
 }
 
+function graphSizeForDomSize(domSize: LayoutSize | undefined, stageSize: LayoutSize, fallback: LayoutSize): LayoutSize {
+  if (!domSize) return fallback
+
+  return {
+    width: (domSize.width / Math.max(stageSize.width, 1)) * VIEW_W,
+    height: (domSize.height / Math.max(stageSize.height, 1)) * VIEW_H,
+  }
+}
+
+function measuredNodeSize(
+  node: LayoutNode,
+  nodeDomSizes: NodeDomSizes,
+  stageSize: LayoutSize,
+  compact?: boolean,
+): LayoutSize {
+  if (nodeDomSizes[node.id]) {
+    return graphSizeForDomSize(nodeDomSizes[node.id], stageSize, DESKTOP_SECOND_DEGREE_SIZE)
+  }
+
+  if (compact) return node.degree === 'second' ? { width: 44, height: 48 } : { width: 56, height: 58 }
+  return node.degree === 'second' ? DESKTOP_SECOND_DEGREE_SIZE : DESKTOP_DIRECT_NODE_SIZE
+}
+
+function edgeEndpoints(
+  source: LayoutPoint,
+  sourceSize: LayoutSize,
+  target: LayoutPoint,
+  targetSize: LayoutSize,
+) {
+  return {
+    source: pointOnRectBoundary(source, target, sourceSize),
+    target: pointOnRectBoundary(target, source, targetSize),
+  }
+}
+
 function Avatar({
   name,
   src,
@@ -348,6 +386,7 @@ function StageCard({
   secondDegree,
   onSelect,
   onPointerDown,
+  measureRef,
   compact,
 }: {
   node: LayoutNode
@@ -361,6 +400,7 @@ function StageCard({
   secondDegree: boolean
   onSelect: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
+  measureRef: (element: HTMLElement | null) => void
   compact?: boolean
 }) {
   // Compact mode: round avatar bubble with name label — selected node still shows full card
@@ -371,6 +411,7 @@ function StageCard({
     // Position the bubble at the node center; name label goes below WITHOUT shifting center
     return (
       <div
+        ref={measureRef}
         style={{
           position: 'absolute',
           left: `${node.x / 10}%`,
@@ -427,7 +468,7 @@ function StageCard({
           lineHeight: 1,
           fontFamily: "'IBM Plex Sans', sans-serif",
           pointerEvents: 'none',
-          background: 'rgba(244,239,230,0.88)',
+          background: 'var(--paper-soft)',
           borderRadius: 4,
           padding: '1px 3px',
         }}>
@@ -443,6 +484,7 @@ function StageCard({
     return (
       <button
         type="button"
+        ref={measureRef}
         onClick={onSelect}
         onPointerDown={onPointerDown}
         style={{
@@ -471,6 +513,7 @@ function StageCard({
     return (
       <button
         type="button"
+        ref={measureRef}
         onClick={onSelect}
         onPointerDown={onPointerDown}
         style={{
@@ -484,7 +527,7 @@ function StageCard({
           padding: '6px 9px',
           borderRadius: 999,
           border: selected || searchHit ? '0.5px solid rgba(26,24,21,0.52)' : secondDegree ? '0.5px dashed rgba(84,72,58,0.34)' : related ? '0.5px solid rgba(84,72,58,0.38)' : '0.5px solid var(--rule)',
-          background: selected || searchHit ? 'rgba(255,252,246,0.98)' : secondDegree ? 'rgba(255,252,246,0.62)' : related ? 'rgba(244,239,230,0.94)' : 'rgba(244,239,230,0.72)',
+          background: selected || searchHit ? 'var(--paper)' : secondDegree ? 'var(--paper)' : related ? 'var(--paper-soft)' : 'var(--paper-soft)',
           color: 'var(--ink)',
           cursor: 'grab',
           display: 'flex',
@@ -536,6 +579,7 @@ function StageCard({
   return (
     <button
       type="button"
+      ref={measureRef}
       onClick={onSelect}
       onPointerDown={onPointerDown}
       style={{
@@ -551,14 +595,14 @@ function StageCard({
         borderStyle: secondDegree && !selected && !searchHit ? 'dashed' : 'solid',
         borderLeft: selected ? '4px solid var(--ink)' : searchHit ? '4px solid var(--ink)' : related ? '3px solid rgba(84,72,58,0.34)' : secondDegree ? '0.5px dashed rgba(84,72,58,0.34)' : `0.5px solid ${border}`,
         background: selected
-          ? 'linear-gradient(180deg, rgba(255,252,246,0.98), rgba(244,239,230,0.94))'
+          ? 'linear-gradient(180deg, var(--paper), var(--paper-soft))'
           : searchHit
-            ? 'rgba(255,252,246,0.98)'
+            ? 'var(--paper)'
             : secondDegree
-              ? 'rgba(255,252,246,0.64)'
+              ? 'var(--paper)'
               : related
-                ? 'rgba(244,239,230,0.96)'
-                : 'rgba(244,239,230,0.72)',
+                ? 'var(--paper-soft)'
+                : 'var(--paper-soft)',
         color: 'var(--ink)',
         cursor: 'grab',
         boxShadow: selected
@@ -660,10 +704,13 @@ export function KnotForceGraph({
   const [viewport, setViewport] = useState<ViewportState>({ scale: 1, x: 0, y: 0 })
   const [layoutRevision, setLayoutRevision] = useState(0)
   const [stageSize, setStageSize] = useState<LayoutSize>({ width: VIEW_W, height: VIEW_H })
+  const [nodeDomSizes, setNodeDomSizes] = useState<NodeDomSizes>({})
 
   const normalizedQuery = query.trim().toLowerCase()
   const hasQuery = normalizedQuery.length > 0
   const center = dragPositions.me ?? { x: BASE_CENTER_X, y: BASE_CENTER_Y }
+  const centerDomSize = nodeDomSizes.me
+  const centerSize = graphSizeForDomSize(centerDomSize, stageSize, compact ? { width: 56, height: 56 } : { width: 104, height: 104 })
   const expandedSignature = useMemo(() => nodes
     .filter((node) => node.degree === 'second')
     .map((node) => node.id)
@@ -774,6 +821,15 @@ export function KnotForceGraph({
         if (prev[node.id]) next[node.id] = prev[node.id]
       }
 
+      return next
+    })
+
+    setNodeDomSizes((prev) => {
+      const next: NodeDomSizes = {}
+      if (prev.me) next.me = prev.me
+      for (const node of nodes) {
+        if (prev[node.id]) next[node.id] = prev[node.id]
+      }
       return next
     })
   }, [nodes])
@@ -903,7 +959,7 @@ export function KnotForceGraph({
     if (event.button !== 0) return
 
     const target = event.target as Element | null
-    if (target?.closest?.('button')) return
+    if (target?.closest?.('button,[data-graph-line],[data-graph-control]')) return
 
     dragCleanupRef.current?.()
     dragCleanupRef.current = null
@@ -925,7 +981,7 @@ export function KnotForceGraph({
     }
 
     const handleEnd = () => {
-      endDrag()
+      endPointerInteraction()
     }
 
     window.addEventListener('pointermove', handleMove, { passive: false })
@@ -1029,6 +1085,12 @@ export function KnotForceGraph({
     }, 0)
   }
 
+  function endPointerInteraction() {
+    const shouldClearSelection = Boolean(panRef.current && !panRef.current.moved)
+    endDrag()
+    if (shouldClearSelection) onClearSelection()
+  }
+
   const showEmpty = layoutNodes.length === 0
 
   function resetGraph() {
@@ -1045,6 +1107,26 @@ export function KnotForceGraph({
     onResetGraph?.()
   }
 
+  const measureGraphNode = useCallback((nodeId: string, element: HTMLElement | null) => {
+    if (!element) return
+
+    const width = element.offsetWidth
+    const height = element.offsetHeight
+    if (!width || !height) return
+
+    setNodeDomSizes((prev) => {
+      const previous = prev[nodeId]
+      if (previous && Math.abs(previous.width - width) < 0.5 && Math.abs(previous.height - height) < 0.5) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        [nodeId]: { width, height },
+      }
+    })
+  }, [])
+
   const toSvgPoint = (point: LayoutPoint) => svgPointForDomGraphPoint(point, stageSize, { width: VIEW_W, height: VIEW_H })
   const svgCenter = toSvgPoint(center)
   return (
@@ -1055,7 +1137,7 @@ export function KnotForceGraph({
       transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
       onPointerDown={beginPan}
       onPointerMove={updateDrag}
-      onPointerUp={endDrag}
+      onPointerUp={endPointerInteraction}
       onPointerCancel={endDrag}
       style={{
         position: 'absolute',
@@ -1081,7 +1163,7 @@ export function KnotForceGraph({
             viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
             preserveAspectRatio="xMidYMid meet"
             aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'auto' }}
           >
             <defs>
               <radialGradient id="forceKnotCenterGlow" cx="50%" cy="50%" r="50%">
@@ -1118,19 +1200,24 @@ export function KnotForceGraph({
               const c1y = center.y + (node.y - center.y) * 0.28 - Math.cos(index * 1.4) * 28
               const c2x = center.x + (node.x - center.x) * 0.72 - Math.cos(index * 1.9) * 32
               const c2y = center.y + (node.y - center.y) * 0.74 + Math.sin(index * 1.2) * 24
-              const lineEnd = toSvgPoint(node)
+              const targetSize = measuredNodeSize(node, nodeDomSizes, stageSize, compact)
+              const endpoints = edgeEndpoints(center, centerSize, node, targetSize)
+              const lineStart = toSvgPoint(endpoints.source)
+              const lineEnd = toSvgPoint(endpoints.target)
               const c1 = toSvgPoint({ x: c1x, y: c1y })
               const c2 = toSvgPoint({ x: c2x, y: c2y })
 
               return (
                 <path
                   key={`strand-${node.id}`}
-                  d={`M ${svgCenter.x} ${svgCenter.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${lineEnd.x} ${lineEnd.y}`}
+                  data-graph-line={node.id}
+                  d={`M ${lineStart.x} ${lineStart.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${lineEnd.x} ${lineEnd.y}`}
                   fill="none"
                   stroke={stroke}
                   strokeWidth={selected ? 1.2 : searchHit ? 1.25 : related ? 0.85 : muted || searchMuted ? 0.28 : node.tab === 'Connected' ? 0.85 : 1.1}
                   strokeDasharray={node.tab === 'Connected' ? 'none' : '8 8'}
                   strokeLinecap="round"
+                  pointerEvents="stroke"
                 />
               )
             })}
@@ -1149,19 +1236,27 @@ export function KnotForceGraph({
               const softY = midY + (midY - center.y) * 0.32 - Math.cos(index * 1.3) * 8
               const curveX = selected ? awayX : softX
               const curveY = selected ? awayY : softY
-              const sourcePoint = toSvgPoint(edge.source)
-              const targetPoint = toSvgPoint(edge.target)
+              const endpoints = edgeEndpoints(
+                edge.source,
+                measuredNodeSize(edge.source, nodeDomSizes, stageSize, compact),
+                edge.target,
+                measuredNodeSize(edge.target, nodeDomSizes, stageSize, compact),
+              )
+              const sourcePoint = toSvgPoint(endpoints.source)
+              const targetPoint = toSvgPoint(endpoints.target)
               const curvePoint = toSvgPoint({ x: curveX, y: curveY })
 
               return (
                 <path
                   key={`peer-${edge.id}`}
+                  data-graph-line={edge.id}
                   d={`M ${sourcePoint.x} ${sourcePoint.y} Q ${curvePoint.x} ${curvePoint.y} ${targetPoint.x} ${targetPoint.y}`}
                   fill="none"
                   stroke={selected ? 'rgba(26,24,21,0.34)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
                   strokeWidth={selected ? 1.22 : 0.85}
                   strokeDasharray={selected ? 'none' : '6 10'}
                   strokeLinecap="round"
+                  pointerEvents="stroke"
                 />
               )
             })}
@@ -1174,6 +1269,7 @@ export function KnotForceGraph({
 
           <button
             type="button"
+            ref={(element) => measureGraphNode('me', element)}
             onPointerDown={(event) => beginDrag('me', event)}
             onClick={() => {
               if (draggedRef.current) return
@@ -1261,6 +1357,7 @@ export function KnotForceGraph({
                 secondDegree={node.degree === 'second'}
                 compact={compact}
                 onPointerDown={(event) => beginDrag(node.id, event)}
+                measureRef={(element) => measureGraphNode(node.id, element)}
                 onSelect={() => {
                   if (draggedRef.current) return
                   onSelectNode(node)
