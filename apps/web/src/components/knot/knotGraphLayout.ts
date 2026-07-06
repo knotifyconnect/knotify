@@ -62,6 +62,25 @@ export function rectsOverlap(a: LayoutRect, b: LayoutRect, gap = 0) {
   )
 }
 
+export function pointOnRectBoundary(center: LayoutPoint, toward: LayoutPoint, size: LayoutSize): LayoutPoint {
+  const dx = toward.x - center.x
+  const dy = toward.y - center.y
+  const halfWidth = Math.max(size.width / 2, 0.001)
+  const halfHeight = Math.max(size.height / 2, 0.001)
+
+  if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return { ...center }
+
+  const scale = Math.min(
+    Math.abs(dx) < 0.001 ? Number.POSITIVE_INFINITY : halfWidth / Math.abs(dx),
+    Math.abs(dy) < 0.001 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(dy),
+  )
+
+  return {
+    x: center.x + dx * scale,
+    y: center.y + dy * scale,
+  }
+}
+
 export function svgPointForDomGraphPoint(point: LayoutPoint, stageSize: LayoutSize, viewBoxSize: LayoutSize): LayoutPoint {
   const stageWidth = Math.max(stageSize.width, 1)
   const stageHeight = Math.max(stageSize.height, 1)
