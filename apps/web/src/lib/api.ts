@@ -1,4 +1,3 @@
-import { supabase } from './supabase'
 import { useSessionStore } from '../store/session'
 
 const EXPLICIT_API_URL = (
@@ -119,7 +118,13 @@ const inFlightGets = new Map<string, Promise<unknown>>()
 let cacheGeneration = 0
 
 function cacheKey(path: string) {
-  return path
+  const token = useSessionStore.getState().token
+  return token ? `${token}:${path}` : `public:${path}`
+}
+
+function cacheKeyPath(key: string) {
+  const separatorIndex = key.indexOf(':')
+  return separatorIndex >= 0 ? key.slice(separatorIndex + 1) : key
 }
 
 export function invalidateApiCache(pathPrefix?: string) {
@@ -132,11 +137,11 @@ export function invalidateApiCache(pathPrefix?: string) {
   }
 
   for (const key of responseCache.keys()) {
-    if (key.startsWith(pathPrefix)) responseCache.delete(key)
+    if (cacheKeyPath(key).startsWith(pathPrefix)) responseCache.delete(key)
   }
 
   for (const key of inFlightGets.keys()) {
-    if (key.startsWith(pathPrefix)) inFlightGets.delete(key)
+    if (cacheKeyPath(key).startsWith(pathPrefix)) inFlightGets.delete(key)
   }
 }
 
@@ -211,7 +216,9 @@ async function authHeaders() {
     return { Authorization: `Bearer ${zustandToken}` } as Record<string, string>
   }
 
-  // Fallback: ask Supabase directly (covers SSR / cold-start edge cases)
+  // Fallback: ask Supabase directly (covers cold-start edge cases) without
+  // keeping the Supabase client in the public landing-page entry chunk.
+  const { supabase } = await import('./supabase')
   const {
     data: { session },
   } = await supabase.auth.getSession()

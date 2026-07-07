@@ -1,22 +1,17 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import type { Variants } from 'framer-motion'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-// LandingPage stays eager: it is the public LCP page and must paint fast.
-import { LandingPage } from './pages/LandingPage'
-import { supabase } from './lib/supabase'
 import { useSessionStore } from './store/session'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
-import { ToastContainer } from './components/ui/Toast'
 import { CookieConsentBanner } from './components/CookieConsentBanner'
 import { ApiError, apiGetCached } from './lib/api'
-import { identifyUser, initAnalytics, resetAnalyticsUser, trackPageview } from './lib/analytics'
 
 // Everything below is code-split so it does not ship in the landing-page bundle.
 // Logged-out visitors and crawlers only load LandingPage + its deps.
+const LandingPage = lazy(() => import('./pages/LandingPage').then((m) => ({ default: m.LandingPage })))
 const AppLayout = lazy(() => import('./layouts/AppLayout').then((m) => ({ default: m.AppLayout })))
 const CelebrationLayer = lazy(() => import('./components/celebrations/CelebrationLayer').then((m) => ({ default: m.CelebrationLayer })))
+const ToastContainer = lazy(() => import('./components/ui/Toast').then((m) => ({ default: m.ToastContainer })))
 const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })))
 const RelationshipHomePage = lazy(() => import('./pages/RelationshipHomePage').then((m) => ({ default: m.RelationshipHomePage })))
 const MapPage = lazy(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })))
@@ -44,17 +39,19 @@ const ACTIVE_WRITE_THROTTLE_MS = 60 * 1000
 const ACTIVITY_EVENTS = ['click', 'keydown', 'scroll', 'touchstart', 'mousemove'] as const
 const ONBOARDING_STATUS_TTL_MS = 60_000
 
-const pageVariants: Variants = {
-  initial: { opacity: 0, y: 8, filter: 'blur(4px)' },
-  animate: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.25, ease: [0.16, 1, 0.3, 1] } },
-  exit: { opacity: 0, y: -4, filter: 'blur(2px)', transition: { duration: 0.15 } },
-}
-
 type ReentryState = {
   token: string | null
   ready: boolean
   showLanding: boolean
 }
+
+type CachedGateStatus = 'complete' | 'beta_closed'
+let onboardingStatusCache: {
+  token: string | null
+  expiresAt: number
+  status: CachedGateStatus
+  blockedEmail: string | null
+} | null = null
 
 function readLastActiveAt() {
   try {
@@ -96,6 +93,27 @@ function logPerf(label: string, startedAt: number) {
   console.debug(`[perf] ${label}: ${Math.round(performance.now() - startedAt)}ms`)
 }
 
+function trackPageviewLazy(path: string) {
+  void import('./lib/analytics')
+    .then((m) => m.trackPageview(path))
+    .catch(() => {})
+}
+
+function isProbablyPublicPath(pathname: string) {
+  return (
+    pathname === '/' ||
+    pathname === '/auth' ||
+    pathname === '/login' ||
+    pathname === '/signup' ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password' ||
+    pathname === '/privacy' ||
+    pathname === '/impressum' ||
+    pathname === '/employers' ||
+    pathname.startsWith('/guides')
+  )
+}
+
 function ProfileCompletionGate({ children }: { children: ReactNode }) {
   const location = useLocation()
   const token = useSessionStore((s) => s.token)
@@ -107,6 +125,17 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
 
     async function checkProfileCompletion() {
       const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      const cached =
+        onboardingStatusCache?.token === token && onboardingStatusCache.expiresAt > Date.now()
+          ? onboardingStatusCache
+          : null
+
+      if (cached) {
+        setBlockedEmail(cached.blockedEmail)
+        setStatus(cached.status)
+        return
+      }
+
       setStatus((current) => current === 'complete' ? current : 'loading')
       setBlockedEmail(null)
 
@@ -115,15 +144,32 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
           ttlMs: ONBOARDING_STATUS_TTL_MS,
         })
         if (!mounted) return
-        setStatus(result.complete ? 'complete' : 'incomplete')
+        const nextStatus = result.complete ? 'complete' : 'incomplete'
+        onboardingStatusCache = result.complete
+          ? {
+              token,
+              expiresAt: Date.now() + ONBOARDING_STATUS_TTL_MS,
+              status: 'complete',
+              blockedEmail: null,
+            }
+          : null
+        setStatus(nextStatus)
         logPerf('onboarding gate check', startedAt)
       } catch (err) {
         if (!mounted) return
 
         if (err instanceof ApiError && err.status === 403 && err.code === 'beta_closed') {
+          const { supabase } = await import('./lib/supabase')
           const { data: { session } } = await supabase.auth.getSession()
           if (!mounted) return
-          setBlockedEmail(session?.user.email ?? null)
+          const email = session?.user.email ?? null
+          onboardingStatusCache = {
+            token,
+            expiresAt: Date.now() + ONBOARDING_STATUS_TTL_MS,
+            status: 'beta_closed',
+            blockedEmail: email,
+          }
+          setBlockedEmail(email)
           setStatus('beta_closed')
           return
         }
@@ -136,7 +182,7 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
     void checkProfileCompletion()
 
     return () => { mounted = false }
-  }, [location.pathname, token])
+  }, [token])
 
   if (status === 'loading') {
     return <div className="min-h-screen bg-bg-base" />
@@ -187,7 +233,7 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
             Try again
           </button>
           <button
-            onClick={() => { void supabase.auth.signOut().then(() => { window.location.href = '/' }) }}
+            onClick={() => { void import('./lib/supabase').then(({ supabase }) => supabase.auth.signOut()).then(() => { window.location.href = '/' }) }}
             style={{ marginLeft: 8, background: 'none', border: '0.5px solid #D9D1BF', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#6B6358', cursor: 'pointer' }}
           >
             Sign out
@@ -293,25 +339,21 @@ function AnimatedRoutes({
   const location = useLocation()
 
   useEffect(() => {
-    trackPageview(location.pathname)
+    trackPageviewLazy(location.pathname)
   }, [location.pathname])
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div key={location.pathname} variants={pageVariants} initial="initial" animate="animate" exit="exit">
-        <Suspense fallback={<div className="min-h-screen bg-bg-base" />}>
-          {token ? (
-            showReentryLanding ? (
-              <ReentryLandingRoutes onContinue={onReentryContinue} />
-            ) : (
-              <ProtectedRoutes />
-            )
-          ) : (
-            <PublicRoutes />
-          )}
-        </Suspense>
-      </motion.div>
-    </AnimatePresence>
+    <Suspense fallback={<div className="min-h-screen bg-bg-base" />}>
+      {token ? (
+        showReentryLanding ? (
+          <ReentryLandingRoutes onContinue={onReentryContinue} />
+        ) : (
+          <ProtectedRoutes />
+        )
+      ) : (
+        <PublicRoutes />
+      )}
+    </Suspense>
   )
 }
 
@@ -321,30 +363,53 @@ export default function App() {
   const [hydrating, setHydrating] = useState(true)
   const [reentryState, setReentryState] = useState<ReentryState>({
     token: null,
-    ready: false,
+    ready: true,
     showLanding: false,
   })
 
   useEffect(() => {
-    initAnalytics()
+    void import('./lib/analytics')
+      .then((m) => m.initAnalytics())
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
     // onAuthStateChange fires INITIAL_SESSION immediately on mount with the
     // existing session (or null). This is the single source of truth â€”
     // no separate getSession() call that can race and wipe a valid token.
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      const user = session?.user
-      const emailConfirmed = Boolean(user?.email_confirmed_at || user?.confirmed_at)
-      setToken(session && emailConfirmed ? session.access_token : null)
-      setHydrating(false)
-      if (user && emailConfirmed) identifyUser(user)
-      else resetAnalyticsUser()
-    })
+    let active = true
+    let subscription: { unsubscribe: () => void } | null = null
 
-    return () => subscription.unsubscribe()
+    void import('./lib/supabase')
+      .then(({ supabase }) => {
+        if (!active) return
+        const {
+          data: { subscription: authSubscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+          const user = session?.user
+          const emailConfirmed = Boolean(user?.email_confirmed_at || user?.confirmed_at)
+          setToken(session && emailConfirmed ? session.access_token : null)
+          setHydrating(false)
+          if (user && emailConfirmed) {
+            void import('./lib/analytics')
+              .then((m) => m.identifyUser(user))
+              .catch(() => {})
+          } else {
+            void import('./lib/analytics')
+              .then((m) => m.resetAnalyticsUser())
+              .catch(() => {})
+          }
+        })
+        subscription = authSubscription
+      })
+      .catch(() => {
+        if (active) setHydrating(false)
+      })
+
+    return () => {
+      active = false
+      subscription?.unsubscribe()
+    }
   }, [setToken])
 
   useEffect(() => {
@@ -413,7 +478,12 @@ export default function App() {
     })
   }, [token])
 
-  if (hydrating || !reentryState.ready || reentryState.token !== token) {
+  const canRenderPublicWhileChecking =
+    hydrating && !token && isProbablyPublicPath(
+      typeof window === 'undefined' ? '/' : window.location.pathname
+    )
+
+  if ((!canRenderPublicWhileChecking && hydrating) || !reentryState.ready || reentryState.token !== token) {
     return <div className="min-h-screen bg-bg-base" />
   }
 
@@ -425,7 +495,9 @@ export default function App() {
           showReentryLanding={reentryState.showLanding}
           onReentryContinue={onReentryContinue}
         />
-        <ToastContainer />
+        <Suspense fallback={null}>
+          <ToastContainer />
+        </Suspense>
         <Suspense fallback={null}>
           <CelebrationLayer />
         </Suspense>

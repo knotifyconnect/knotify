@@ -20,7 +20,7 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet, apiPost } from '../lib/api'
+import { apiGet, apiGetCached, apiPost } from '../lib/api'
 import { HomeHub } from '../components/HomeHub'
 import { CompanionHero, type Suggestion, type PeerLite } from '../components/CompanionHero'
 import { KAvatar, KBtn } from '../lib/knotify'
@@ -381,12 +381,12 @@ export function RelationshipHomePage() {
   })
 
   useEffect(() => {
-    apiGet<{ events: Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }> }>('/api/events?limit=3')
+    apiGetCached<{ events: Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }> }>('/api/events?limit=3', { ttlMs: 30_000 })
       .then((r) => setRailEvents(r.events ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {
-    apiGet<{ credibility_score: number; tier: string; quests: Array<{ key: string; title: string; points: number; status: string; description?: string }> }>('/api/quests')
+    apiGetCached<{ credibility_score: number; tier: string; quests: Array<{ key: string; title: string; points: number; status: string; description?: string }> }>('/api/quests', { ttlMs: 30_000 })
       .then((r) => {
         setCredMini({ score: r.credibility_score, tier: r.tier })
         setSideQuests((r.quests ?? []).filter((q) => q.status === 'claimable').map((q) => ({ key: q.key, title: q.title, points: q.points, description: q.description })).slice(0, 3))
@@ -395,12 +395,12 @@ export function RelationshipHomePage() {
 
   const loadMyAsks = useCallback((uid: string) => {
     if (!uid) return
-    apiGet<{ asks: Ask[] }>(`/api/asks/by-user/${uid}`)
+    apiGetCached<{ asks: Ask[] }>(`/api/asks/by-user/${uid}`, { ttlMs: 10_000 })
       .then((r) => setMyAsks(r.asks ?? [])).catch(() => {})
   }, [])
 
   const loadFeedAsks = useCallback(() => {
-    apiGet<{ asks: Ask[] }>('/api/asks/feed?limit=4')
+    apiGetCached<{ asks: Ask[] }>('/api/asks/feed?limit=4', { ttlMs: 10_000 })
       .then((r) => setFeedAsks(r.asks ?? [])).catch(() => {})
   }, [])
 
@@ -413,14 +413,8 @@ export function RelationshipHomePage() {
   }
 
   useEffect(() => {
-    apiGet<{ user: { full_name: string; id: string } }>('/api/users/me')
-      .then((r) => { setFirstName(r.user?.full_name?.split(' ')[0] ?? ''); setUserId(r.user?.id ?? '') })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
     if (inviteDismissed) return
-    apiGet<{ url: string }>('/api/invites/me').then((r) => setInviteUrl(r.url)).catch(() => {})
+    apiGetCached<{ url: string }>('/api/invites/me', { ttlMs: 60_000 }).then((r) => setInviteUrl(r.url)).catch(() => {})
   }, [inviteDismissed])
 
   async function copyInviteLink() {
@@ -440,27 +434,43 @@ export function RelationshipHomePage() {
   useEffect(() => {
     let mounted = true
 
-    // Primary: engine route
-    apiGet<HomeData>('/api/relationship-home')
-      .then((d) => {
+    async function loadHome() {
+      const mePromise = apiGetCached<{ user: { full_name: string; id: string } }>('/api/users/me', { ttlMs: 30_000 })
+        .catch(() => null)
+
+      try {
+        const [meResult, homeData] = await Promise.all([
+          mePromise,
+          apiGetCached<HomeData>('/api/relationship-home', { ttlMs: 10_000 }),
+        ])
         if (!mounted) return
-        setData(d)
+        setFirstName(meResult?.user?.full_name?.split(' ')[0] ?? '')
+        setUserId(meResult?.user?.id ?? '')
+        setData(homeData)
         setLoading(false)
-      })
-      .catch(() => {
+      } catch {
         if (!mounted) return
+        const meResult = await mePromise
+        if (!mounted) return
+        const fallbackUserId = meResult?.user?.id ?? ''
+        setFirstName(meResult?.user?.full_name?.split(' ')[0] ?? '')
+        setUserId(fallbackUserId)
+
         // Fallback: /api/connections (always works)
-        apiGet<{ connections: RawConn[] }>('/api/connections')
+        apiGetCached<{ connections: RawConn[] }>('/api/connections', { ttlMs: 10_000 })
           .then(({ connections }) => {
             if (!mounted) return
-            setData(buildFallbackData(connections, userId))
+            setData(buildFallbackData(connections, fallbackUserId))
           })
           .catch(() => { if (mounted) setData({ ranked: [], milestones: [], openAsks: [], pendingForMe: [], sharedEvents: [] }) })
           .finally(() => { if (mounted) setLoading(false) })
-      })
+      }
+    }
+
+    void loadHome()
 
     return () => { mounted = false }
-  }, [userId])
+  }, [])
 
   async function openMessage(peerId: string, draftOpener?: string) {
     setMessagingPeer(peerId)

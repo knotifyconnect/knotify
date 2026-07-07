@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGetCached } from '../lib/api'
+import { runWhenIdle } from '../lib/schedule'
 
 type ReferralUnreadResponse = {
   count: number
@@ -18,6 +19,7 @@ export function useReferralUnreadCount() {
     let cancelled = false
 
     async function load() {
+      if (document.hidden) return
       try {
         const data = await apiGetCached<ReferralUnreadResponse>('/api/referrals/unread', { ttlMs: 5_000 })
         if (!cancelled) setCount(data.count ?? 0)
@@ -26,11 +28,12 @@ export function useReferralUnreadCount() {
       }
     }
 
-    load()
-    const interval = window.setInterval(load, 20000)
+    const cancelInitialLoad = runWhenIdle(() => void load())
+    const interval = window.setInterval(load, 60000)
 
     return () => {
       cancelled = true
+      cancelInitialLoad()
       window.clearInterval(interval)
     }
   }, [])

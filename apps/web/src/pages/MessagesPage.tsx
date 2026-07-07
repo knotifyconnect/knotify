@@ -562,6 +562,7 @@ export function MessagesPage() {
 
     async function syncOpenThread() {
       if (disposed || inFlight) return
+      if (document.hidden) return
 
       inFlight = true
       try {
@@ -571,7 +572,7 @@ export function MessagesPage() {
 
         // Conversation list and coffee state are useful, but not urgent enough to block
         // every message poll. Refresh them in the background to avoid request dogpiling.
-        if (now - lastBackgroundSync > 5000) {
+        if (now - lastBackgroundSync > 15000) {
           lastBackgroundSync = now
           void loadConvs(true)
           void loadMeetings(true)
@@ -588,7 +589,7 @@ export function MessagesPage() {
     }
 
     void syncOpenThread()
-    const interval = window.setInterval(() => { void syncOpenThread() }, 1200)
+    const interval = window.setInterval(() => { void syncOpenThread() }, 10000)
 
     return () => {
       disposed = true

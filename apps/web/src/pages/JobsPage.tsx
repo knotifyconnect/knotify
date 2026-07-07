@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet, apiPatch, apiPost } from '../lib/api'
+import { apiGet, apiGetCached, apiPatch, apiPost } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
@@ -214,6 +214,7 @@ export function JobsPage() {
   const [historyOpenByReferral, setHistoryOpenByReferral] = useState<Record<string, boolean>>({})
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null)
   const [historyErrorByReferral, setHistoryErrorByReferral] = useState<Record<string, string>>({})
+  const skippedInitialFilterLoadRef = useRef(false)
 
   const hasConnections = connectionsAtCompany.length > 0
 
@@ -235,7 +236,7 @@ export function JobsPage() {
       if (opts?.type ?? filterType) params.set('type', opts?.type ?? filterType)
       if (opts?.remote ?? filterRemote) params.set('remote', opts?.remote ?? filterRemote)
       if (opts?.location ?? filterLocation) params.set('location', opts?.location ?? filterLocation)
-      const data = await apiGet<{ jobs: JobListItem[] }>(`/api/jobs?${params.toString()}`)
+      const data = await apiGetCached<{ jobs: JobListItem[] }>(`/api/jobs?${params.toString()}`, { ttlMs: 10_000 })
       setJobs(data.jobs ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load jobs')
@@ -248,7 +249,7 @@ export function JobsPage() {
   async function loadPendingReferrals() {
     setPendingLoading(true)
     try {
-      const data = await apiGet<{ referrals: ReferralItem[] }>('/api/referrals/pending')
+      const data = await apiGetCached<{ referrals: ReferralItem[] }>('/api/referrals/pending', { ttlMs: 10_000 })
       setPendingReferrals(data.referrals ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load pending referrals')
@@ -261,7 +262,7 @@ export function JobsPage() {
   async function loadInProgressReferrals() {
     setInProgressLoading(true)
     try {
-      const data = await apiGet<{ referrals: ReferralItem[] }>('/api/referrals/in-progress')
+      const data = await apiGetCached<{ referrals: ReferralItem[] }>('/api/referrals/in-progress', { ttlMs: 10_000 })
       const refs = data.referrals ?? []
       setInProgressReferrals(refs)
       setForms((prev) => {
@@ -282,7 +283,7 @@ export function JobsPage() {
   async function loadMyReferrals() {
     setMyReferralsLoading(true)
     try {
-      const data = await apiGet<{ referrals: ReferralItem[] }>('/api/referrals/received')
+      const data = await apiGetCached<{ referrals: ReferralItem[] }>('/api/referrals/received', { ttlMs: 10_000 })
       setMyReferrals(data.referrals ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load your referral requests')
@@ -295,7 +296,7 @@ export function JobsPage() {
   async function loadSentReferrals() {
     setSentReferralsLoading(true)
     try {
-      const data = await apiGet<{ referrals: ReferralItem[] }>('/api/referrals/sent')
+      const data = await apiGetCached<{ referrals: ReferralItem[] }>('/api/referrals/sent', { ttlMs: 10_000 })
       setSentReferrals(data.referrals ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load referrals where you are the referrer')
@@ -316,6 +317,11 @@ export function JobsPage() {
 
   // Debounced search
   useEffect(() => {
+    if (!skippedInitialFilterLoadRef.current) {
+      skippedInitialFilterLoadRef.current = true
+      return
+    }
+
     const id = window.setTimeout(() => void loadJobs(), 400)
     return () => window.clearTimeout(id)
   }, [searchQuery, filterType, filterRemote, filterLocation])

@@ -15,7 +15,7 @@
  */
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { apiGet, apiPatch, apiPost, apiPostForm, apiPut } from '../lib/api'
+import { apiGet, apiGetCached, apiPatch, apiPost, apiPostForm, apiPut } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { CareerPathCard } from '../components/profile/CareerPathCard'
 import { ReferralAskModal } from '../components/ReferralAskModal'
@@ -295,10 +295,11 @@ export function ProfilePage() {
 
   // Resolve "is this my own profile or someone else's?"
   useEffect(() => {
-    apiGet<{ user: { id: string } }>('/api/users/me')
+    if (!userId) return
+    apiGetCached<{ user: { id: string } }>('/api/users/me', { ttlMs: 30_000 })
       .then((d) => setMeId(d.user.id))
       .catch(() => setMeId(null))
-  }, [])
+  }, [userId])
 
   // If we have a userId param AND it's not my own ID → public view
   if (userId && meId && userId !== meId) {
@@ -361,10 +362,10 @@ function OwnProfileView() {
   const [customizing, setCustomizing] = useState(false)
 
   useEffect(() => {
-    apiGet<{ credibility_score: number; tier: string; next_tier: { name: string; at: number } | null; gig_unlocked: boolean; gig_unlock_at: number; weekly_delta?: number; percentile?: number | null }>('/api/quests')
+    apiGetCached<{ credibility_score: number; tier: string; next_tier: { name: string; at: number } | null; gig_unlocked: boolean; gig_unlock_at: number; weekly_delta?: number; percentile?: number | null }>('/api/quests', { ttlMs: 30_000 })
       .then((r) => setCredibility({ score: r.credibility_score, tier: r.tier, next: r.next_tier, gigUnlocked: r.gig_unlocked, gigUnlockAt: r.gig_unlock_at, weeklyDelta: r.weekly_delta ?? 0, percentile: r.percentile ?? null }))
       .catch(() => {})
-    apiGet<{ url: string }>('/api/invites/me').then((r) => setInviteUrl(r.url)).catch(() => {})
+    apiGetCached<{ url: string }>('/api/invites/me', { ttlMs: 60_000 }).then((r) => setInviteUrl(r.url)).catch(() => {})
   }, [])
 
   async function saveBanner(file: File | null) {
@@ -430,14 +431,14 @@ function OwnProfileView() {
   // ── Load ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    apiGet<{ connections: Array<{ status: string }> }>('/api/connections')
+    apiGetCached<{ connections: Array<{ status: string }> }>('/api/connections', { ttlMs: 10_000 })
       .then((d) => setConnectionCount((d.connections ?? []).filter((c) => c.status === 'accepted').length))
       .catch(() => setConnectionCount(0))
   }, [])
 
 
   useEffect(() => {
-    apiGet<{ user: Me }>('/api/users/me')
+    apiGetCached<{ user: Me }>('/api/users/me', { ttlMs: 30_000 })
       .then((data) => {
         setMe(data.user)
         setAvatarDraft(data.user.avatar_url ?? null)
@@ -458,7 +459,7 @@ function OwnProfileView() {
   }, [me?.id])
 
   useEffect(() => {
-    apiGet<{ catalog?: SkillCatalogItem[]; skills?: SkillCatalogItem[] }>('/api/users/skills/catalog')
+    apiGetCached<{ catalog?: SkillCatalogItem[]; skills?: SkillCatalogItem[] }>('/api/users/skills/catalog', { ttlMs: 5 * 60_000 })
       .then((d) => setSkillCatalog(d.catalog ?? d.skills ?? []))
       .catch((err) => {
         // eslint-disable-next-line no-console
@@ -469,7 +470,7 @@ function OwnProfileView() {
 
   async function loadExtended() {
     try {
-      const data = await apiGet<ProfileExtended>('/api/users/me/profile-extended')
+      const data = await apiGetCached<ProfileExtended>('/api/users/me/profile-extended', { ttlMs: 30_000 })
       setEducation(data.education ?? [])
       setExperience(data.experience ?? [])
       setUserSkillIds((data.skills ?? []).map((s) => s.skill_id))
@@ -478,7 +479,7 @@ function OwnProfileView() {
 
   async function loadMyUpdates() {
     try {
-      const data = await apiGet<{ updates: ProfileUpdate[] }>('/api/updates?scope=me&limit=8')
+      const data = await apiGetCached<{ updates: ProfileUpdate[] }>('/api/updates?scope=me&limit=8', { ttlMs: 10_000 })
       setUpdates(data.updates ?? [])
     } catch (err) {
       setUpdatesError(err instanceof Error ? err.message : 'Failed loading updates')
@@ -488,7 +489,7 @@ function OwnProfileView() {
   async function loadMyAsks() {
     if (!me?.id) return
     try {
-      const data = await apiGet<{ asks: Array<{ id: string; content: string; status: string; created_at: string }> }>(`/api/asks/by-user/${me.id}`)
+      const data = await apiGetCached<{ asks: Array<{ id: string; content: string; status: string; created_at: string }> }>(`/api/asks/by-user/${me.id}`, { ttlMs: 10_000 })
       setMyAsks((data.asks ?? []).filter((a) => a.status === 'open'))
     } catch { /* non-critical */ }
   }

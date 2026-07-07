@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, MessageSquare, Briefcase, Check, X } from 'lucide-react'
 import { apiGetCached, apiPatch } from '../lib/api'
 import { KAvatar } from '../lib/knotify'
+import { runWhenIdle } from '../lib/schedule'
 
 type Peer = { id: string; full_name: string; username: string; avatar_url: string | null }
 type RawConn = {
@@ -42,6 +43,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   const [pos, setPos] = useState<React.CSSProperties | null>(null)
 
   const load = useCallback(async () => {
+    if (document.hidden) return
     try {
       const [me, conns] = await Promise.all([
         apiGetCached<{ user: { id: string } }>('/api/users/me', { ttlMs: 30_000 }),
@@ -58,9 +60,12 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   }, [])
 
   useEffect(() => {
-    void load()
-    const interval = window.setInterval(() => void load(), 45000)
-    return () => window.clearInterval(interval)
+    const cancelInitialLoad = runWhenIdle(() => void load(), 2000)
+    const interval = window.setInterval(() => void load(), 120000)
+    return () => {
+      cancelInitialLoad()
+      window.clearInterval(interval)
+    }
   }, [load])
 
   const total = requests.length + messageUnread + referralUnread

@@ -27,6 +27,7 @@ import { apiGetCached } from '@/lib/api'
 import { useReferralUnreadCount } from '@/hooks/useReferralUnreadCount'
 import { useMessageUnreadCount } from '@/hooks/useMessageUnreadCount'
 import { useConnectionCount } from '@/hooks/useConnectionCount'
+import { runWhenIdle } from '@/lib/schedule'
 
 type Me = {
   id: string
@@ -96,9 +97,11 @@ export function AppSidebar() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    apiGetCached<{ user: Me }>('/api/users/me', { ttlMs: 30_000 })
-      .then((data) => setMe(data.user ?? null))
-      .catch(() => setMe(null))
+    return runWhenIdle(() => {
+      apiGetCached<{ user: Me }>('/api/users/me', { ttlMs: 30_000 })
+        .then((data) => setMe(data.user ?? null))
+        .catch(() => setMe(null))
+    })
   }, [])
 
   const items: NavItem[] = (() => {

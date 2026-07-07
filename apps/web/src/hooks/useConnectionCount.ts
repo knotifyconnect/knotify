@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGetCached } from '../lib/api'
+import { runWhenIdle } from '../lib/schedule'
 
 type ConnectionsResponse = {
   connections: Array<{ status: 'pending' | 'accepted' | 'declined' }>
@@ -13,6 +14,7 @@ export function useConnectionCount() {
     let cancelled = false
 
     async function load() {
+      if (document.hidden) return
       try {
         const data = await apiGetCached<ConnectionsResponse>('/api/connections', { ttlMs: 10_000 })
         if (cancelled) return
@@ -23,11 +25,12 @@ export function useConnectionCount() {
       }
     }
 
-    load()
-    const interval = window.setInterval(load, 30000)
+    const cancelInitialLoad = runWhenIdle(() => void load())
+    const interval = window.setInterval(load, 60000)
 
     return () => {
       cancelled = true
+      cancelInitialLoad()
       window.clearInterval(interval)
     }
   }, [])

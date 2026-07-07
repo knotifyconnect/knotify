@@ -1,6 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { apiGetCached } from '../lib/api'
 import { supabase } from '../lib/supabase'
+import { runWhenIdle } from '../lib/schedule'
 
 type MessageUnreadResponse = {
   count: number
@@ -17,6 +18,7 @@ export function useMessageUnreadCount() {
 
     async function refresh() {
       if (inFlightRef.current) return
+      if (document.hidden) return
 
       inFlightRef.current = true
       try {
@@ -42,11 +44,11 @@ export function useMessageUnreadCount() {
       }, delay)
     }
 
-    void refresh()
+    const cancelInitialRefresh = runWhenIdle(() => void refresh())
 
     const interval = window.setInterval(() => {
       void refresh()
-    }, 15_000)
+    }, 60_000)
 
     function onFocus() {
       scheduleRefresh(0)
@@ -73,6 +75,7 @@ export function useMessageUnreadCount() {
         window.clearTimeout(refreshTimerRef.current)
       }
 
+      cancelInitialRefresh()
       window.clearInterval(interval)
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibilityChange)
