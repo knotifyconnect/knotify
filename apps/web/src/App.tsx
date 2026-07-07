@@ -3,20 +3,20 @@ import type { ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Variants } from 'framer-motion'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { AppLayout } from './layouts/AppLayout'
 // LandingPage stays eager: it is the public LCP page and must paint fast.
 import { LandingPage } from './pages/LandingPage'
 import { supabase } from './lib/supabase'
 import { useSessionStore } from './store/session'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
-import { CelebrationLayer } from './components/celebrations/CelebrationLayer'
 import { ToastContainer } from './components/ui/Toast'
 import { CookieConsentBanner } from './components/CookieConsentBanner'
-import { ApiError, apiGet } from './lib/api'
+import { ApiError, apiGetCached } from './lib/api'
 import { identifyUser, initAnalytics, resetAnalyticsUser, trackPageview } from './lib/analytics'
 
 // Everything below is code-split so it does not ship in the landing-page bundle.
 // Logged-out visitors and crawlers only load LandingPage + its deps.
+const AppLayout = lazy(() => import('./layouts/AppLayout').then((m) => ({ default: m.AppLayout })))
+const CelebrationLayer = lazy(() => import('./components/celebrations/CelebrationLayer').then((m) => ({ default: m.CelebrationLayer })))
 const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })))
 const RelationshipHomePage = lazy(() => import('./pages/RelationshipHomePage').then((m) => ({ default: m.RelationshipHomePage })))
 const MapPage = lazy(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })))
@@ -42,6 +42,7 @@ const LAST_ACTIVE_AT_KEY = 'knotify:lastActiveAt'
 const INACTIVITY_REENTRY_MS = 2 * 24 * 60 * 60 * 1000
 const ACTIVE_WRITE_THROTTLE_MS = 60 * 1000
 const ACTIVITY_EVENTS = ['click', 'keydown', 'scroll', 'touchstart', 'mousemove'] as const
+const ONBOARDING_STATUS_TTL_MS = 60_000
 
 const pageVariants: Variants = {
   initial: { opacity: 0, y: 8, filter: 'blur(4px)' },
@@ -90,8 +91,14 @@ type OnboardingStatus = {
   minSkills: number
 }
 
+function logPerf(label: string, startedAt: number) {
+  if (!import.meta.env.DEV || typeof performance === 'undefined') return
+  console.debug(`[perf] ${label}: ${Math.round(performance.now() - startedAt)}ms`)
+}
+
 function ProfileCompletionGate({ children }: { children: ReactNode }) {
   const location = useLocation()
+  const token = useSessionStore((s) => s.token)
   const [status, setStatus] = useState<'loading' | 'complete' | 'incomplete' | 'beta_closed' | 'error'>('loading')
   const [blockedEmail, setBlockedEmail] = useState<string | null>(null)
 
@@ -99,13 +106,17 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
     let mounted = true
 
     async function checkProfileCompletion() {
-      setStatus('loading')
+      const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      setStatus((current) => current === 'complete' ? current : 'loading')
       setBlockedEmail(null)
 
       try {
-        const result = await apiGet<OnboardingStatus>('/api/users/me/onboarding-status')
+        const result = await apiGetCached<OnboardingStatus>('/api/users/me/onboarding-status', {
+          ttlMs: ONBOARDING_STATUS_TTL_MS,
+        })
         if (!mounted) return
         setStatus(result.complete ? 'complete' : 'incomplete')
+        logPerf('onboarding gate check', startedAt)
       } catch (err) {
         if (!mounted) return
 
@@ -118,13 +129,14 @@ function ProfileCompletionGate({ children }: { children: ReactNode }) {
         }
 
         setStatus('error')
+        logPerf('onboarding gate error', startedAt)
       }
     }
 
     void checkProfileCompletion()
 
     return () => { mounted = false }
-  }, [location.pathname])
+  }, [location.pathname, token])
 
   if (status === 'loading') {
     return <div className="min-h-screen bg-bg-base" />
@@ -414,7 +426,9 @@ export default function App() {
           onReentryContinue={onReentryContinue}
         />
         <ToastContainer />
-        <CelebrationLayer />
+        <Suspense fallback={null}>
+          <CelebrationLayer />
+        </Suspense>
         <CookieConsentBanner />
       </BrowserRouter>
     </AppErrorBoundary>

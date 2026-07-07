@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
+import { apiDelete, apiGet, apiGetCached, apiPatch, apiPost } from '../lib/api'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
-import { KnotForceGraph, type KnotGraphNode, type KnotGraphPeerEdge, type KnotHealthState } from '../components/knot/KnotForceGraph'
+import type { KnotGraphNode, KnotGraphPeerEdge, KnotHealthState } from '../components/knot/KnotForceGraph'
 import { KnotMobileGraph, MobileBottomSheet, MobileNodeOverlay, type MeNode } from '../components/knot/KnotMobileGraph'
 import 'leaflet/dist/leaflet.css'
+
+const KnotForceGraph = lazy(() => import('../components/knot/KnotForceGraph').then((m) => ({ default: m.KnotForceGraph })))
 
 type UserStatus = 'studying' | 'open_to_work' | 'employed' | string
 type ConnectionStatus = 'pending' | 'accepted' | 'declined'
@@ -245,6 +247,14 @@ function otherUserId(connection: Connection, meId: string | null) {
   return connection.user?.id ?? (connection.requester_id === meId ? connection.addressee_id : connection.requester_id)
 }
 
+function measureDev<T>(label: string, fn: () => T): T {
+  if (!import.meta.env.DEV || typeof performance === 'undefined') return fn()
+  const startedAt = performance.now()
+  const value = fn()
+  console.debug(`[perf] ${label}: ${Math.round(performance.now() - startedAt)}ms`)
+  return value
+}
+
 export function MapPage() {
   const navigate = useNavigate()
   const [meId, setMeId] = useState<string | null>(null)
@@ -279,13 +289,14 @@ export function MapPage() {
   const [removing, setRemoving] = useState<Record<string, boolean>>({})
 
   async function loadRelationships() {
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     setLoading(true)
     setError(null)
 
     try {
       const [meResult, connectionResult, mapResult] = await Promise.all([
-        apiGet<MeResponse>('/api/users/me'),
-        apiGet<ConnectionsResponse>('/api/connections'),
+        apiGetCached<MeResponse>('/api/users/me', { ttlMs: 30_000 }),
+        apiGetCached<ConnectionsResponse>('/api/connections', { ttlMs: 10_000 }),
         apiGet<ConnectionMapResponse>('/api/connections/map'),
       ])
 
@@ -316,6 +327,9 @@ export function MapPage() {
             })
           }
           setSignalsByUserId(map)
+          if (import.meta.env.DEV && typeof performance !== 'undefined') {
+            console.debug(`[perf] Your Knot signals loaded: ${Math.round(performance.now() - startedAt)}ms`)
+          }
         })
         .catch(() => { /* engine signals are non-critical */ })
       setExpandedRootUserId(null)
@@ -336,6 +350,9 @@ export function MapPage() {
       setExpandError(null)
     } finally {
       setLoading(false)
+      if (import.meta.env.DEV && typeof performance !== 'undefined') {
+        console.debug(`[perf] Your Knot critical data loaded: ${Math.round(performance.now() - startedAt)}ms`)
+      }
     }
   }
 
@@ -1081,7 +1098,7 @@ function KnotStage({
     return () => mq.removeEventListener('change', handler)
   }, [])
 
-  const nodes = useMemo(() => {
+  const nodes = useMemo(() => measureDev('Your Knot node derivation', () => {
     const candidates: Array<{ connection: Connection; tab: RelationshipTab; priority: number; index: number }> = [
       ...connected.map((connection, index) => ({ connection, tab: 'Connected' as const, priority: 0, index })),
       ...incoming.map((connection, index) => ({ connection, tab: 'Incoming' as const, priority: 1, index })),
@@ -1166,7 +1183,7 @@ function KnotStage({
       })
 
     return [...directNodes, ...secondDegreeNodes]
-  }, [connected, expandedRootUserId, expandedSecondDegreeNodes, signalsByUserId, incoming, meId, normalizedGraphQuery, sent])
+  }), [connected, expandedRootUserId, expandedSecondDegreeNodes, signalsByUserId, incoming, meId, normalizedGraphQuery, sent])
 
   const selectedNode =
     selectedConnection
@@ -1180,7 +1197,7 @@ function KnotStage({
     [connected, signalsByUserId, meId]
   )
 
-  const visiblePeerEdges = useMemo(() => {
+  const visiblePeerEdges = useMemo(() => measureDev('Your Knot peer edge derivation', () => {
     const combinedEdges = [...peerEdges, ...expandedSecondDegreeEdges, ...expandedPeerEdges]
     const seenPairs = new Set<string>()
     const result: Array<PeerEdge & { source: (typeof nodes)[number]; target: (typeof nodes)[number] }> = []
@@ -1199,7 +1216,7 @@ function KnotStage({
     }
 
     return result
-  }, [expandedPeerEdges, expandedSecondDegreeEdges, nodesByUserId, peerEdges])
+  }), [expandedPeerEdges, expandedSecondDegreeEdges, nodesByUserId, peerEdges])
 
   const graphPeerEdges: KnotGraphPeerEdge[] = useMemo(() => {
     return visiblePeerEdges.map((edge) => ({
@@ -1344,22 +1361,24 @@ function KnotStage({
           ) : (
             /* ── Desktop: original force graph ── */
             <>
-              <KnotForceGraph
-                me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
-                nodes={nodes}
-                peerEdges={graphPeerEdges}
-                selectedNodeId={selectedNode?.id ?? null}
-                query={query}
-                onClearQuery={() => onQueryChange('')}
-                onResetGraph={onResetGraphState}
-                onSelectNode={(node: KnotGraphNode) => {
-                  const match = nodes.find((item) => item.id === node.id)
-                  if (!match) return
-                  if (match.degree === 'second') { onSelectSecondDegreeUser(match.userId); return }
-                  onSelect(match.connection, match.tab)
-                }}
-                onClearSelection={onClear}
-              />
+              <Suspense fallback={null}>
+                <KnotForceGraph
+                  me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
+                  nodes={nodes}
+                  peerEdges={graphPeerEdges}
+                  selectedNodeId={selectedNode?.id ?? null}
+                  query={query}
+                  onClearQuery={() => onQueryChange('')}
+                  onResetGraph={onResetGraphState}
+                  onSelectNode={(node: KnotGraphNode) => {
+                    const match = nodes.find((item) => item.id === node.id)
+                    if (!match) return
+                    if (match.degree === 'second') { onSelectSecondDegreeUser(match.userId); return }
+                    onSelect(match.connection, match.tab)
+                  }}
+                  onClearSelection={onClear}
+                />
+              </Suspense>
               <div className="k-knot-stats-bar">
                 {connected.length} connected{knotColdCount > 0 ? ` · ${knotColdCount} going cold` : ''} · {visiblePeerEdges.length} inner ties · {expandedSecondDegreeNodes.length} expanded · {incoming.length} decisions · {sent.length} waiting
               </div>

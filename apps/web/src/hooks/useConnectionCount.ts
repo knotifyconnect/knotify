@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiGet } from '../lib/api'
+import { apiGetCached } from '../lib/api'
 
 type ConnectionsResponse = {
   connections: Array<{ status: 'pending' | 'accepted' | 'declined' }>
@@ -14,7 +14,7 @@ export function useConnectionCount() {
 
     async function load() {
       try {
-        const data = await apiGet<ConnectionsResponse>('/api/connections')
+        const data = await apiGetCached<ConnectionsResponse>('/api/connections', { ttlMs: 10_000 })
         if (cancelled) return
         const accepted = (data.connections ?? []).filter((c) => c.status === 'accepted').length
         setCount(accepted)

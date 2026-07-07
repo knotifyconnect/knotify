@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Bell, MessageSquare, Briefcase, Check, X } from 'lucide-react'
-import { apiGet, apiPatch } from '../lib/api'
+import { apiGetCached, apiPatch } from '../lib/api'
 import { KAvatar } from '../lib/knotify'
 
 type Peer = { id: string; full_name: string; username: string; avatar_url: string | null }
@@ -44,8 +44,8 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   const load = useCallback(async () => {
     try {
       const [me, conns] = await Promise.all([
-        apiGet<{ user: { id: string } }>('/api/users/me'),
-        apiGet<{ connections: RawConn[] }>('/api/connections'),
+        apiGetCached<{ user: { id: string } }>('/api/users/me', { ttlMs: 30_000 }),
+        apiGetCached<{ connections: RawConn[] }>('/api/connections', { ttlMs: 10_000 }),
       ])
       const myId = me.user?.id
       const pending = (conns.connections ?? [])

@@ -114,6 +114,31 @@ type ApiRequestOptions = {
 }
 
 const DEFAULT_API_TIMEOUT_MS = 15_000
+const responseCache = new Map<string, { expiresAt: number; value: unknown }>()
+const inFlightGets = new Map<string, Promise<unknown>>()
+let cacheGeneration = 0
+
+function cacheKey(path: string) {
+  return path
+}
+
+export function invalidateApiCache(pathPrefix?: string) {
+  cacheGeneration += 1
+
+  if (!pathPrefix) {
+    responseCache.clear()
+    inFlightGets.clear()
+    return
+  }
+
+  for (const key of responseCache.keys()) {
+    if (key.startsWith(pathPrefix)) responseCache.delete(key)
+  }
+
+  for (const key of inFlightGets.keys()) {
+    if (key.startsWith(pathPrefix)) inFlightGets.delete(key)
+  }
+}
 
 async function fetchApi(
   path: string,
@@ -230,6 +255,43 @@ export async function apiGet<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export async function apiGetCached<T>(
+  path: string,
+  { ttlMs = 10_000 }: { ttlMs?: number } = {}
+): Promise<T> {
+  const key = cacheKey(path)
+  const now = Date.now()
+  const cached = responseCache.get(key)
+
+  if (cached && cached.expiresAt > now) {
+    return cached.value as T
+  }
+
+  const inFlight = inFlightGets.get(key)
+  if (inFlight) return inFlight as Promise<T>
+
+  const requestGeneration = cacheGeneration
+  const request = apiGet<T>(path)
+    .then((value) => {
+      if (ttlMs > 0 && requestGeneration === cacheGeneration) {
+        responseCache.set(key, {
+          expiresAt: Date.now() + ttlMs,
+          value,
+        })
+      }
+
+      return value
+    })
+    .finally(() => {
+      if (inFlightGets.get(key) === request) {
+        inFlightGets.delete(key)
+      }
+    })
+
+  inFlightGets.set(key, request)
+  return request
+}
+
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const headers = await authHeaders()
   const res = await fetchApi(path, {
@@ -238,7 +300,9 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   })
   if (!res.ok) throw await buildError(res)
-  return res.json() as Promise<T>
+  const data = await res.json() as T
+  invalidateApiCache()
+  return data
 }
 
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
@@ -249,7 +313,9 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   })
   if (!res.ok) throw await buildError(res)
-  return res.json() as Promise<T>
+  const data = await res.json() as T
+  invalidateApiCache()
+  return data
 }
 
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
@@ -260,7 +326,9 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   })
   if (!res.ok) throw await buildError(res)
-  return res.json() as Promise<T>
+  const data = await res.json() as T
+  invalidateApiCache()
+  return data
 }
 
 export async function apiDelete(path: string): Promise<void> {
@@ -270,6 +338,7 @@ export async function apiDelete(path: string): Promise<void> {
     headers,
   })
   if (!res.ok) throw await buildError(res)
+  invalidateApiCache()
 }
 
 export async function apiPostForm<T>(
@@ -284,5 +353,7 @@ export async function apiPostForm<T>(
     body: formData,
   }, options)
   if (!res.ok) throw await buildError(res)
-  return res.json() as Promise<T>
+  const data = await res.json() as T
+  invalidateApiCache()
+  return data
 }

@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import { apiGet } from '../lib/api'
+import { apiGetCached } from '../lib/api'
 import { supabase } from '../lib/supabase'
 
 type MessageUnreadResponse = {
@@ -20,7 +20,7 @@ export function useMessageUnreadCount() {
 
       inFlightRef.current = true
       try {
-        const data = await apiGet<MessageUnreadResponse>('/api/conversations/unread')
+        const data = await apiGetCached<MessageUnreadResponse>('/api/conversations/unread', { ttlMs: 5_000 })
         if (!disposedRef.current) {
           setCount(Math.max(0, data.count ?? 0))
         }

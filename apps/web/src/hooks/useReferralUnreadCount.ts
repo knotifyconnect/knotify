@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiGet } from '../lib/api'
+import { apiGetCached } from '../lib/api'
 
 type ReferralUnreadResponse = {
   count: number
@@ -19,7 +19,7 @@ export function useReferralUnreadCount() {
 
     async function load() {
       try {
-        const data = await apiGet<ReferralUnreadResponse>('/api/referrals/unread')
+        const data = await apiGetCached<ReferralUnreadResponse>('/api/referrals/unread', { ttlMs: 5_000 })
         if (!cancelled) setCount(data.count ?? 0)
       } catch {
         if (!cancelled) setCount(0)

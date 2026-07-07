@@ -23,7 +23,7 @@ import { NotificationsBell } from '@/components/NotificationsBell'
 import { nextRankForScore, rankForScore } from '@/lib/knots'
 import { supabase } from '@/lib/supabase'
 import { useSessionStore } from '@/store/session'
-import { apiGet } from '@/lib/api'
+import { apiGetCached } from '@/lib/api'
 import { useReferralUnreadCount } from '@/hooks/useReferralUnreadCount'
 import { useMessageUnreadCount } from '@/hooks/useMessageUnreadCount'
 import { useConnectionCount } from '@/hooks/useConnectionCount'
@@ -96,7 +96,7 @@ export function AppSidebar() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    apiGet<{ user: Me }>('/api/users/me')
+    apiGetCached<{ user: Me }>('/api/users/me', { ttlMs: 30_000 })
       .then((data) => setMe(data.user ?? null))
       .catch(() => setMe(null))
   }, [])
