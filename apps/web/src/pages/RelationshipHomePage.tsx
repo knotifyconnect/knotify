@@ -20,7 +20,8 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet, apiGetCached, apiPost } from '../lib/api'
+import { apiGet, apiGetCached, apiPost, getApiCacheSnapshot } from '../lib/api'
+import { runWhenIdle } from '../lib/schedule'
 import { HomeHub } from '../components/HomeHub'
 import { CompanionHero, type Suggestion, type PeerLite } from '../components/CompanionHero'
 import { KAvatar, KBtn } from '../lib/knotify'
@@ -111,6 +112,14 @@ type HomeData = {
   openAsks:          NetworkItem[]
   pendingForMe:      PendingEntry[]
   sharedEvents:      SharedEvent[]
+}
+
+const EMPTY_HOME_DATA: HomeData = {
+  ranked: [],
+  milestones: [],
+  openAsks: [],
+  pendingForMe: [],
+  sharedEvents: [],
 }
 
 // ── Fallback: build from /api/connections ────────────────────────────────────
@@ -356,8 +365,8 @@ function AskMenu({ peer, onReferral, onMessage, onClose }: {
 
 export function RelationshipHomePage() {
   const navigate = useNavigate()
-  const [data, setData] = useState<HomeData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<HomeData | null>(() => getApiCacheSnapshot<HomeData>('/api/relationship-home') ?? EMPTY_HOME_DATA)
+  const [loading, setLoading] = useState(() => !getApiCacheSnapshot<HomeData>('/api/relationship-home'))
   const [firstName, setFirstName] = useState('')
   const [userId, setUserId] = useState('')
   const [messagingPeer, setMessagingPeer] = useState<string | null>(null)
@@ -381,16 +390,20 @@ export function RelationshipHomePage() {
   })
 
   useEffect(() => {
-    apiGetCached<{ events: Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }> }>('/api/events?limit=3', { ttlMs: 30_000 })
-      .then((r) => setRailEvents(r.events ?? [])).catch(() => {})
+    return runWhenIdle(() => {
+      apiGetCached<{ events: Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }> }>('/api/events?limit=3', { ttlMs: 30_000 })
+        .then((r) => setRailEvents(r.events ?? [])).catch(() => {})
+    })
   }, [])
 
   useEffect(() => {
-    apiGetCached<{ credibility_score: number; tier: string; quests: Array<{ key: string; title: string; points: number; status: string; description?: string }> }>('/api/quests', { ttlMs: 30_000 })
-      .then((r) => {
-        setCredMini({ score: r.credibility_score, tier: r.tier })
-        setSideQuests((r.quests ?? []).filter((q) => q.status === 'claimable').map((q) => ({ key: q.key, title: q.title, points: q.points, description: q.description })).slice(0, 3))
-      }).catch(() => {})
+    return runWhenIdle(() => {
+      apiGetCached<{ credibility_score: number; tier: string; quests: Array<{ key: string; title: string; points: number; status: string; description?: string }> }>('/api/quests', { ttlMs: 30_000 })
+        .then((r) => {
+          setCredMini({ score: r.credibility_score, tier: r.tier })
+          setSideQuests((r.quests ?? []).filter((q) => q.status === 'claimable').map((q) => ({ key: q.key, title: q.title, points: q.points, description: q.description })).slice(0, 3))
+        }).catch(() => {})
+    })
   }, [])
 
   const loadMyAsks = useCallback((uid: string) => {
@@ -404,8 +417,11 @@ export function RelationshipHomePage() {
       .then((r) => setFeedAsks(r.asks ?? [])).catch(() => {})
   }, [])
 
-  useEffect(() => { if (userId) loadMyAsks(userId) }, [userId, loadMyAsks])
-  useEffect(() => { loadFeedAsks() }, [loadFeedAsks])
+  useEffect(() => {
+    if (!userId) return
+    return runWhenIdle(() => loadMyAsks(userId))
+  }, [userId, loadMyAsks])
+  useEffect(() => runWhenIdle(loadFeedAsks), [loadFeedAsks])
 
   function refreshAsks() {
     if (userId) loadMyAsks(userId)
@@ -414,7 +430,9 @@ export function RelationshipHomePage() {
 
   useEffect(() => {
     if (inviteDismissed) return
-    apiGetCached<{ url: string }>('/api/invites/me', { ttlMs: 60_000 }).then((r) => setInviteUrl(r.url)).catch(() => {})
+    return runWhenIdle(() => {
+      apiGetCached<{ url: string }>('/api/invites/me', { ttlMs: 60_000 }).then((r) => setInviteUrl(r.url)).catch(() => {})
+    })
   }, [inviteDismissed])
 
   async function copyInviteLink() {
@@ -435,6 +453,12 @@ export function RelationshipHomePage() {
     let mounted = true
 
     async function loadHome() {
+      const cachedMe = getApiCacheSnapshot<{ user: { full_name: string; id: string } }>('/api/users/me')
+      if (cachedMe?.user) {
+        setFirstName(cachedMe.user.full_name?.split(' ')[0] ?? '')
+        setUserId(cachedMe.user.id ?? '')
+      }
+
       const mePromise = apiGetCached<{ user: { full_name: string; id: string } }>('/api/users/me', { ttlMs: 30_000 })
         .catch(() => null)
 
@@ -505,16 +529,6 @@ export function RelationshipHomePage() {
       signals:         entry.signals,
       outcome,
     }).catch(() => {})
-  }
-
-  if (loading) {
-    return (
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 20px' }}>
-        <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 16, color: 'var(--ink-muted)' }}>
-          Loading your relationships…
-        </p>
-      </div>
-    )
   }
 
   const rankedRaw        = data?.ranked ?? []
@@ -913,7 +927,7 @@ export function RelationshipHomePage() {
       )}
 
       <DeskHeader
-        kicker={`Home · ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`}
+        kicker={`Home · ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}${loading ? ' · updating' : ''}`}
         title={<span style={{ fontStyle: 'italic' }}>Welcome back{firstName ? `, ${firstName}` : ''}.</span>}
         right={<>
           {credMini && (

@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiDelete, apiGet, apiGetCached, apiPatch, apiPost } from '../lib/api'
+import { apiDelete, apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
+import { runWhenIdle } from '../lib/schedule'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import type { KnotGraphNode, KnotGraphPeerEdge, KnotHealthState } from '../components/knot/KnotForceGraph'
 import { KnotMobileGraph, MobileBottomSheet, MobileNodeOverlay, type MeNode } from '../components/knot/KnotMobileGraph'
@@ -247,6 +248,11 @@ function otherUserId(connection: Connection, meId: string | null) {
   return connection.user?.id ?? (connection.requester_id === meId ? connection.addressee_id : connection.requester_id)
 }
 
+const ME_PATH = '/api/users/me'
+const CONNECTIONS_PATH = '/api/connections'
+const CONNECTION_MAP_PATH = '/api/connections/map'
+const RELATIONSHIP_HOME_PATH = '/api/relationship-home'
+
 function measureDev<T>(label: string, fn: () => T): T {
   if (!import.meta.env.DEV || typeof performance === 'undefined') return fn()
   const startedAt = performance.now()
@@ -257,10 +263,13 @@ function measureDev<T>(label: string, fn: () => T): T {
 
 export function MapPage() {
   const navigate = useNavigate()
-  const [meId, setMeId] = useState<string | null>(null)
-  const [meUser, setMeUser] = useState<ConnectionUser | null>(null)
-  const [connections, setConnections] = useState<Connection[]>([])
-  const [peerEdges, setPeerEdges] = useState<PeerEdge[]>([])
+  const cachedMe = getApiCacheSnapshot<MeResponse>(ME_PATH)
+  const cachedConnections = getApiCacheSnapshot<ConnectionsResponse>(CONNECTIONS_PATH)
+  const cachedMap = getApiCacheSnapshot<ConnectionMapResponse>(CONNECTION_MAP_PATH)
+  const [meId, setMeId] = useState<string | null>(() => cachedMe?.user.id ?? null)
+  const [meUser, setMeUser] = useState<ConnectionUser | null>(() => cachedMe?.user ?? null)
+  const [connections, setConnections] = useState<Connection[]>(() => cachedConnections?.connections ?? [])
+  const [peerEdges, setPeerEdges] = useState<PeerEdge[]>(() => cachedMap?.peerEdges ?? [])
   const [expandedRootUserId, setExpandedRootUserId] = useState<string | null>(null)
   const [expandedSecondDegreeNodes, setExpandedSecondDegreeNodes] = useState<ExpandedKnotNode[]>([])
   const [expandedSecondDegreeEdges, setExpandedSecondDegreeEdges] = useState<PeerEdge[]>([])
@@ -274,7 +283,7 @@ export function MapPage() {
   const [selectedSecondDegreeUserId, setSelectedSecondDegreeUserId] = useState<string | null>(null)
   const [requestingUserId, setRequestingUserId] = useState<string | null>(null)
   const [requestFeedback, setRequestFeedback] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !cachedConnections)
   const [error, setError] = useState<string | null>(null)
   const [isMobileTop, setIsMobileTop] = useState(() => window.innerWidth < 768)
   const [networkSheetOpen, setNetworkSheetOpen] = useState(false)
@@ -295,9 +304,9 @@ export function MapPage() {
 
     try {
       const [meResult, connectionResult, mapResult] = await Promise.all([
-        apiGetCached<MeResponse>('/api/users/me', { ttlMs: 30_000 }),
-        apiGetCached<ConnectionsResponse>('/api/connections', { ttlMs: 10_000 }),
-        apiGet<ConnectionMapResponse>('/api/connections/map'),
+        apiGetCached<MeResponse>(ME_PATH, { ttlMs: 30_000 }),
+        apiGetCached<ConnectionsResponse>(CONNECTIONS_PATH, { ttlMs: 10_000 }),
+        apiGetCached<ConnectionMapResponse>(CONNECTION_MAP_PATH, { ttlMs: 10_000 }),
       ])
 
       setMeId(meResult.user.id)
@@ -308,30 +317,32 @@ export function MapPage() {
       // Load engine signals separately, never blocks knot from rendering.
       // The graph reflects the Relationship OS: warmth, open asks, booked
       // coffees and pending follow-ups all render on the nodes.
-      apiGet<{
-        ranked: Array<{
-          peerId: string
-          state: 'warm' | 'cooling' | 'cold' | 'new'
-          signals: { daysSince: number; hasOpenAsk?: boolean; hasUpcomingMeeting?: boolean; needsFollowUp?: boolean }
-        }>
-      }>('/api/relationship-home')
-        .then((homeResult) => {
-          const map = new Map<string, KnotSignals>()
-          for (const entry of homeResult.ranked ?? []) {
-            map.set(entry.peerId, {
-              health:        entry.state,
-              daysSince:     entry.signals?.daysSince ?? 0,
-              hasOpenAsk:    !!entry.signals?.hasOpenAsk,
-              hasCoffee:     !!entry.signals?.hasUpcomingMeeting,
-              needsFollowUp: !!entry.signals?.needsFollowUp,
-            })
-          }
-          setSignalsByUserId(map)
-          if (import.meta.env.DEV && typeof performance !== 'undefined') {
-            console.debug(`[perf] Your Knot signals loaded: ${Math.round(performance.now() - startedAt)}ms`)
-          }
-        })
-        .catch(() => { /* engine signals are non-critical */ })
+      runWhenIdle(() => {
+        apiGetCached<{
+          ranked: Array<{
+            peerId: string
+            state: 'warm' | 'cooling' | 'cold' | 'new'
+            signals: { daysSince: number; hasOpenAsk?: boolean; hasUpcomingMeeting?: boolean; needsFollowUp?: boolean }
+          }>
+        }>(RELATIONSHIP_HOME_PATH, { ttlMs: 10_000 })
+          .then((homeResult) => {
+            const map = new Map<string, KnotSignals>()
+            for (const entry of homeResult.ranked ?? []) {
+              map.set(entry.peerId, {
+                health:        entry.state,
+                daysSince:     entry.signals?.daysSince ?? 0,
+                hasOpenAsk:    !!entry.signals?.hasOpenAsk,
+                hasCoffee:     !!entry.signals?.hasUpcomingMeeting,
+                needsFollowUp: !!entry.signals?.needsFollowUp,
+              })
+            }
+            setSignalsByUserId(map)
+            if (import.meta.env.DEV && typeof performance !== 'undefined') {
+              console.debug(`[perf] Your Knot signals loaded: ${Math.round(performance.now() - startedAt)}ms`)
+            }
+          })
+          .catch(() => { /* engine signals are non-critical */ })
+      })
       setExpandedRootUserId(null)
       setExpandedSecondDegreeNodes([])
       setExpandedSecondDegreeEdges([])

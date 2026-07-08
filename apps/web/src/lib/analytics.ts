@@ -1,11 +1,9 @@
 import type posthog from 'posthog-js'
 import type { User } from '@supabase/supabase-js'
+import { getConsent, setConsent as persistConsent, type ConsentChoice } from './analyticsConsent'
 
-const CONSENT_KEY = 'knotify:analytics-consent'
 const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY as string | undefined
 const POSTHOG_HOST = (import.meta.env.VITE_POSTHOG_HOST as string | undefined) || 'https://eu.i.posthog.com'
-
-export type ConsentChoice = 'granted' | 'denied'
 
 let initialized = false
 let posthogClient: typeof posthog | null = null
@@ -23,21 +21,8 @@ function withPostHog(action: (client: typeof posthog) => void) {
   })
 }
 
-export function getConsent(): ConsentChoice | null {
-  try {
-    const value = window.localStorage.getItem(CONSENT_KEY)
-    return value === 'granted' || value === 'denied' ? value : null
-  } catch {
-    return null
-  }
-}
-
 export function setConsent(choice: ConsentChoice) {
-  try {
-    window.localStorage.setItem(CONSENT_KEY, choice)
-  } catch {
-    // If localStorage is unavailable, fall back to in-memory only for this tab.
-  }
+  persistConsent(choice)
   if (choice === 'granted') initAnalytics()
   else if (initialized) posthogClient?.opt_out_capturing()
 }

@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet, apiPatch, apiPost } from '../lib/api'
+import { apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
+import { runWhenIdle } from '../lib/schedule'
 import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '../lib/knotify'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
 
@@ -174,15 +175,34 @@ export function DiscoverPage() {
   const [error, setError] = useState<string | null>(null)
 
   async function loadInitial() {
-    setLoadingInitial(true)
+    const cachedMe = getApiCacheSnapshot<{ user: Me }>('/api/users/me')
+    const cachedSkills = getApiCacheSnapshot<{ skills: Skill[] }>('/api/users/me/profile-extended')
+    const cachedConnections = getApiCacheSnapshot<{ connections: Connection[] }>('/api/connections')
+    const cachedSuggestions = getApiCacheSnapshot<{ suggestions: DiscoverUser[] }>('/api/users/suggestions')
+
+    if (cachedMe?.user) {
+      setMe(cachedMe.user)
+      setMeSkills(cachedSkills?.skills ?? [])
+      if (cachedConnections?.connections) {
+        const state = buildRelationState(cachedConnections.connections, cachedMe.user.id)
+        setRelations(state.relations)
+        setConnectionIds(state.ids)
+        setIncomingRequests(state.incoming)
+        setOutgoingRequests(state.outgoing)
+        setAcceptedConnections(state.accepted)
+      }
+      setSuggestions(cachedSuggestions?.suggestions ?? [])
+      setLoadingInitial(false)
+    } else {
+      setLoadingInitial(true)
+    }
     setError(null)
 
     try {
-      const [meResult, extendedResult, connectionsResult, suggestionsResult] = await Promise.all([
-        apiGet<{ user: Me }>('/api/users/me'),
-        apiGet<{ skills: Skill[] }>('/api/users/me/profile-extended'),
-        apiGet<{ connections: Connection[] }>('/api/connections'),
-        apiGet<{ suggestions: DiscoverUser[] }>('/api/users/suggestions').catch(() => ({ suggestions: [] })),
+      const [meResult, extendedResult, connectionsResult] = await Promise.all([
+        apiGetCached<{ user: Me }>('/api/users/me', { ttlMs: 30_000 }),
+        apiGetCached<{ skills: Skill[] }>('/api/users/me/profile-extended', { ttlMs: 30_000 }),
+        apiGetCached<{ connections: Connection[] }>('/api/connections', { ttlMs: 10_000 }),
       ])
 
       const state = buildRelationState(connectionsResult.connections ?? [], meResult.user.id)
@@ -194,7 +214,13 @@ export function DiscoverPage() {
       setIncomingRequests(state.incoming)
       setOutgoingRequests(state.outgoing)
       setAcceptedConnections(state.accepted)
-      setSuggestions(suggestionsResult.suggestions ?? [])
+      setLoadingInitial(false)
+
+      runWhenIdle(() => {
+        apiGetCached<{ suggestions: DiscoverUser[] }>('/api/users/suggestions', { ttlMs: 30_000 })
+          .then((suggestionsResult) => setSuggestions(suggestionsResult.suggestions ?? []))
+          .catch(() => setSuggestions([]))
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load Discover')
     } finally {

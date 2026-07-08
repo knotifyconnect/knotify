@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Lock, Star } from 'lucide-react'
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api'
+import { apiGetCached, apiPost, apiPatch, apiDelete, getApiCacheSnapshot } from '@/lib/api'
 import { trackEvent } from '@/lib/analytics'
+import { runWhenIdle } from '@/lib/schedule'
 
 // ── Types (mirror /api/gigs responses) ──────────────────────────────────────
 type RewardType = 'coffee' | 'paid' | 'free'
@@ -57,6 +58,11 @@ type OutgoingRequest = {
 
 type Eligibility = { credibility_score: number; can_offer: boolean; unlock_at: number }
 
+const GIGS_PATH = '/api/gigs'
+const GIGS_ELIGIBILITY_PATH = '/api/gigs/eligibility'
+const MY_GIGS_PATH = '/api/gigs/mine'
+const OUTGOING_GIG_REQUESTS_PATH = '/api/gigs/requests/outgoing'
+
 const GIG_TYPES = [
   { value: 'cv_review', label: 'CV review' },
   { value: 'referral', label: 'Referral' },
@@ -109,11 +115,11 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
   const navigate = useNavigate()
   const [tab, setTab] = useState<'browse' | 'requests' | 'mine'>('browse')
 
-  const [gigs, setGigs] = useState<Gig[]>([])
-  const [myGigs, setMyGigs] = useState<MyGig[]>([])
-  const [outgoing, setOutgoing] = useState<OutgoingRequest[]>([])
-  const [elig, setElig] = useState<Eligibility | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [gigs, setGigs] = useState<Gig[]>(() => getApiCacheSnapshot<{ gigs: Gig[] }>(GIGS_PATH)?.gigs ?? [])
+  const [myGigs, setMyGigs] = useState<MyGig[]>(() => getApiCacheSnapshot<{ gigs: MyGig[] }>(MY_GIGS_PATH)?.gigs ?? [])
+  const [outgoing, setOutgoing] = useState<OutgoingRequest[]>(() => getApiCacheSnapshot<{ requests: OutgoingRequest[] }>(OUTGOING_GIG_REQUESTS_PATH)?.requests ?? [])
+  const [elig, setElig] = useState<Eligibility | null>(() => getApiCacheSnapshot<Eligibility>(GIGS_ELIGIBILITY_PATH))
+  const [loading, setLoading] = useState(() => !getApiCacheSnapshot<{ gigs: Gig[] }>(GIGS_PATH))
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -130,19 +136,29 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
   const [requestGig, setRequestGig] = useState<Gig | null>(null)
   const [reviewReq, setReviewReq] = useState<OutgoingRequest | null>(null)
 
-  const load = useCallback(async () => {
+  const loadSecondary = useCallback(async () => {
+    const [e, mine, out] = await Promise.all([
+      apiGetCached<Eligibility>(GIGS_ELIGIBILITY_PATH, { ttlMs: 30_000 }),
+      apiGetCached<{ gigs: MyGig[] }>(MY_GIGS_PATH, { ttlMs: 10_000 }),
+      apiGetCached<{ requests: OutgoingRequest[] }>(OUTGOING_GIG_REQUESTS_PATH, { ttlMs: 10_000 }),
+    ])
+    setElig(e); setMyGigs(mine.gigs); setOutgoing(out.requests)
+  }, [])
+
+  const load = useCallback(async ({ includeSecondary = false }: { includeSecondary?: boolean } = {}) => {
     try {
-      const [g, e, mine, out] = await Promise.all([
-        apiGet<{ gigs: Gig[] }>('/api/gigs'),
-        apiGet<Eligibility>('/api/gigs/eligibility'),
-        apiGet<{ gigs: MyGig[] }>('/api/gigs/mine'),
-        apiGet<{ requests: OutgoingRequest[] }>('/api/gigs/requests/outgoing'),
-      ])
-      setGigs(g.gigs); setElig(e); setMyGigs(mine.gigs); setOutgoing(out.requests)
+      const g = await apiGetCached<{ gigs: Gig[] }>(GIGS_PATH, { ttlMs: 10_000 })
+      setGigs(g.gigs)
+      setLoading(false)
+      if (includeSecondary) {
+        await loadSecondary()
+      } else {
+        runWhenIdle(() => { void loadSecondary() }, 1200)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
     } finally { setLoading(false) }
-  }, [])
+  }, [loadSecondary])
   useEffect(() => { void load() }, [load])
 
   async function createGig(e: React.FormEvent) {
@@ -155,7 +171,7 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
       })
       trackEvent('gig_created', { gig_type: gigType, reward_type: rewardType })
       setTitle(''); setDescription(''); setPriceEur(''); setShowForm(false)
-      await load()
+      await load({ includeSecondary: true })
       setTab('mine')
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not create gig') }
     finally { setFormBusy(false) }
@@ -168,7 +184,7 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
       await apiPost(`/api/gigs/${requestGig.id}/request`, { message: message || null })
       trackEvent('gig_requested')
       setRequestGig(null)
-      await load()
+      await load({ includeSecondary: true })
       setTab('requests')
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not send request') }
     finally { setBusyId(null) }
@@ -178,7 +194,7 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
     setBusyId(id); setError(null)
     try {
       await apiPatch(`/api/gigs/requests/${id}`, { action })
-      await load()
+      await load({ includeSecondary: true })
     } catch (err) { setError(err instanceof Error ? err.message : 'Action failed') }
     finally { setBusyId(null) }
   }
@@ -196,14 +212,14 @@ export function GigsPage({ embedded }: { embedded?: boolean }) {
 
   async function closeReopen(g: MyGig) {
     setBusyId(g.id)
-    try { await apiPatch(`/api/gigs/${g.id}`, { status: g.status === 'open' ? 'closed' : 'open' }); await load() }
+    try { await apiPatch(`/api/gigs/${g.id}`, { status: g.status === 'open' ? 'closed' : 'open' }); await load({ includeSecondary: true }) }
     catch (err) { setError(err instanceof Error ? err.message : 'Failed') }
     finally { setBusyId(null) }
   }
   async function deleteGig(g: MyGig) {
     if (!window.confirm('Delete this gig? Open requests will be removed.')) return
     setBusyId(g.id)
-    try { await apiDelete(`/api/gigs/${g.id}`); await load() }
+    try { await apiDelete(`/api/gigs/${g.id}`); await load({ includeSecondary: true }) }
     catch (err) { setError(err instanceof Error ? err.message : 'Failed') }
     finally { setBusyId(null) }
   }

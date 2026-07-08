@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { SmilePlus, Trash2 } from 'lucide-react'
-import { apiGet, apiPatch, apiPost } from '../lib/api'
+import { apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { supabase } from '../lib/supabase'
+import { runWhenIdle } from '../lib/schedule'
 
 type UserPreview = {
   id: string
@@ -199,6 +200,11 @@ type MeetingSummary = {
   am_initiator: boolean
 }
 
+const CONVERSATIONS_PATH = '/api/conversations'
+const MEETINGS_PATH = '/api/meetings'
+const CONNECTIONS_PATH = '/api/connections'
+const CAFES_PATH = '/api/cafes'
+
 function formatMeetingTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -267,12 +273,12 @@ const MSG_MENU_ITEM: React.CSSProperties = {
 }
 
 export function MessagesPage() {
-  const [conversations, setConversations] = useState<ConversationSummary[]>([])
-  const [connections, setConnections] = useState<Connection[]>([])
+  const [conversations, setConversations] = useState<ConversationSummary[]>(() => getApiCacheSnapshot<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)?.conversations ?? [])
+  const [connections, setConnections] = useState<Connection[]>(() => getApiCacheSnapshot<{ connections: Connection[] }>(CONNECTIONS_PATH)?.connections ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [optimistic, setOptimistic] = useState<Record<string, OptimisticMessage[]>>({})
-  const [loadingConvs, setLoadingConvs] = useState(false)
+  const [loadingConvs, setLoadingConvs] = useState(() => !getApiCacheSnapshot<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH))
   const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [sendLoading, setSendLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -282,8 +288,8 @@ export function MessagesPage() {
   const [newChatSearch, setNewChatSearch] = useState('')
   const [creatingFor, setCreatingFor] = useState<string | null>(null)
   const [coffeeOpen, setCoffeeOpen] = useState(false)
-  const [cafeOptions, setCafeOptions] = useState<CafeOption[]>([])
-  const [meetings, setMeetings] = useState<MeetingSummary[]>([])
+  const [cafeOptions, setCafeOptions] = useState<CafeOption[]>(() => getApiCacheSnapshot<{ cafes: CafeOption[] }>(CAFES_PATH)?.cafes ?? [])
+  const [meetings, setMeetings] = useState<MeetingSummary[]>(() => getApiCacheSnapshot<{ meetings: MeetingSummary[] }>(MEETINGS_PATH)?.meetings ?? [])
   const [meetingActionId, setMeetingActionId] = useState<string | null>(null)
   const [meetingNow, setMeetingNow] = useState(() => Date.now())
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
@@ -307,6 +313,8 @@ export function MessagesPage() {
   const scrollIntentRef = useRef<'none' | 'open' | 'own-message'>('none')
   const openCreateInFlightRef = useRef<Map<string, Promise<string | null>>>(new Map())
   const handledDeepLinkRef = useRef<string | null>(null)
+  const loadConvsInFlightRef = useRef<Promise<void> | null>(null)
+  const loadMeetingsInFlightRef = useRef<Promise<void> | null>(null)
 
   const selectedConv = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
@@ -385,24 +393,30 @@ export function MessagesPage() {
   }, [lastMine])
 
   async function loadConvs(keepErr = false) {
+    if (loadConvsInFlightRef.current) return loadConvsInFlightRef.current
     setLoadingConvs(true)
-    try {
-      const res = await apiGet<{ conversations: ConversationSummary[] }>('/api/conversations')
-      const next = res.conversations ?? []
-      setConversations(next)
-      if (!next.length) {
-        setSelectedId(null)
-        setMessages([])
-      } else if (selectedId && !next.some((c) => c.id === selectedId)) {
-        setSelectedId(null)
-        setMessages([])
+    const task = (async () => {
+      try {
+        const res = await apiGet<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)
+        const next = res.conversations ?? []
+        setConversations(next)
+        if (!next.length) {
+          setSelectedId(null)
+          setMessages([])
+        } else if (selectedId && !next.some((c) => c.id === selectedId)) {
+          setSelectedId(null)
+          setMessages([])
+        }
+        if (!keepErr) setError(null)
+      } catch (err) {
+        if (!keepErr) setError(err instanceof Error ? err.message : 'Failed loading')
+      } finally {
+        setLoadingConvs(false)
+        loadConvsInFlightRef.current = null
       }
-      if (!keepErr) setError(null)
-    } catch (err) {
-      if (!keepErr) setError(err instanceof Error ? err.message : 'Failed loading')
-    } finally {
-      setLoadingConvs(false)
-    }
+    })()
+    loadConvsInFlightRef.current = task
+    return task
   }
 
   async function loadMsgs(id: string, keepErr = false, quiet = false) {
@@ -437,12 +451,19 @@ export function MessagesPage() {
   }
 
   async function loadMeetings(keepErr = false) {
-    try {
-      const res = await apiGet<{ meetings: MeetingSummary[] }>('/api/meetings')
-      setMeetings(res.meetings ?? [])
-    } catch (err) {
-      if (!keepErr) setError(err instanceof Error ? err.message : 'Failed loading meetings')
-    }
+    if (loadMeetingsInFlightRef.current) return loadMeetingsInFlightRef.current
+    const task = (async () => {
+      try {
+        const res = await apiGet<{ meetings: MeetingSummary[] }>(MEETINGS_PATH)
+        setMeetings(res.meetings ?? [])
+      } catch (err) {
+        if (!keepErr) setError(err instanceof Error ? err.message : 'Failed loading meetings')
+      } finally {
+        loadMeetingsInFlightRef.current = null
+      }
+    })()
+    loadMeetingsInFlightRef.current = task
+    return task
   }
 
   async function scheduleCoffee(payload: { inviteeId: string; scheduledAt: string; cafeId: string | null; locationText: string | null; note: string | null }): Promise<void> {
@@ -485,10 +506,12 @@ export function MessagesPage() {
   useEffect(() => {
     void loadConvs()
     void loadMeetings(true)
-    void (async () => {
-      try { const r = await apiGet<{ connections: Connection[] }>('/api/connections'); setConnections(r.connections ?? []) } catch { /* noop */ }
-      try { const c = await apiGet<{ cafes: CafeOption[] }>('/api/cafes'); setCafeOptions(c.cafes ?? []) } catch { /* noop */ }
-    })()
+    return runWhenIdle(() => {
+      void (async () => {
+        try { const r = await apiGetCached<{ connections: Connection[] }>(CONNECTIONS_PATH, { ttlMs: 10_000 }); setConnections(r.connections ?? []) } catch { /* noop */ }
+        try { const c = await apiGetCached<{ cafes: CafeOption[] }>(CAFES_PATH, { ttlMs: 60_000 }); setCafeOptions(c.cafes ?? []) } catch { /* noop */ }
+      })()
+    }, 1200)
   }, [])
 
   useEffect(() => {
@@ -542,12 +565,18 @@ export function MessagesPage() {
   useEffect(() => {
     const channel = supabase
       .channel('messages:any')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
+        if (document.hidden) return
+        const changedConversationId =
+          typeof payload.new === 'object' && payload.new && 'conversation_id' in payload.new
+            ? String(payload.new.conversation_id)
+            : null
+        if (changedConversationId && changedConversationId === selectedId) return
         void loadConvs(true)
       })
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
-  }, [])
+  }, [selectedId])
 
   // Reliability path: keep the open thread fresh even if Supabase message realtime
   // misses an event. Keep this single-flight so slow requests cannot pile up.
@@ -602,6 +631,7 @@ export function MessagesPage() {
   // so refresh the thread immediately and once after the receipt insert settles.
   useEffect(() => {
     function refreshMeetingState() {
+      if (document.hidden) return
       void loadMeetings(true)
       void loadConvs(true)
       if (selectedId) void loadMsgs(selectedId, true)

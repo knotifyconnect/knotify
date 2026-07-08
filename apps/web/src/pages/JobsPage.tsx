@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet, apiGetCached, apiPatch, apiPost } from '../lib/api'
+import { apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
-import { GigsPage } from './GigsPage'
+import { runWhenIdle } from '../lib/schedule'
+
+const GigsPage = lazy(() => import('./GigsPage').then((m) => ({ default: m.GigsPage })))
+const DEFAULT_JOBS_PATH = '/api/jobs?status=open'
+const REFERRAL_PENDING_PATH = '/api/referrals/pending'
+const REFERRAL_IN_PROGRESS_PATH = '/api/referrals/in-progress'
+const REFERRAL_RECEIVED_PATH = '/api/referrals/received'
+const REFERRAL_SENT_PATH = '/api/referrals/sent'
 
 type JobListItem = {
   id: string
@@ -168,8 +175,8 @@ function historyEventTitle(event: ReferralHistoryEvent) {
 
 export function JobsPage() {
   const navigate = useNavigate()
-  const [jobs, setJobs] = useState<JobListItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [jobs, setJobs] = useState<JobListItem[]>(() => getApiCacheSnapshot<{ jobs: JobListItem[] }>(DEFAULT_JOBS_PATH)?.jobs ?? [])
+  const [loading, setLoading] = useState(() => !getApiCacheSnapshot<{ jobs: JobListItem[] }>(DEFAULT_JOBS_PATH))
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState('')
@@ -194,22 +201,22 @@ export function JobsPage() {
   const [requestMessage, setRequestMessage] = useState<string | null>(null)
   const [requestError, setRequestError] = useState<string | null>(null)
 
-  const [pendingReferrals, setPendingReferrals] = useState<ReferralItem[]>([])
-  const [pendingLoading, setPendingLoading] = useState(true)
+  const [pendingReferrals, setPendingReferrals] = useState<ReferralItem[]>(() => getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_PENDING_PATH)?.referrals ?? [])
+  const [pendingLoading, setPendingLoading] = useState(() => !getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_PENDING_PATH))
   const [respondingId, setRespondingId] = useState<string | null>(null)
 
-  const [inProgressReferrals, setInProgressReferrals] = useState<ReferralItem[]>([])
-  const [inProgressLoading, setInProgressLoading] = useState(true)
+  const [inProgressReferrals, setInProgressReferrals] = useState<ReferralItem[]>(() => getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_IN_PROGRESS_PATH)?.referrals ?? [])
+  const [inProgressLoading, setInProgressLoading] = useState(() => !getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_IN_PROGRESS_PATH))
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [expandedFormId, setExpandedFormId] = useState<string | null>(null)
   const [forms, setForms] = useState<Record<string, ReferralFormState>>({})
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
-  const [myReferrals, setMyReferrals] = useState<ReferralItem[]>([])
-  const [myReferralsLoading, setMyReferralsLoading] = useState(true)
+  const [myReferrals, setMyReferrals] = useState<ReferralItem[]>(() => getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_RECEIVED_PATH)?.referrals ?? [])
+  const [myReferralsLoading, setMyReferralsLoading] = useState(() => !getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_RECEIVED_PATH))
   const [convertingId, setConvertingId] = useState<string | null>(null)
-  const [sentReferrals, setSentReferrals] = useState<ReferralItem[]>([])
-  const [sentReferralsLoading, setSentReferralsLoading] = useState(true)
+  const [sentReferrals, setSentReferrals] = useState<ReferralItem[]>(() => getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_SENT_PATH)?.referrals ?? [])
+  const [sentReferralsLoading, setSentReferralsLoading] = useState(() => !getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_SENT_PATH))
   const [historyByReferral, setHistoryByReferral] = useState<Record<string, ReferralHistoryEvent[]>>({})
   const [historyOpenByReferral, setHistoryOpenByReferral] = useState<Record<string, boolean>>({})
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null)
@@ -249,7 +256,7 @@ export function JobsPage() {
   async function loadPendingReferrals() {
     setPendingLoading(true)
     try {
-      const data = await apiGetCached<{ referrals: ReferralItem[] }>('/api/referrals/pending', { ttlMs: 10_000 })
+      const data = await apiGetCached<{ referrals: ReferralItem[] }>(REFERRAL_PENDING_PATH, { ttlMs: 10_000 })
       setPendingReferrals(data.referrals ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load pending referrals')
@@ -262,7 +269,7 @@ export function JobsPage() {
   async function loadInProgressReferrals() {
     setInProgressLoading(true)
     try {
-      const data = await apiGetCached<{ referrals: ReferralItem[] }>('/api/referrals/in-progress', { ttlMs: 10_000 })
+      const data = await apiGetCached<{ referrals: ReferralItem[] }>(REFERRAL_IN_PROGRESS_PATH, { ttlMs: 10_000 })
       const refs = data.referrals ?? []
       setInProgressReferrals(refs)
       setForms((prev) => {
@@ -283,7 +290,7 @@ export function JobsPage() {
   async function loadMyReferrals() {
     setMyReferralsLoading(true)
     try {
-      const data = await apiGetCached<{ referrals: ReferralItem[] }>('/api/referrals/received', { ttlMs: 10_000 })
+      const data = await apiGetCached<{ referrals: ReferralItem[] }>(REFERRAL_RECEIVED_PATH, { ttlMs: 10_000 })
       setMyReferrals(data.referrals ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load your referral requests')
@@ -296,7 +303,7 @@ export function JobsPage() {
   async function loadSentReferrals() {
     setSentReferralsLoading(true)
     try {
-      const data = await apiGetCached<{ referrals: ReferralItem[] }>('/api/referrals/sent', { ttlMs: 10_000 })
+      const data = await apiGetCached<{ referrals: ReferralItem[] }>(REFERRAL_SENT_PATH, { ttlMs: 10_000 })
       setSentReferrals(data.referrals ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load referrals where you are the referrer')
@@ -312,7 +319,7 @@ export function JobsPage() {
 
   useEffect(() => {
     void loadJobs()
-    void reloadReferralSections()
+    return runWhenIdle(() => void reloadReferralSections(), 1800)
   }, [])
 
   // Debounced search
@@ -577,7 +584,9 @@ export function JobsPage() {
     return (
       <div style={{ maxWidth: 800, margin: '0 auto', padding: 'clamp(16px,4vw,40px) clamp(14px,4vw,40px) 96px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
         <SectionToggle />
-        <GigsPage embedded />
+        <Suspense fallback={<div style={{ padding: 24, color: 'var(--ink-muted)' }}>Loading gigs...</div>}>
+          <GigsPage embedded />
+        </Suspense>
       </div>
     )
   }

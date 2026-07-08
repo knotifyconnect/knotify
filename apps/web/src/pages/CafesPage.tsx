@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 import { Coffee, Copy, MapPin, Clock, Pin } from 'lucide-react'
 import { KBtn, KCard, KPill } from '@/lib/knotify'
-import { apiGet, apiPost } from '@/lib/api'
+import { apiGetCached, apiPost, getApiCacheSnapshot } from '@/lib/api'
 import { T, DeskPage, DeskHeader, SectionLabel, Chip, RailCard } from '@/lib/desk'
 
 type Cafe = {
@@ -28,9 +28,11 @@ type Checkin = {
   redeemed_at: string | null
 }
 
+const CAFES_PATH = '/api/cafes'
+
 export function CafesPage() {
-  const [cafes, setCafes] = useState<Cafe[]>([])
-  const [loading, setLoading] = useState(true)
+  const [cafes, setCafes] = useState<Cafe[]>(() => getApiCacheSnapshot<{ cafes: Cafe[] }>(CAFES_PATH)?.cafes ?? [])
+  const [loading, setLoading] = useState(() => !getApiCacheSnapshot<{ cafes: Cafe[] }>(CAFES_PATH))
   const [error, setError] = useState<string | null>(null)
   const [checkinFor, setCheckinFor] = useState<{ cafe: Cafe; checkin: Checkin } | null>(null)
   const [checkingInId, setCheckingInId] = useState<string | null>(null)
@@ -43,7 +45,7 @@ export function CafesPage() {
 
   useEffect(() => {
     let mounted = true
-    apiGet<{ cafes: Cafe[] }>('/api/cafes')
+    apiGetCached<{ cafes: Cafe[] }>(CAFES_PATH, { ttlMs: 60_000 })
       .then((d) => { if (mounted) setCafes(d.cafes ?? []) })
       .catch((err) => { if (mounted) setError(err instanceof Error ? err.message : 'Failed loading cafés') })
       .finally(() => { if (mounted) setLoading(false) })

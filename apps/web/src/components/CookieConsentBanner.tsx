@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { KBtn } from '../lib/knotify'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { getConsent, setConsent } from '../lib/analytics'
+import { getConsent, setConsent } from '../lib/analyticsConsent'
 
 export function CookieConsentBanner() {
   const isMobile = useIsMobile()
@@ -18,6 +18,9 @@ export function CookieConsentBanner() {
 
   function choose(choice: 'granted' | 'denied') {
     setConsent(choice)
+    if (choice === 'granted') {
+      void import('../lib/analytics').then((m) => m.initAnalytics()).catch(() => {})
+    }
     setVisible(false)
   }
 

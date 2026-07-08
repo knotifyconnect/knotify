@@ -113,7 +113,8 @@ type ApiRequestOptions = {
 }
 
 const DEFAULT_API_TIMEOUT_MS = 15_000
-const responseCache = new Map<string, { expiresAt: number; value: unknown }>()
+const DEFAULT_STALE_TTL_MS = 5 * 60_000
+const responseCache = new Map<string, { expiresAt: number; staleUntil: number; value: unknown }>()
 const inFlightGets = new Map<string, Promise<unknown>>()
 let cacheGeneration = 0
 
@@ -143,6 +144,21 @@ export function invalidateApiCache(pathPrefix?: string) {
   for (const key of inFlightGets.keys()) {
     if (cacheKeyPath(key).startsWith(pathPrefix)) inFlightGets.delete(key)
   }
+}
+
+export function getApiCacheSnapshot<T>(
+  path: string,
+  { allowStale = true }: { allowStale?: boolean } = {}
+): T | null {
+  const cached = responseCache.get(cacheKey(path))
+  if (!cached) return null
+
+  const now = Date.now()
+  if (cached.expiresAt > now || (allowStale && cached.staleUntil > now)) {
+    return cached.value as T
+  }
+
+  return null
 }
 
 async function fetchApi(
@@ -264,7 +280,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 
 export async function apiGetCached<T>(
   path: string,
-  { ttlMs = 10_000 }: { ttlMs?: number } = {}
+  { ttlMs = 10_000, staleMs = DEFAULT_STALE_TTL_MS }: { ttlMs?: number; staleMs?: number } = {}
 ): Promise<T> {
   const key = cacheKey(path)
   const now = Date.now()
@@ -283,6 +299,7 @@ export async function apiGetCached<T>(
       if (ttlMs > 0 && requestGeneration === cacheGeneration) {
         responseCache.set(key, {
           expiresAt: Date.now() + ttlMs,
+          staleUntil: Date.now() + Math.max(ttlMs, staleMs),
           value,
         })
       }

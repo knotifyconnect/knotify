@@ -4,7 +4,7 @@
  * Every control here is wired to something real:
  *  · Account   — email (from the Supabase session), password reset, sign out
  *  · Preferences — sound effects (lib/sound, device-level)
- *  · Privacy   — usage-analytics consent (lib/analytics getConsent/setConsent)
+ *  · Privacy   — usage-analytics consent (lib/analyticsConsent getConsent/setConsent)
  *  · Danger    — request account deletion (privacy@knotify.app)
  *
  * Design: modernized flat sections (white + soft shadow), Fraunces title,
@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronRight, LogOut, Mail, Lock, Bell, ShieldCheck, Volume2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useSessionStore } from '../store/session'
-import { getConsent, setConsent } from '../lib/analytics'
+import { getConsent, setConsent } from '../lib/analyticsConsent'
 import { soundEnabled, setSoundEnabled } from '../lib/sound'
 import { DeskHeader, T, Toggle } from '../lib/desk'
 import { KBtn } from '../lib/knotify'
@@ -93,7 +93,7 @@ export function SettingsPage() {
     const next = !analyticsOn
     setAnalyticsOn(next)
     setConsent(next ? 'granted' : 'denied')
-    // Re-evaluate on next load so PostHog picks up the new choice cleanly.
+    if (next) void import('../lib/analytics').then((m) => m.initAnalytics()).catch(() => {})
   }
 
   function requestDeletion() {
