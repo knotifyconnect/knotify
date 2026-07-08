@@ -414,6 +414,7 @@ export function MessagesPage() {
   const [connections, setConnections] = useState<Connection[]>(() => getApiCacheSnapshot<{ connections: Connection[] }>(CONNECTIONS_PATH)?.connections ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [messagesByConversation, setMessagesByConversation] = useState<Record<string, Message[]>>({})
   const [optimistic, setOptimistic] = useState<Record<string, OptimisticMessage[]>>({})
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [loadingConvs, setLoadingConvs] = useState(() => !getApiCacheSnapshot<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH))
@@ -456,6 +457,7 @@ export function MessagesPage() {
   const selectedIdRef = useRef<string | null>(null)
   const selectedConvRef = useRef<ConversationSummary | null>(null)
   const currentUserIdRef = useRef<string | null>(null)
+  const messagesByConversationRef = useRef<Record<string, Message[]>>({})
   const loadConvsRef = useRef<(keepErr?: boolean) => Promise<void>>(async () => {})
   const loadMsgsRef = useRef<(id: string, keepErr?: boolean, quiet?: boolean) => Promise<void>>(async () => {})
   const loadMeetingsRef = useRef<(keepErr?: boolean) => Promise<void>>(async () => {})
@@ -472,6 +474,7 @@ export function MessagesPage() {
   selectedIdRef.current = selectedId
   selectedConvRef.current = selectedConv
   currentUserIdRef.current = currentUserId
+  messagesByConversationRef.current = messagesByConversation
   conversationIdsRef.current = new Set(conversations.map((conversation) => conversation.id))
 
   const selectedHistoryCleared = Boolean(selectedConv?.cleared_at)
@@ -577,12 +580,13 @@ export function MessagesPage() {
     if (!quiet) setLoadingMsgs(true)
     try {
       const res = await apiGet<{ messages: Message[] }>(`/api/conversations/${id}/messages`)
+      const nextMessages = res.messages ?? []
+      setMessagesByConversation((prev) => ({ ...prev, [id]: nextMessages }))
       if (selectedIdRef.current === id) {
-        setMessages(res.messages ?? [])
+        setMessages(nextMessages)
         setOptimistic((prev) => {
-          const serverMessages = res.messages ?? []
           let next = prev
-          for (const message of serverMessages) {
+          for (const message of nextMessages) {
             next = dropMatchingOptimistic(next, id, message, currentUserIdRef.current)
           }
           return next
@@ -600,7 +604,7 @@ export function MessagesPage() {
     if (conversationId === selectedId) return
     scrollIntentRef.current = 'open'
     scrollStateRef.current = { conversationId: null, lastMessageId: null }
-    setMessages([])
+    setMessages(messagesByConversationRef.current[conversationId] ?? [])
     setOptimistic((prev) => ({ ...prev, [conversationId]: prev[conversationId] ?? [] }))
     setSelectedId(conversationId)
   }
@@ -790,7 +794,6 @@ export function MessagesPage() {
         if (isActiveThread && payload.new) {
           const message = messageFromRealtime(row)
           setMessages((prev) => mergeMessageList(prev, message))
-          setOptimistic((prev) => dropMatchingOptimistic(prev, row.conversation_id, message, currentUserId))
 
           if (!isMine && (eventType === 'INSERT' || !row.delivered_at || !row.read_at)) {
             if (!row.delivered_at) {
@@ -802,6 +805,15 @@ export function MessagesPage() {
           }
 
           scheduleThreadRefresh(row.conversation_id)
+        }
+
+        if (payload.new) {
+          const message = messageFromRealtime(row)
+          setMessagesByConversation((prev) => ({
+            ...prev,
+            [row.conversation_id]: mergeMessageList(prev[row.conversation_id] ?? [], message),
+          }))
+          setOptimistic((prev) => dropMatchingOptimistic(prev, row.conversation_id, message, currentUserId))
         }
 
         setConversations((prev) =>
@@ -1059,6 +1071,10 @@ export function MessagesPage() {
       if (selectedIdRef.current === conversationId) {
         setMessages((prev) => mergeMessageList(prev, message))
       }
+      setMessagesByConversation((prev) => ({
+        ...prev,
+        [conversationId]: mergeMessageList(prev[conversationId] ?? [], message),
+      }))
       setConversations((prev) => mergeConversationPreview(prev, message, 'INSERT', currentUserIdRef.current, selectedIdRef.current))
       scheduleConversationRefresh(0)
     } catch (err) {
@@ -1090,15 +1106,23 @@ export function MessagesPage() {
       if (scope === 'for-me') {
         await apiDeleteJson<{ deleted_for_me: boolean; message_id: string }>(`/api/conversations/${conversationId}/messages/${msg.id}/for-me`)
         setMessages((prev) => prev.filter((item) => item.id !== msg.id))
+        setMessagesByConversation((prev) => ({
+          ...prev,
+          [conversationId]: (prev[conversationId] ?? []).filter((item) => item.id !== msg.id),
+        }))
       } else {
         const res = await apiDeleteJson<{ message: Message; deleted: boolean }>(`/api/conversations/${conversationId}/messages/${msg.id}/for-everyone`)
-        setMessages((prev) =>
-          prev.map((item) =>
+        const applyDeletedMessage = (items: Message[]) =>
+          items.map((item) =>
             item.id === msg.id
               ? { ...item, ...res.message, content: 'Message deleted', reactions: [] }
               : item
           )
-        )
+        setMessages((prev) => applyDeletedMessage(prev))
+        setMessagesByConversation((prev) => ({
+          ...prev,
+          [conversationId]: applyDeletedMessage(prev[conversationId] ?? []),
+        }))
       }
 
       setMessageDeleteConfirm(null)
@@ -1128,6 +1152,11 @@ export function MessagesPage() {
       setConversations((prev) => prev.filter((conv) => conv.id !== conversationId))
       setSelectedId(null)
       setMessages([])
+      setMessagesByConversation((prev) => {
+        const next = { ...prev }
+        delete next[conversationId]
+        return next
+      })
       setComposer('')
       setThreadMenuOpen(false)
       setConfirmDeleteConversation(false)

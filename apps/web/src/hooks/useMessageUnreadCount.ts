@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import { apiGet } from '../lib/api'
+import { apiGet, invalidateApiCache } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
 
@@ -69,6 +69,7 @@ export function useMessageUnreadCount() {
       channel = supabase
         .channel('message-unread-count:any')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
+          invalidateApiCache('/api/conversations')
           scheduleRefresh()
         })
         .subscribe()
