@@ -1169,6 +1169,56 @@ export function KnotForceGraph({
 
   const toSvgPoint = (point: LayoutPoint) => svgPointForDomGraphPoint(point, stageSize, { width: VIEW_W, height: VIEW_H })
   const svgCenter = toSvgPoint(center)
+
+  // Shared line style for both "me -> direct node" and "expanded root -> child node" —
+  // the two should look identical so an expanded cluster reads as part of the same knot.
+  function renderStrand(node: LayoutNode, index: number, from: LayoutPoint, fromSize: LayoutSize) {
+    const selected = selectedNodeId === node.id
+    const related = selectedPeerIds.has(node.id)
+    const muted = Boolean(selectedNodeId) && !selected && !related
+    const searchHit = hasQuery && node.matchesQuery
+    const searchMuted = hasQuery && !node.matchesQuery
+
+    const stroke = selected
+      ? 'rgba(26,24,21,0.28)'
+      : searchHit
+        ? 'rgba(26,24,21,0.34)'
+        : related
+          ? 'rgba(84,72,58,0.14)'
+          : muted || searchMuted
+            ? 'rgba(84,72,58,0.035)'
+            : node.tab === 'Incoming'
+              ? 'rgba(31,107,94,0.34)'
+              : node.tab === 'Sent'
+                ? 'rgba(216,68,43,0.28)'
+                : 'rgba(84,72,58,0.20)'
+
+    const c1x = from.x + (node.x - from.x) * 0.34 + Math.sin(index * 2.1) * 38
+    const c1y = from.y + (node.y - from.y) * 0.28 - Math.cos(index * 1.4) * 28
+    const c2x = from.x + (node.x - from.x) * 0.72 - Math.cos(index * 1.9) * 32
+    const c2y = from.y + (node.y - from.y) * 0.74 + Math.sin(index * 1.2) * 24
+    const targetSize = measuredNodeSize(node, nodeDomSizes, stageSize, compact)
+    const endpoints = edgeEndpointsForRects(from, fromSize, node, targetSize)
+    const lineStart = toSvgPoint(endpoints.source)
+    const lineEnd = toSvgPoint(endpoints.target)
+    const c1 = toSvgPoint({ x: c1x, y: c1y })
+    const c2 = toSvgPoint({ x: c2x, y: c2y })
+
+    return (
+      <path
+        key={`strand-${node.id}`}
+        data-graph-line={node.id}
+        d={`M ${lineStart.x} ${lineStart.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${lineEnd.x} ${lineEnd.y}`}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={selected ? 1.2 : searchHit ? 1.25 : related ? 0.85 : muted || searchMuted ? 0.28 : node.tab === 'Connected' ? 0.85 : 1.1}
+        strokeDasharray={node.tab === 'Connected' ? 'none' : '8 8'}
+        strokeLinecap="round"
+        pointerEvents="stroke"
+      />
+    )
+  }
+
   return (
     <motion.div
       ref={stageRef}
@@ -1215,63 +1265,26 @@ export function KnotForceGraph({
 
             <circle cx={svgCenter.x} cy={svgCenter.y} r="172" fill="url(#forceKnotCenterGlow)" />
 
-            {layoutNodes.filter((node) => node.degree !== 'second').map((node, index) => {
-              const selected = selectedNodeId === node.id
-              const related = selectedPeerIds.has(node.id)
-              const muted = Boolean(selectedNodeId) && !selected && !related
-              const searchHit = hasQuery && node.matchesQuery
-              const searchMuted = hasQuery && !node.matchesQuery
+            {layoutNodes.filter((node) => node.degree !== 'second').map((node, index) => renderStrand(node, index, center, centerSize))}
 
-              const stroke = selected
-                ? 'rgba(26,24,21,0.28)'
-                : searchHit
-                  ? 'rgba(26,24,21,0.34)'
-                  : related
-                    ? 'rgba(84,72,58,0.14)'
-                    : muted || searchMuted
-                      ? 'rgba(84,72,58,0.035)'
-                      : node.tab === 'Incoming'
-                        ? 'rgba(31,107,94,0.34)'
-                        : node.tab === 'Sent'
-                          ? 'rgba(216,68,43,0.28)'
-                          : 'rgba(84,72,58,0.20)'
-
-              const c1x = center.x + (node.x - center.x) * 0.34 + Math.sin(index * 2.1) * 38
-              const c1y = center.y + (node.y - center.y) * 0.28 - Math.cos(index * 1.4) * 28
-              const c2x = center.x + (node.x - center.x) * 0.72 - Math.cos(index * 1.9) * 32
-              const c2y = center.y + (node.y - center.y) * 0.74 + Math.sin(index * 1.2) * 24
-              const targetSize = measuredNodeSize(node, nodeDomSizes, stageSize, compact)
-              const endpoints = edgeEndpointsForRects(center, centerSize, node, targetSize)
-              const lineStart = toSvgPoint(endpoints.source)
-              const lineEnd = toSvgPoint(endpoints.target)
-              const c1 = toSvgPoint({ x: c1x, y: c1y })
-              const c2 = toSvgPoint({ x: c2x, y: c2y })
-
-              return (
-                <path
-                  key={`strand-${node.id}`}
-                  data-graph-line={node.id}
-                  d={`M ${lineStart.x} ${lineStart.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${lineEnd.x} ${lineEnd.y}`}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={selected ? 1.2 : searchHit ? 1.25 : related ? 0.85 : muted || searchMuted ? 0.28 : node.tab === 'Connected' ? 0.85 : 1.1}
-                  strokeDasharray={node.tab === 'Connected' ? 'none' : '8 8'}
-                  strokeLinecap="round"
-                  pointerEvents="stroke"
-                />
-              )
+            {layoutNodes.filter((node) => node.degree === 'second').map((node, index) => {
+              const root = nodesById.get(`person:${node.expandedViaUserId}`)
+              if (!root) return null
+              const rootSize = measuredNodeSize(root, nodeDomSizes, stageSize, compact)
+              return renderStrand(node, index, { x: root.x, y: root.y }, rootSize)
             })}
 
             {visiblePeerEdges.map((edge, index) => {
-              const selected = selectedNodeId === edge.source.id || selectedNodeId === edge.target.id
-              // The line from an expanded root to its own second-degree child is structural,
-              // not a peer relationship — give it a cleaner, always-visible "stem" look instead
-              // of the generic dashed peer-edge style that disappears once another node is selected.
+              // Root-to-child expansion links are drawn above as strands (matching the
+              // primary connection line style) — skip them here to avoid double-drawing.
               const isExpansionEdge =
                 (edge.target.degree === 'second' && edge.target.expandedViaUserId === edge.source.userId) ||
                 (edge.source.degree === 'second' && edge.source.expandedViaUserId === edge.target.userId)
+              if (isExpansionEdge) return null
 
-              if (selectedNodeId && !selected && !isExpansionEdge) return null
+              const selected = selectedNodeId === edge.source.id || selectedNodeId === edge.target.id
+
+              if (selectedNodeId && !selected) return null
               if (hasQuery && !edge.source.matchesQuery && !edge.target.matchesQuery) return null
 
               const midX = (edge.source.x + edge.target.x) / 2
@@ -1280,8 +1293,8 @@ export function KnotForceGraph({
               const awayY = midY + (midY - center.y) * 0.52 - Math.cos(index * 1.3) * 10
               const softX = midX + (midX - center.x) * 0.18 + Math.sin(index * 1.7) * 10
               const softY = midY + (midY - center.y) * 0.32 - Math.cos(index * 1.3) * 8
-              const curveX = isExpansionEdge ? midX : selected ? awayX : softX
-              const curveY = isExpansionEdge ? midY : selected ? awayY : softY
+              const curveX = selected ? awayX : softX
+              const curveY = selected ? awayY : softY
               const endpoints = edgeEndpointsForRects(
                 edge.source,
                 measuredNodeSize(edge.source, nodeDomSizes, stageSize, compact),
@@ -1298,9 +1311,9 @@ export function KnotForceGraph({
                   data-graph-line={edge.id}
                   d={`M ${sourcePoint.x} ${sourcePoint.y} Q ${curvePoint.x} ${curvePoint.y} ${targetPoint.x} ${targetPoint.y}`}
                   fill="none"
-                  stroke={isExpansionEdge ? 'rgba(84,72,58,0.32)' : selected ? 'rgba(26,24,21,0.34)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
-                  strokeWidth={isExpansionEdge ? 1.3 : selected ? 1.22 : 0.85}
-                  strokeDasharray={isExpansionEdge ? 'none' : selected ? 'none' : '6 10'}
+                  stroke={selected ? 'rgba(26,24,21,0.34)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
+                  strokeWidth={selected ? 1.22 : 0.85}
+                  strokeDasharray={selected ? 'none' : '6 10'}
                   strokeLinecap="round"
                   pointerEvents="stroke"
                 />

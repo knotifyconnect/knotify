@@ -1100,6 +1100,14 @@ function KnotStage({
   const normalizedGraphQuery = query.trim().toLowerCase()
   const hasGraphQuery = normalizedGraphQuery.length > 0
 
+  // Clicking empty canvas should drop the selection AND collapse any expanded
+  // second-degree cluster — otherwise the wheel's child nodes stay stranded
+  // on screen with nothing selected to explain why they're there.
+  function onBoardClear() {
+    onClear()
+    onCollapseExpanded()
+  }
+
   // Mobile detection — used to keep the mobile graph clean (direct ties only)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   useEffect(() => {
@@ -1326,7 +1334,7 @@ function KnotStage({
                   if (match.degree === 'second') { onSelectSecondDegreeUser(match.userId); return }
                   onSelect(match.connection, match.tab)
                 }}
-                onClearSelection={onClear}
+                onClearSelection={onBoardClear}
                 expandedRootId={expandedRootUserId ? `person:${expandedRootUserId}` : null}
                 expandedRootName={expandedRootUserId ? expandedRootName : null}
                 onCollapse={onCollapseExpanded}
@@ -1387,7 +1395,7 @@ function KnotStage({
                     if (match.degree === 'second') { onSelectSecondDegreeUser(match.userId); return }
                     onSelect(match.connection, match.tab)
                   }}
-                  onClearSelection={onClear}
+                  onClearSelection={onBoardClear}
                 />
               </Suspense>
               <div className="k-knot-stats-bar">
