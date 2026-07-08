@@ -5,6 +5,7 @@ import { useSessionStore } from './store/session'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { CookieConsentBanner } from './components/CookieConsentBanner'
 import { ApiError, apiGetCached } from './lib/api'
+import { runWhenIdle } from './lib/schedule'
 
 // Everything below is code-split so it does not ship in the landing-page bundle.
 // Logged-out visitors and crawlers only load LandingPage + its deps.
@@ -365,6 +366,7 @@ export default function App() {
   const token = useSessionStore((s) => s.token)
   const setToken = useSessionStore((s) => s.setToken)
   const [hydrating, setHydrating] = useState(true)
+  const [showNonCriticalLayers, setShowNonCriticalLayers] = useState(false)
   const [reentryState, setReentryState] = useState<ReentryState>({
     token: null,
     ready: true,
@@ -375,6 +377,10 @@ export default function App() {
     void import('./lib/analytics')
       .then((m) => m.initAnalytics())
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    return runWhenIdle(() => setShowNonCriticalLayers(true), 1800)
   }, [])
 
   useEffect(() => {
@@ -499,12 +505,16 @@ export default function App() {
           showReentryLanding={reentryState.showLanding}
           onReentryContinue={onReentryContinue}
         />
-        <Suspense fallback={null}>
-          <ToastContainer />
-        </Suspense>
-        <Suspense fallback={null}>
-          <CelebrationLayer />
-        </Suspense>
+        {showNonCriticalLayers && (
+          <>
+            <Suspense fallback={null}>
+              <ToastContainer />
+            </Suspense>
+            <Suspense fallback={null}>
+              <CelebrationLayer />
+            </Suspense>
+          </>
+        )}
         <CookieConsentBanner />
       </BrowserRouter>
     </AppErrorBoundary>

@@ -14,6 +14,14 @@ const TYPES: { value: FeedbackType; label: string; icon: typeof Bug; hint: strin
   { value: 'other', label: 'Other', icon: MessageCircle, hint: 'Anything else on your mind' },
 ]
 
+function isEditableEscapeTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+
+  const tagName = target.tagName.toLowerCase()
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select'
+}
+
 export function FeedbackWidget() {
   const isMobile = useIsMobile()
   const location = useLocation()
@@ -35,7 +43,11 @@ export function FeedbackWidget() {
   // Close on Escape.
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (e.isComposing || isEditableEscapeTarget(e.target)) return
+      setOpen(false)
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open])

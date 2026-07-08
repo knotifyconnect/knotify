@@ -33,6 +33,14 @@ import { MessageSquare, Coffee, X, MoreHorizontal } from 'lucide-react'
 
 const CompanionHero = lazy(() => import('../components/CompanionHero').then((m) => ({ default: m.CompanionHero })))
 
+function isEditableEscapeTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+
+  const tagName = target.tagName.toLowerCase()
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select'
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Peer = {
@@ -391,6 +399,19 @@ export function RelationshipHomePage() {
   const [inviteDismissed, setInviteDismissed] = useState(() => {
     try { return localStorage.getItem('knotify:inviteDismissed') === '1' } catch { return false }
   })
+
+  useEffect(() => {
+    if (!companionOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (event.isComposing || isEditableEscapeTarget(event.target)) return
+      setCompanionOpen(false)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [companionOpen])
 
   useEffect(() => {
     return runWhenIdle(() => {
