@@ -60,7 +60,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   }, [])
 
   useEffect(() => {
-    const cancelInitialLoad = runWhenIdle(() => void load(), 2000)
+    const cancelInitialLoad = runWhenIdle(() => void load(), 10_000)
     const interval = window.setInterval(() => void load(), 120000)
     return () => {
       cancelInitialLoad()

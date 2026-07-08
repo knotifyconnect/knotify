@@ -10,6 +10,6 @@ export function runWhenIdle(callback: () => void, timeout = 1200) {
     return () => win.cancelIdleCallback?.(id)
   }
 
-  const id = win.setTimeout(callback, Math.min(timeout, 250))
+  const id = win.setTimeout(callback, timeout)
   return () => win.clearTimeout(id)
 }

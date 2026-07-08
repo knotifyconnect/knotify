@@ -15,6 +15,8 @@ export function useMessageUnreadCount() {
 
   useEffect(() => {
     disposedRef.current = false
+    let interval: number | null = null
+    let channel: ReturnType<typeof supabase.channel> | null = null
 
     async function refresh() {
       if (inFlightRef.current) return
@@ -44,12 +46,6 @@ export function useMessageUnreadCount() {
       }, delay)
     }
 
-    const cancelInitialRefresh = runWhenIdle(() => void refresh())
-
-    const interval = window.setInterval(() => {
-      void refresh()
-    }, 60_000)
-
     function onFocus() {
       scheduleRefresh(0)
     }
@@ -58,15 +54,25 @@ export function useMessageUnreadCount() {
       if (!document.hidden) scheduleRefresh(0)
     }
 
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onVisibilityChange)
+    const cancelInitialRefresh = runWhenIdle(() => {
+      if (disposedRef.current) return
 
-    const channel = supabase
-      .channel('message-unread-count:any')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
-        scheduleRefresh()
-      })
-      .subscribe()
+      void refresh()
+
+      interval = window.setInterval(() => {
+        void refresh()
+      }, 60_000)
+
+      window.addEventListener('focus', onFocus)
+      document.addEventListener('visibilitychange', onVisibilityChange)
+
+      channel = supabase
+        .channel('message-unread-count:any')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
+          scheduleRefresh()
+        })
+        .subscribe()
+    }, 3000)
 
     return () => {
       disposedRef.current = true
@@ -76,10 +82,14 @@ export function useMessageUnreadCount() {
       }
 
       cancelInitialRefresh()
-      window.clearInterval(interval)
+      if (interval !== null) {
+        window.clearInterval(interval)
+      }
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibilityChange)
-      void supabase.removeChannel(channel)
+      if (channel) {
+        void supabase.removeChannel(channel)
+      }
     }
   }, [])
 

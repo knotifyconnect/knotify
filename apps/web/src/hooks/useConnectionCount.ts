@@ -25,7 +25,7 @@ export function useConnectionCount() {
       }
     }
 
-    const cancelInitialLoad = runWhenIdle(() => void load())
+    const cancelInitialLoad = runWhenIdle(() => void load(), 3000)
     const interval = window.setInterval(load, 60000)
 
     return () => {
