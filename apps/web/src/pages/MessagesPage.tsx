@@ -462,6 +462,7 @@ export function MessagesPage() {
   const markReadRef = useRef<(id: string) => Promise<void>>(async () => {})
   const conversationRefreshTimerRef = useRef<number | null>(null)
   const threadRefreshTimersRef = useRef<Record<string, number>>({})
+  const conversationIdsRef = useRef<Set<string>>(new Set())
 
   const selectedConv = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
@@ -471,6 +472,7 @@ export function MessagesPage() {
   selectedIdRef.current = selectedId
   selectedConvRef.current = selectedConv
   currentUserIdRef.current = currentUserId
+  conversationIdsRef.current = new Set(conversations.map((conversation) => conversation.id))
 
   const selectedHistoryCleared = Boolean(selectedConv?.cleared_at)
 
@@ -644,6 +646,17 @@ export function MessagesPage() {
     }, delay)
   }
 
+  function refreshConversationListForRealtime(conversationId: string) {
+    if (conversationIdsRef.current.has(conversationId)) {
+      scheduleConversationRefresh()
+      return
+    }
+
+    void loadConvsRef.current(true).finally(() => {
+      scheduleConversationRefresh(1000)
+    })
+  }
+
   function scheduleThreadRefresh(conversationId: string, delay = 1200) {
     const existing = threadRefreshTimersRef.current[conversationId]
     if (existing !== undefined) window.clearTimeout(existing)
@@ -794,7 +807,7 @@ export function MessagesPage() {
         setConversations((prev) =>
           mergeConversationPreview(prev, row, eventType, currentUserId, activeConversationId)
         )
-        scheduleConversationRefresh()
+        refreshConversationListForRealtime(row.conversation_id)
       })
       .subscribe()
 
