@@ -623,6 +623,7 @@ conversationsRouter.post('/:id/messages', requireAuth, async (req, res) => {
         ...insert.data,
         sender: sender.data ?? null,
         is_mine: true,
+        reactions: [],
       },
     })
   } catch (error) {

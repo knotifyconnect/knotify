@@ -51,6 +51,18 @@ type OptimisticMessage = Message & {
   local: true
 }
 
+type RealtimeMessageRow = {
+  id: string
+  conversation_id: string
+  sender_id: string
+  content: string
+  read_at: string | null
+  delivered_at: string | null
+  deleted_at?: string | null
+  deleted_by?: string | null
+  created_at: string
+}
+
 type MessageDeleteScope = 'for-me' | 'for-everyone'
 
 type Connection = {
@@ -61,6 +73,131 @@ type Connection = {
 
 function isOpt(m: Message | OptimisticMessage): m is OptimisticMessage {
   return (m as OptimisticMessage).local === true
+}
+
+function realtimeMessageRow(value: unknown): RealtimeMessageRow | null {
+  if (!value || typeof value !== 'object') return null
+  const row = value as Partial<RealtimeMessageRow>
+  if (
+    typeof row.id !== 'string' ||
+    typeof row.conversation_id !== 'string' ||
+    typeof row.sender_id !== 'string' ||
+    typeof row.content !== 'string' ||
+    typeof row.created_at !== 'string'
+  ) return null
+
+  return {
+    id: row.id,
+    conversation_id: row.conversation_id,
+    sender_id: row.sender_id,
+    content: row.content,
+    read_at: row.read_at ?? null,
+    delivered_at: row.delivered_at ?? null,
+    deleted_at: row.deleted_at ?? null,
+    deleted_by: row.deleted_by ?? null,
+    created_at: row.created_at,
+  }
+}
+
+function previewContent(message: Pick<RealtimeMessageRow, 'content' | 'deleted_at'>) {
+  return message.deleted_at ? 'Message deleted' : message.content
+}
+
+function mergeMessageList(prev: Message[], next: Message) {
+  const existing = prev.find((message) => message.id === next.id)
+  const merged = existing
+    ? {
+        ...existing,
+        ...next,
+        sender: next.sender ?? existing.sender,
+        reactions: existing.reactions ?? next.reactions ?? [],
+      }
+    : next
+
+  return [
+    ...prev.filter((message) => message.id !== next.id),
+    merged,
+  ].sort((a, b) => a.created_at.localeCompare(b.created_at))
+}
+
+function dropMatchingOptimistic(
+  prev: Record<string, OptimisticMessage[]>,
+  conversationId: string,
+  serverMessage: Pick<Message, 'sender_id' | 'content' | 'created_at'>,
+  currentUserId: string | null
+) {
+  if (!currentUserId || serverMessage.sender_id !== currentUserId) return prev
+
+  const list = prev[conversationId] ?? []
+  if (!list.length) return prev
+
+  const serverTime = new Date(serverMessage.created_at).getTime()
+  let removed = false
+  const nextList = list.filter((message) => {
+    if (removed || message.failed || message.content !== serverMessage.content) return true
+
+    const localTime = new Date(message.created_at).getTime()
+    const closeEnough =
+      Number.isNaN(serverTime) ||
+      Number.isNaN(localTime) ||
+      Math.abs(serverTime - localTime) < 120_000
+
+    if (!closeEnough) return true
+    removed = true
+    return false
+  })
+
+  if (!removed) return prev
+  return { ...prev, [conversationId]: nextList }
+}
+
+function mergeConversationPreview(
+  prev: ConversationSummary[],
+  row: RealtimeMessageRow,
+  eventType: string,
+  currentUserId: string | null,
+  activeConversationId: string | null
+) {
+  let found = false
+  const isMine = Boolean(currentUserId && row.sender_id === currentUserId)
+  const isActive = activeConversationId === row.conversation_id
+
+  const next = prev.map((conversation) => {
+    if (conversation.id !== row.conversation_id) return conversation
+
+    found = true
+    const latest = conversation.latest_message
+    const shouldUseAsLatest =
+      !latest ||
+      latest.id === row.id ||
+      row.created_at.localeCompare(latest.created_at) >= 0
+
+    const unreadIncrement =
+      eventType === 'INSERT' && !isMine && !isActive
+        ? 1
+        : 0
+
+    return {
+      ...conversation,
+      unread_count: isActive ? 0 : Math.max(0, (conversation.unread_count ?? 0) + unreadIncrement),
+      latest_message: shouldUseAsLatest
+        ? {
+            id: row.id,
+            content: previewContent(row),
+            created_at: row.created_at,
+            sender_id: row.sender_id,
+          }
+        : latest,
+    }
+  })
+
+  if (!found) return prev
+
+  return next.sort((a, b) => {
+    const aTime = a.latest_message?.created_at ?? a.created_at
+    const bTime = b.latest_message?.created_at ?? b.created_at
+    return bTime.localeCompare(aTime)
+  })
 }
 
 function relativeTime(value: string) {
@@ -278,6 +415,7 @@ export function MessagesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [optimistic, setOptimistic] = useState<Record<string, OptimisticMessage[]>>({})
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [loadingConvs, setLoadingConvs] = useState(() => !getApiCacheSnapshot<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH))
   const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [sendLoading, setSendLoading] = useState(false)
@@ -315,11 +453,24 @@ export function MessagesPage() {
   const handledDeepLinkRef = useRef<string | null>(null)
   const loadConvsInFlightRef = useRef<Promise<void> | null>(null)
   const loadMeetingsInFlightRef = useRef<Promise<void> | null>(null)
+  const selectedIdRef = useRef<string | null>(null)
+  const selectedConvRef = useRef<ConversationSummary | null>(null)
+  const currentUserIdRef = useRef<string | null>(null)
+  const loadConvsRef = useRef<(keepErr?: boolean) => Promise<void>>(async () => {})
+  const loadMsgsRef = useRef<(id: string, keepErr?: boolean, quiet?: boolean) => Promise<void>>(async () => {})
+  const loadMeetingsRef = useRef<(keepErr?: boolean) => Promise<void>>(async () => {})
+  const markReadRef = useRef<(id: string) => Promise<void>>(async () => {})
+  const conversationRefreshTimerRef = useRef<number | null>(null)
+  const threadRefreshTimersRef = useRef<Record<string, number>>({})
 
   const selectedConv = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
     [conversations, selectedId]
   )
+
+  selectedIdRef.current = selectedId
+  selectedConvRef.current = selectedConv
+  currentUserIdRef.current = currentUserId
 
   const selectedHistoryCleared = Boolean(selectedConv?.cleared_at)
 
@@ -400,10 +551,11 @@ export function MessagesPage() {
         const res = await apiGet<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)
         const next = res.conversations ?? []
         setConversations(next)
+        const activeSelectedId = selectedIdRef.current
         if (!next.length) {
           setSelectedId(null)
           setMessages([])
-        } else if (selectedId && !next.some((c) => c.id === selectedId)) {
+        } else if (activeSelectedId && !next.some((c) => c.id === activeSelectedId)) {
           setSelectedId(null)
           setMessages([])
         }
@@ -423,7 +575,17 @@ export function MessagesPage() {
     if (!quiet) setLoadingMsgs(true)
     try {
       const res = await apiGet<{ messages: Message[] }>(`/api/conversations/${id}/messages`)
-      setMessages(res.messages ?? [])
+      if (selectedIdRef.current === id) {
+        setMessages(res.messages ?? [])
+        setOptimistic((prev) => {
+          const serverMessages = res.messages ?? []
+          let next = prev
+          for (const message of serverMessages) {
+            next = dropMatchingOptimistic(next, id, message, currentUserIdRef.current)
+          }
+          return next
+        })
+      }
       if (!keepErr) setError(null)
     } catch (err) {
       if (!keepErr) setError(err instanceof Error ? err.message : 'Failed loading messages')
@@ -466,6 +628,48 @@ export function MessagesPage() {
     return task
   }
 
+  loadConvsRef.current = loadConvs
+  loadMsgsRef.current = loadMsgs
+  loadMeetingsRef.current = loadMeetings
+  markReadRef.current = markRead
+
+  function scheduleConversationRefresh(delay = 750) {
+    if (conversationRefreshTimerRef.current !== null) {
+      window.clearTimeout(conversationRefreshTimerRef.current)
+    }
+
+    conversationRefreshTimerRef.current = window.setTimeout(() => {
+      conversationRefreshTimerRef.current = null
+      void loadConvsRef.current(true)
+    }, delay)
+  }
+
+  function scheduleThreadRefresh(conversationId: string, delay = 1200) {
+    const existing = threadRefreshTimersRef.current[conversationId]
+    if (existing !== undefined) window.clearTimeout(existing)
+
+    threadRefreshTimersRef.current[conversationId] = window.setTimeout(() => {
+      delete threadRefreshTimersRef.current[conversationId]
+      if (selectedIdRef.current === conversationId) {
+        void loadMsgsRef.current(conversationId, true, true)
+      }
+    }, delay)
+  }
+
+  function messageFromRealtime(row: RealtimeMessageRow): Message {
+    const activeConversation = selectedConvRef.current?.id === row.conversation_id
+      ? selectedConvRef.current
+      : null
+    const isMine = Boolean(currentUserIdRef.current && row.sender_id === currentUserIdRef.current)
+
+    return {
+      ...row,
+      sender: !isMine && activeConversation?.peer?.id === row.sender_id ? activeConversation.peer : null,
+      is_mine: isMine,
+      reactions: [],
+    }
+  }
+
   async function scheduleCoffee(payload: { inviteeId: string; scheduledAt: string; cafeId: string | null; locationText: string | null; note: string | null }): Promise<void> {
     if (!selectedId) return
 
@@ -504,6 +708,25 @@ export function MessagesPage() {
   }
 
   useEffect(() => {
+    let disposed = false
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!disposed) setCurrentUserId(data.session?.user.id ?? null)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUserId(session?.user.id ?? null)
+    })
+
+    return () => {
+      disposed = true
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
     void loadConvs()
     void loadMeetings(true)
     return runWhenIdle(() => {
@@ -528,55 +751,64 @@ export function MessagesPage() {
     void markRead(selectedId)
   }, [selectedId])
 
-  // Realtime: selected thread should react to both new messages and delivery/read updates.
+  // Realtime is the fast path. REST refetches below verify state, but message paint
+  // should not wait on a full thread or conversation-list request.
   useEffect(() => {
-    if (!selectedId) return
-
-    const activeConversationId = selectedId
-
-    function refreshSelectedThread() {
-      void loadMsgs(activeConversationId, true, true)
-      void loadConvs(true)
-      void loadMeetings(true)
-    }
-
-    // Mark delivered/read when opening conversation.
-    void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
-    void markRead(activeConversationId)
-
     const channel = supabase
-      .channel(`messages:conv:${activeConversationId}`)
+      .channel('messages:any')
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'messages',
-        filter: `conversation_id=eq.${activeConversationId}`,
-      }, () => {
-        refreshSelectedThread()
-        void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
-        void markRead(activeConversationId)
+      }, (payload) => {
+        const eventType = String(payload.eventType ?? '')
+        const row = realtimeMessageRow(payload.new ?? payload.old)
+
+        if (!row) {
+          scheduleConversationRefresh()
+          return
+        }
+
+        const activeConversationId = selectedIdRef.current
+        const isActiveThread = activeConversationId === row.conversation_id
+        const currentUserId = currentUserIdRef.current
+        const isMine = Boolean(currentUserId && row.sender_id === currentUserId)
+
+        if (isActiveThread && payload.new) {
+          const message = messageFromRealtime(row)
+          setMessages((prev) => mergeMessageList(prev, message))
+          setOptimistic((prev) => dropMatchingOptimistic(prev, row.conversation_id, message, currentUserId))
+
+          if (!isMine && (eventType === 'INSERT' || !row.delivered_at || !row.read_at)) {
+            if (!row.delivered_at) {
+              void apiPost(`/api/conversations/${row.conversation_id}/delivered`, {}).catch(() => {})
+            }
+            if (!row.read_at) {
+              void markReadRef.current(row.conversation_id)
+            }
+          }
+
+          scheduleThreadRefresh(row.conversation_id)
+        }
+
+        setConversations((prev) =>
+          mergeConversationPreview(prev, row, eventType, currentUserId, activeConversationId)
+        )
+        scheduleConversationRefresh()
       })
       .subscribe()
 
-    return () => { void supabase.removeChannel(channel) }
-  }, [selectedId])
-
-  // Realtime: any message insert/update can affect conversation ordering, unread counts, delivery/read ticks.
-  useEffect(() => {
-    const channel = supabase
-      .channel('messages:any')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
-        if (document.hidden) return
-        const changedConversationId =
-          typeof payload.new === 'object' && payload.new && 'conversation_id' in payload.new
-            ? String(payload.new.conversation_id)
-            : null
-        if (changedConversationId && changedConversationId === selectedId) return
-        void loadConvs(true)
-      })
-      .subscribe()
-    return () => { void supabase.removeChannel(channel) }
-  }, [selectedId])
+    return () => {
+      if (conversationRefreshTimerRef.current !== null) {
+        window.clearTimeout(conversationRefreshTimerRef.current)
+      }
+      for (const timer of Object.values(threadRefreshTimersRef.current)) {
+        window.clearTimeout(timer)
+      }
+      threadRefreshTimersRef.current = {}
+      void supabase.removeChannel(channel)
+    }
+  }, [])
 
   // Reliability path: keep the open thread fresh even if Supabase message realtime
   // misses an event. Keep this single-flight so slow requests cannot pile up.
@@ -781,13 +1013,14 @@ export function MessagesPage() {
 
   async function sendMessage(contentOverride?: string) {
     if (!selectedId || sendLoading) return
+    const conversationId = selectedId
     const trimmed = (contentOverride ?? composer).trim()
     if (!trimmed) return
 
     const nowIso = new Date().toISOString()
     const tempId = `tmp-${Date.now()}`
     const opt: OptimisticMessage = {
-      id: tempId, conversation_id: selectedId, sender_id: 'me',
+      id: tempId, conversation_id: conversationId, sender_id: currentUserIdRef.current ?? 'me',
       content: trimmed, read_at: null, delivered_at: null, deleted_at: null, deleted_by: null, created_at: nowIso,
       sender: null, is_mine: true, pending: true, failed: false, local: true,
       reactions: [],
@@ -796,18 +1029,29 @@ export function MessagesPage() {
     if (!contentOverride) setComposer('')
     scrollIntentRef.current = 'own-message'
     setSendLoading(true)
-    setOptimistic((prev) => ({ ...prev, [selectedId]: [...(prev[selectedId] ?? []), opt] }))
+    setOptimistic((prev) => ({ ...prev, [conversationId]: [...(prev[conversationId] ?? []), opt] }))
+    setConversations((prev) => mergeConversationPreview(prev, opt, 'INSERT', currentUserIdRef.current, selectedIdRef.current))
 
     try {
-      const res = await apiPost<{ message: Message }>(`/api/conversations/${selectedId}/messages`, { content: trimmed })
+      const res = await apiPost<{ message: Message }>(`/api/conversations/${conversationId}/messages`, { content: trimmed })
+      const message = { ...res.message, reactions: res.message.reactions ?? [] }
       trackEvent('message_sent')
-      setOptimistic((prev) => ({ ...prev, [selectedId]: (prev[selectedId] ?? []).filter((m) => m.id !== tempId) }))
-      setMessages((prev) => [...prev, res.message])
-      await loadConvs(true)
+      setOptimistic((prev) => {
+        const reconciled = dropMatchingOptimistic(prev, conversationId, message, currentUserIdRef.current)
+        return {
+          ...reconciled,
+          [conversationId]: (reconciled[conversationId] ?? []).filter((m) => m.id !== tempId),
+        }
+      })
+      if (selectedIdRef.current === conversationId) {
+        setMessages((prev) => mergeMessageList(prev, message))
+      }
+      setConversations((prev) => mergeConversationPreview(prev, message, 'INSERT', currentUserIdRef.current, selectedIdRef.current))
+      scheduleConversationRefresh(0)
     } catch (err) {
       setOptimistic((prev) => ({
         ...prev,
-        [selectedId]: (prev[selectedId] ?? []).map((m) => m.id === tempId ? { ...m, pending: false, failed: true } : m),
+        [conversationId]: (prev[conversationId] ?? []).map((m) => m.id === tempId ? { ...m, pending: false, failed: true } : m),
       }))
       setError(err instanceof Error ? err.message : 'Failed sending')
       if (contentOverride) setComposer(trimmed)

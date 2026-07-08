@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import { apiGetCached } from '../lib/api'
+import { apiGet } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
 
@@ -24,7 +24,7 @@ export function useMessageUnreadCount() {
 
       inFlightRef.current = true
       try {
-        const data = await apiGetCached<MessageUnreadResponse>('/api/conversations/unread', { ttlMs: 5_000 })
+        const data = await apiGet<MessageUnreadResponse>('/api/conversations/unread')
         if (!disposedRef.current) {
           setCount(Math.max(0, data.count ?? 0))
         }
