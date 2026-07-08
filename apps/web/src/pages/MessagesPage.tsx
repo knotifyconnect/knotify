@@ -369,6 +369,7 @@ const CONVERSATIONS_PATH = '/api/conversations'
 const MEETINGS_PATH = '/api/meetings'
 const CONNECTIONS_PATH = '/api/connections'
 const CAFES_PATH = '/api/cafes'
+const MESSAGE_UNREAD_TOTAL_EVENT = 'knotify:message-unread-total'
 const FAST_CONVERSATION_RECONCILE_GRACE_MS = 15_000
 
 function formatMeetingTime(value: string) {
@@ -586,6 +587,12 @@ export function MessagesPage() {
     setApiCacheSnapshot<ConversationsCache>(CONVERSATIONS_PATH, { conversations: next })
   }
 
+  function publishUnreadTotal(next: ConversationSummary[]) {
+    if (typeof window === 'undefined') return
+    const count = next.reduce((sum, conversation) => sum + (conversation.unread_count ?? 0), 0)
+    window.dispatchEvent(new CustomEvent(MESSAGE_UNREAD_TOTAL_EVENT, { detail: { count } }))
+  }
+
   function updateConversations(
     updater: (prev: ConversationSummary[]) => ConversationSummary[],
     touchedConversationIds: string[] = []
@@ -599,6 +606,7 @@ export function MessagesPage() {
       conversationsRef.current = next
       conversationIdsRef.current = new Set(next.map((conversation) => conversation.id))
       cacheConversations(next)
+      publishUnreadTotal(next)
       return next
     })
   }
@@ -611,17 +619,22 @@ export function MessagesPage() {
 
     const merged = restConversations.map((serverConversation) => {
       const localConversation = localById.get(serverConversation.id)
+      const isSelectedConversation = selectedIdRef.current === serverConversation.id
       const fastUpdatedAt = fastConversationUpdatedAtRef.current[serverConversation.id] ?? 0
-      if (!localConversation || fastUpdatedAt <= 0) return serverConversation
+      if (!localConversation || fastUpdatedAt <= 0) {
+        return isSelectedConversation ? { ...serverConversation, unread_count: 0 } : serverConversation
+      }
 
       const serverLatestAt = serverConversation.latest_message?.created_at ?? serverConversation.created_at
       const localLatestAt = localConversation.latest_message?.created_at ?? localConversation.created_at
       const localHasNewerLatest = localLatestAt.localeCompare(serverLatestAt) > 0
       const shouldPreserveFastState =
-        fastUpdatedAt > requestStartedAt ||
+        (localHasNewerLatest && fastUpdatedAt > requestStartedAt) ||
         (localHasNewerLatest && now - fastUpdatedAt < FAST_CONVERSATION_RECONCILE_GRACE_MS)
 
-      if (!shouldPreserveFastState) return serverConversation
+      if (!shouldPreserveFastState) {
+        return isSelectedConversation ? { ...serverConversation, unread_count: 0 } : serverConversation
+      }
 
       const latest_message =
         localLatestAt.localeCompare(serverLatestAt) >= 0
@@ -632,7 +645,9 @@ export function MessagesPage() {
         ...serverConversation,
         peer: serverConversation.peer ?? localConversation.peer,
         cleared_at: serverConversation.cleared_at ?? localConversation.cleared_at,
-        unread_count: localConversation.unread_count,
+        unread_count: isSelectedConversation
+          ? 0
+          : localHasNewerLatest ? localConversation.unread_count : serverConversation.unread_count,
         latest_message,
       }
     })
@@ -742,8 +757,7 @@ export function MessagesPage() {
     setMessages(messagesByConversationRef.current[conversationId] ?? [])
     setOptimistic((prev) => ({ ...prev, [conversationId]: prev[conversationId] ?? [] }))
     updateConversations(
-      (prev) => prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c)),
-      [conversationId]
+      (prev) => prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c))
     )
     setSelectedId(conversationId)
   }
@@ -752,8 +766,7 @@ export function MessagesPage() {
     try {
       await apiPost(`/api/conversations/${id}/read`, {})
       updateConversations(
-        (prev) => prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c)),
-        [id]
+        (prev) => prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c))
       )
     } catch { /* best effort */ }
   }
@@ -938,14 +951,15 @@ export function MessagesPage() {
         const currentUserId = currentUserIdRef.current
         const isMine = Boolean(currentUserId && row.sender_id === currentUserId)
 
+        if (payload.new && eventType === 'INSERT' && !isMine && !row.delivered_at) {
+          void apiPost(`/api/conversations/${row.conversation_id}/delivered`, {}).catch(() => {})
+        }
+
         if (isActiveThread && payload.new) {
           const message = messageFromRealtime(row)
           setMessages((prev) => mergeMessageList(prev, message))
 
-          if (!isMine && (eventType === 'INSERT' || !row.delivered_at || !row.read_at)) {
-            if (!row.delivered_at) {
-              void apiPost(`/api/conversations/${row.conversation_id}/delivered`, {}).catch(() => {})
-            }
+          if (!isMine && (eventType === 'INSERT' || !row.read_at)) {
             if (!row.read_at) {
               void markReadRef.current(row.conversation_id)
             }
