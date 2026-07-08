@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { SmilePlus, Trash2 } from 'lucide-react'
-import { apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
+import { apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot, setApiCacheSnapshot } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 
 type UserPreview = {
   id: string
@@ -26,6 +27,10 @@ type ConversationSummary = {
     created_at: string
     sender_id: string
   } | null
+}
+
+type ConversationsCache = {
+  conversations: ConversationSummary[]
 }
 
 type MessageReaction = { emoji: string; count: number; mine: boolean }
@@ -156,7 +161,8 @@ function mergeConversationPreview(
   row: RealtimeMessageRow,
   eventType: string,
   currentUserId: string | null,
-  activeConversationId: string | null
+  activeConversationId: string | null,
+  resolvePeer?: (row: RealtimeMessageRow) => UserPreview | null
 ) {
   let found = false
   const isMine = Boolean(currentUserId && row.sender_id === currentUserId)
@@ -173,7 +179,7 @@ function mergeConversationPreview(
       row.created_at.localeCompare(latest.created_at) >= 0
 
     const unreadIncrement =
-      eventType === 'INSERT' && !isMine && !isActive
+      eventType === 'INSERT' && latest?.id !== row.id && !isMine && !isActive
         ? 1
         : 0
 
@@ -191,9 +197,31 @@ function mergeConversationPreview(
     }
   })
 
-  if (!found) return prev
+  if (!found) {
+    if (eventType !== 'INSERT') return prev
 
-  return next.sort((a, b) => {
+    const seeded: ConversationSummary = {
+      id: row.conversation_id,
+      created_at: row.created_at,
+      cleared_at: null,
+      peer: resolvePeer?.(row) ?? null,
+      unread_count: !isMine && !isActive ? 1 : 0,
+      latest_message: {
+        id: row.id,
+        content: previewContent(row),
+        created_at: row.created_at,
+        sender_id: row.sender_id,
+      },
+    }
+
+    return sortConversations([seeded, ...prev])
+  }
+
+  return sortConversations(next)
+}
+
+function sortConversations(conversations: ConversationSummary[]) {
+  return conversations.sort((a, b) => {
     const aTime = a.latest_message?.created_at ?? a.created_at
     const bTime = b.latest_message?.created_at ?? b.created_at
     return bTime.localeCompare(aTime)
@@ -457,6 +485,8 @@ export function MessagesPage() {
   const selectedIdRef = useRef<string | null>(null)
   const selectedConvRef = useRef<ConversationSummary | null>(null)
   const currentUserIdRef = useRef<string | null>(null)
+  const conversationsRef = useRef<ConversationSummary[]>([])
+  const connectionsRef = useRef<Connection[]>([])
   const messagesByConversationRef = useRef<Record<string, Message[]>>({})
   const loadConvsRef = useRef<(keepErr?: boolean) => Promise<void>>(async () => {})
   const loadMsgsRef = useRef<(id: string, keepErr?: boolean, quiet?: boolean) => Promise<void>>(async () => {})
@@ -474,6 +504,8 @@ export function MessagesPage() {
   selectedIdRef.current = selectedId
   selectedConvRef.current = selectedConv
   currentUserIdRef.current = currentUserId
+  conversationsRef.current = conversations
+  connectionsRef.current = connections
   messagesByConversationRef.current = messagesByConversation
   conversationIdsRef.current = new Set(conversations.map((conversation) => conversation.id))
 
@@ -548,6 +580,48 @@ export function MessagesPage() {
     return lastMine.read_at ? 'Seen' : 'Delivered'
   }, [lastMine])
 
+  function cacheConversations(next: ConversationSummary[]) {
+    setApiCacheSnapshot<ConversationsCache>(CONVERSATIONS_PATH, { conversations: next })
+  }
+
+  function updateConversations(updater: (prev: ConversationSummary[]) => ConversationSummary[]) {
+    setConversations((prev) => {
+      const next = updater(prev)
+      conversationsRef.current = next
+      conversationIdsRef.current = new Set(next.map((conversation) => conversation.id))
+      cacheConversations(next)
+      return next
+    })
+  }
+
+  function peerForRealtimeRow(row: RealtimeMessageRow) {
+    const existing = conversationsRef.current.find((conversation) => conversation.id === row.conversation_id)
+    if (existing?.peer) return existing.peer
+
+    const selected = selectedConvRef.current
+    if (selected?.id === row.conversation_id && selected.peer) return selected.peer
+
+    return connectionsRef.current.find((connection) => connection.user?.id === row.sender_id)?.user ?? null
+  }
+
+  function upsertConversationShell(conversationId: string, peer: UserPreview | null, createdAt = new Date().toISOString()) {
+    updateConversations((prev) => {
+      if (prev.some((conversation) => conversation.id === conversationId)) return prev
+
+      return sortConversations([
+        {
+          id: conversationId,
+          created_at: createdAt,
+          cleared_at: null,
+          peer,
+          unread_count: 0,
+          latest_message: null,
+        },
+        ...prev,
+      ])
+    })
+  }
+
   async function loadConvs(keepErr = false) {
     if (loadConvsInFlightRef.current) return loadConvsInFlightRef.current
     setLoadingConvs(true)
@@ -555,7 +629,7 @@ export function MessagesPage() {
       try {
         const res = await apiGet<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)
         const next = res.conversations ?? []
-        setConversations(next)
+        updateConversations(() => next)
         const activeSelectedId = selectedIdRef.current
         if (!next.length) {
           setSelectedId(null)
@@ -606,13 +680,14 @@ export function MessagesPage() {
     scrollStateRef.current = { conversationId: null, lastMessageId: null }
     setMessages(messagesByConversationRef.current[conversationId] ?? [])
     setOptimistic((prev) => ({ ...prev, [conversationId]: prev[conversationId] ?? [] }))
+    updateConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c)))
     setSelectedId(conversationId)
   }
 
   async function markRead(id: string) {
     try {
       await apiPost(`/api/conversations/${id}/read`, {})
-      setConversations((prev) =>
+      updateConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c))
       )
     } catch { /* best effort */ }
@@ -650,15 +725,9 @@ export function MessagesPage() {
     }, delay)
   }
 
-  function refreshConversationListForRealtime(conversationId: string) {
-    if (conversationIdsRef.current.has(conversationId)) {
-      scheduleConversationRefresh()
-      return
-    }
-
-    void loadConvsRef.current(true).finally(() => {
-      scheduleConversationRefresh(1000)
-    })
+  function refreshConversationListForRealtime(conversationId: string, wasKnown: boolean) {
+    if (wasKnown) return
+    void loadConvsRef.current(true)
   }
 
   function scheduleThreadRefresh(conversationId: string, delay = 1200) {
@@ -764,9 +833,21 @@ export function MessagesPage() {
     setThreadMenuOpen(false)
     setConfirmDeleteConversation(false)
     if (!selectedId) return
-    void loadMsgs(selectedId)
+    void loadMsgs(selectedId, false, true)
     void markRead(selectedId)
   }, [selectedId])
+
+  useEscapeClose(Boolean(selectedId), () => setSelectedId(null), {
+    disabled:
+      coffeeOpen ||
+      newChatOpen ||
+      threadMenuOpen ||
+      Boolean(messageDeleteConfirm) ||
+      Boolean(actionMenuMsgId) ||
+      Boolean(pickerOpenMsgId) ||
+      emojiPickerOpen,
+    shouldIgnore: () => Boolean(document.querySelector('.k-overlay, [role="dialog"]')),
+  })
 
   // Realtime is the fast path. REST refetches below verify state, but message paint
   // should not wait on a full thread or conversation-list request.
@@ -787,6 +868,7 @@ export function MessagesPage() {
         }
 
         const activeConversationId = selectedIdRef.current
+        const wasKnownConversation = conversationIdsRef.current.has(row.conversation_id)
         const isActiveThread = activeConversationId === row.conversation_id
         const currentUserId = currentUserIdRef.current
         const isMine = Boolean(currentUserId && row.sender_id === currentUserId)
@@ -816,10 +898,10 @@ export function MessagesPage() {
           setOptimistic((prev) => dropMatchingOptimistic(prev, row.conversation_id, message, currentUserId))
         }
 
-        setConversations((prev) =>
-          mergeConversationPreview(prev, row, eventType, currentUserId, activeConversationId)
+        updateConversations((prev) =>
+          mergeConversationPreview(prev, row, eventType, currentUserId, activeConversationId, peerForRealtimeRow)
         )
-        refreshConversationListForRealtime(row.conversation_id)
+        refreshConversationListForRealtime(row.conversation_id, wasKnownConversation)
       })
       .subscribe()
 
@@ -958,11 +1040,8 @@ export function MessagesPage() {
       let conversationId: string | null = null
       if (deepLinkConversationId) {
         conversationId = deepLinkConversationId
-        scrollIntentRef.current = 'open'
-        scrollStateRef.current = { conversationId: null, lastMessageId: null }
-        setSelectedId(deepLinkConversationId)
-        await loadMsgs(deepLinkConversationId, true)
-        await markRead(deepLinkConversationId)
+        openConversation(deepLinkConversationId)
+        if (!conversationIdsRef.current.has(deepLinkConversationId)) void loadConvs(true)
       } else if (deepLinkUserId) {
         conversationId = await openOrCreate(deepLinkUserId)
       }
@@ -984,11 +1063,9 @@ export function MessagesPage() {
   async function openOrCreate(userId: string): Promise<string | null> {
     const existingConversation = conversations.find((conv) => conv.peer?.id === userId)
     if (existingConversation) {
-      scrollIntentRef.current = 'open'
-      scrollStateRef.current = { conversationId: null, lastMessageId: null }
-      setSelectedId(existingConversation.id)
-      await loadMsgs(existingConversation.id, true)
-      await markRead(existingConversation.id)
+      openConversation(existingConversation.id)
+      void loadMsgs(existingConversation.id, true, true)
+      void markRead(existingConversation.id)
       setNewChatOpen(false)
       setNewChatSearch('')
       setError(null)
@@ -999,9 +1076,7 @@ export function MessagesPage() {
     if (inFlight) {
       const conversationId = await inFlight
       if (conversationId) {
-        scrollIntentRef.current = 'open'
-        scrollStateRef.current = { conversationId: null, lastMessageId: null }
-        setSelectedId(conversationId)
+        openConversation(conversationId)
       }
       return conversationId
     }
@@ -1009,13 +1084,13 @@ export function MessagesPage() {
     const task = (async () => {
       setCreatingFor(userId)
       try {
-        const res = await apiPost<{ conversation: { id: string } }>('/api/conversations', { userId })
-        await loadConvs(true)
-        scrollIntentRef.current = 'open'
-        scrollStateRef.current = { conversationId: null, lastMessageId: null }
-        setSelectedId(res.conversation.id)
-        await loadMsgs(res.conversation.id, true)
-        await markRead(res.conversation.id)
+        const res = await apiPost<{ conversation: { id: string; created_at?: string } }>('/api/conversations', { userId })
+        const peer = connectionsRef.current.find((connection) => connection.user?.id === userId)?.user ?? null
+        upsertConversationShell(res.conversation.id, peer, res.conversation.created_at)
+        openConversation(res.conversation.id)
+        void loadConvs(true)
+        void loadMsgs(res.conversation.id, true, true)
+        void markRead(res.conversation.id)
         setNewChatOpen(false)
         setNewChatSearch('')
         setError(null)
@@ -1055,7 +1130,7 @@ export function MessagesPage() {
     scrollIntentRef.current = 'own-message'
     setSendLoading(true)
     setOptimistic((prev) => ({ ...prev, [conversationId]: [...(prev[conversationId] ?? []), opt] }))
-    setConversations((prev) => mergeConversationPreview(prev, opt, 'INSERT', currentUserIdRef.current, selectedIdRef.current))
+    updateConversations((prev) => mergeConversationPreview(prev, opt, 'INSERT', currentUserIdRef.current, selectedIdRef.current, peerForRealtimeRow))
 
     try {
       const res = await apiPost<{ message: Message }>(`/api/conversations/${conversationId}/messages`, { content: trimmed })
@@ -1075,8 +1150,7 @@ export function MessagesPage() {
         ...prev,
         [conversationId]: mergeMessageList(prev[conversationId] ?? [], message),
       }))
-      setConversations((prev) => mergeConversationPreview(prev, message, 'INSERT', currentUserIdRef.current, selectedIdRef.current))
-      scheduleConversationRefresh(0)
+      updateConversations((prev) => mergeConversationPreview(prev, message, 'INSERT', currentUserIdRef.current, selectedIdRef.current, peerForRealtimeRow))
     } catch (err) {
       setOptimistic((prev) => ({
         ...prev,
@@ -1149,7 +1223,7 @@ export function MessagesPage() {
 
     try {
       await apiDeleteJson<{ archived: boolean }>(`/api/conversations/${conversationId}`)
-      setConversations((prev) => prev.filter((conv) => conv.id !== conversationId))
+      updateConversations((prev) => prev.filter((conv) => conv.id !== conversationId))
       setSelectedId(null)
       setMessages([])
       setMessagesByConversation((prev) => {

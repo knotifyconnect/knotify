@@ -29,17 +29,10 @@ import { ReferralAskModal } from '../components/ReferralAskModal'
 import { CreateAskModal } from '../components/asks/CreateAskModal'
 import { AskDrawer, type Ask } from '../components/asks/AskDrawer'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 import { MessageSquare, Coffee, X, MoreHorizontal } from 'lucide-react'
 
 const CompanionHero = lazy(() => import('../components/CompanionHero').then((m) => ({ default: m.CompanionHero })))
-
-function isEditableEscapeTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false
-  if (target.isContentEditable) return true
-
-  const tagName = target.tagName.toLowerCase()
-  return tagName === 'input' || tagName === 'textarea' || tagName === 'select'
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -400,18 +393,9 @@ export function RelationshipHomePage() {
     try { return localStorage.getItem('knotify:inviteDismissed') === '1' } catch { return false }
   })
 
-  useEffect(() => {
-    if (!companionOpen) return
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      if (event.isComposing || isEditableEscapeTarget(event.target)) return
-      setCompanionOpen(false)
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [companionOpen])
+  useEscapeClose(companionOpen, () => setCompanionOpen(false), {
+    shouldIgnore: () => Boolean(document.querySelector('.k-overlay, [role="dialog"]')),
+  })
 
   useEffect(() => {
     return runWhenIdle(() => {

@@ -161,6 +161,18 @@ export function getApiCacheSnapshot<T>(
   return null
 }
 
+export function setApiCacheSnapshot<T>(
+  path: string,
+  value: T,
+  { ttlMs = 10_000, staleMs = DEFAULT_STALE_TTL_MS }: { ttlMs?: number; staleMs?: number } = {}
+) {
+  responseCache.set(cacheKey(path), {
+    expiresAt: Date.now() + ttlMs,
+    staleUntil: Date.now() + Math.max(ttlMs, staleMs),
+    value,
+  })
+}
+
 async function fetchApi(
   path: string,
   init: RequestInit,
