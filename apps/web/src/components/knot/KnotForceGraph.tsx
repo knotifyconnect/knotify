@@ -598,7 +598,9 @@ function StageCard({
             ? '0 18px 44px rgba(26,24,21,0.13)'
             : related
               ? '0 14px 34px rgba(26,24,21,0.08)'
-              : '0 4px 14px rgba(26,24,21,0.02)',
+              : secondDegree
+                ? '0 8px 20px rgba(26,24,21,0.06)'
+                : '0 4px 14px rgba(26,24,21,0.02)',
         display: 'grid',
         gridTemplateColumns: '30px minmax(0, 1fr)',
         gap: 8,
@@ -883,11 +885,15 @@ export function KnotForceGraph({
     }
 
     const expandedRoots = new Set(expandedNodes.map((node) => `person:${node.expandedViaUserId}`))
-    const focusNodes = currentLayoutNodes.filter((node) => node.degree === 'second' || expandedRoots.has(node.id))
-    const minX = Math.min(...focusNodes.map((node) => node.x - (node.degree === 'second' ? 100 : 96)))
-    const maxX = Math.max(...focusNodes.map((node) => node.x + (node.degree === 'second' ? 100 : 96)))
-    const minY = Math.min(...focusNodes.map((node) => node.y - 58))
-    const maxY = Math.max(...focusNodes.map((node) => node.y + 58))
+    const directNodes = currentLayoutNodes.filter((node) => node.degree !== 'second')
+    // Bounds must cover every direct node, not just the expanded cluster — otherwise
+    // panning/zooming to fit the expansion pushes unrelated direct nodes off-frame
+    // where the stage's overflow: hidden clips them into a hard edge.
+    const boundsNodes = [...currentLayoutNodes.filter((node) => node.degree === 'second' || expandedRoots.has(node.id)), ...directNodes]
+    const minX = Math.min(...boundsNodes.map((node) => node.x - (node.degree === 'second' ? 100 : 96)))
+    const maxX = Math.max(...boundsNodes.map((node) => node.x + (node.degree === 'second' ? 100 : 96)))
+    const minY = Math.min(...boundsNodes.map((node) => node.y - 58))
+    const maxY = Math.max(...boundsNodes.map((node) => node.y + 58))
 
     setViewport(viewportForBounds(stage, { minX, maxX, minY, maxY }))
   }, [expandedSignature, hasQuery, layoutRevision])
@@ -1258,8 +1264,14 @@ export function KnotForceGraph({
 
             {visiblePeerEdges.map((edge, index) => {
               const selected = selectedNodeId === edge.source.id || selectedNodeId === edge.target.id
+              // The line from an expanded root to its own second-degree child is structural,
+              // not a peer relationship — give it a cleaner, always-visible "stem" look instead
+              // of the generic dashed peer-edge style that disappears once another node is selected.
+              const isExpansionEdge =
+                (edge.target.degree === 'second' && edge.target.expandedViaUserId === edge.source.userId) ||
+                (edge.source.degree === 'second' && edge.source.expandedViaUserId === edge.target.userId)
 
-              if (selectedNodeId && !selected) return null
+              if (selectedNodeId && !selected && !isExpansionEdge) return null
               if (hasQuery && !edge.source.matchesQuery && !edge.target.matchesQuery) return null
 
               const midX = (edge.source.x + edge.target.x) / 2
@@ -1268,8 +1280,8 @@ export function KnotForceGraph({
               const awayY = midY + (midY - center.y) * 0.52 - Math.cos(index * 1.3) * 10
               const softX = midX + (midX - center.x) * 0.18 + Math.sin(index * 1.7) * 10
               const softY = midY + (midY - center.y) * 0.32 - Math.cos(index * 1.3) * 8
-              const curveX = selected ? awayX : softX
-              const curveY = selected ? awayY : softY
+              const curveX = isExpansionEdge ? midX : selected ? awayX : softX
+              const curveY = isExpansionEdge ? midY : selected ? awayY : softY
               const endpoints = edgeEndpointsForRects(
                 edge.source,
                 measuredNodeSize(edge.source, nodeDomSizes, stageSize, compact),
@@ -1286,9 +1298,9 @@ export function KnotForceGraph({
                   data-graph-line={edge.id}
                   d={`M ${sourcePoint.x} ${sourcePoint.y} Q ${curvePoint.x} ${curvePoint.y} ${targetPoint.x} ${targetPoint.y}`}
                   fill="none"
-                  stroke={selected ? 'rgba(26,24,21,0.34)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
-                  strokeWidth={selected ? 1.22 : 0.85}
-                  strokeDasharray={selected ? 'none' : '6 10'}
+                  stroke={isExpansionEdge ? 'rgba(84,72,58,0.32)' : selected ? 'rgba(26,24,21,0.34)' : hasQuery ? 'rgba(26,24,21,0.20)' : 'rgba(84,72,58,0.16)'}
+                  strokeWidth={isExpansionEdge ? 1.3 : selected ? 1.22 : 0.85}
+                  strokeDasharray={isExpansionEdge ? 'none' : selected ? 'none' : '6 10'}
                   strokeLinecap="round"
                   pointerEvents="stroke"
                 />
