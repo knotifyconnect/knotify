@@ -25,6 +25,7 @@ const GigsPage = lazy(() => import('./pages/GigsPage').then((m) => ({ default: m
 const CafesPage = lazy(() => import('./pages/CafesPage').then((m) => ({ default: m.CafesPage })))
 const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })))
+const TermsPage = lazy(() => import('./pages/TermsPage').then((m) => ({ default: m.TermsPage })))
 const ImpressumPage = lazy(() => import('./pages/ImpressumPage').then((m) => ({ default: m.ImpressumPage })))
 const EmployersPage = lazy(() => import('./pages/EmployersPage').then((m) => ({ default: m.EmployersPage })))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })))
@@ -108,6 +109,7 @@ function isProbablyPublicPath(pathname: string) {
     pathname === '/forgot-password' ||
     pathname === '/reset-password' ||
     pathname === '/privacy' ||
+    pathname === '/terms' ||
     pathname === '/impressum' ||
     pathname === '/employers' ||
     pathname.startsWith('/guides')
@@ -299,6 +301,7 @@ function PublicRoutes() {
       <Route path="/forgot-password" element={<AuthPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route path="/impressum" element={<ImpressumPage />} />
       <Route path="/employers" element={<EmployersPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -318,6 +321,7 @@ function ReentryLandingRoutes({ onContinue }: { onContinue: () => void }) {
   return (
     <Routes>
       <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route path="/impressum" element={<ImpressumPage />} />
       <Route path="/auth" element={<ReentryContinue onContinue={onContinue} />} />
       <Route path="/login" element={<ReentryContinue onContinue={onContinue} />} />

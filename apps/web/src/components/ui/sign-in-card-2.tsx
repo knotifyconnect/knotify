@@ -31,6 +31,9 @@ type SignInCard2Props = {
   hideSignupTab?: boolean
   /** When true, the email field is read-only (verified invite pins the address). */
   emailLocked?: boolean
+  /** Mandatory legal consent — required to create an account. */
+  termsAccepted: boolean
+  onTermsAcceptedChange: (value: boolean) => void
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -146,6 +149,8 @@ export function SignInCard2({
   inviteBanner,
   hideSignupTab,
   emailLocked,
+  termsAccepted,
+  onTermsAcceptedChange,
 }: SignInCard2Props) {
   const [showPassword, setShowPassword] = useState(false)
   const header = getHeaderCopy(mode)
@@ -429,6 +434,37 @@ export function SignInCard2({
             </div>
           )}
 
+          {showSignupFields && (
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                cursor: loading ? 'wait' : 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                required
+                checked={termsAccepted}
+                onChange={(e) => onTermsAcceptedChange(e.target.checked)}
+                disabled={loading}
+                style={{ marginTop: 2, width: 16, height: 16, accentColor: 'var(--signal)', flexShrink: 0 }}
+              />
+              <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.55 }}>
+                I agree to knotify's{' '}
+                <a href="/terms" target="_blank" rel="noreferrer" style={{ color: 'var(--ink-muted)', textDecoration: 'underline' }}>
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: 'var(--ink-muted)', textDecoration: 'underline' }}>
+                  Privacy Policy
+                </a>
+                , including how my data is processed.
+              </span>
+            </label>
+          )}
+
           {message && (
             <div
               style={{
@@ -449,7 +485,7 @@ export function SignInCard2({
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (showSignupFields && !termsAccepted)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -464,9 +500,10 @@ export function SignInCard2({
               fontWeight: 500,
               fontFamily: "'IBM Plex Sans', sans-serif",
               border: 'none',
-              cursor: loading ? 'wait' : 'pointer',
+              cursor: loading ? 'wait' : showSignupFields && !termsAccepted ? 'not-allowed' : 'pointer',
+              opacity: showSignupFields && !termsAccepted && !loading ? 0.55 : 1,
               marginTop: 4,
-              transition: 'background 0.15s ease',
+              transition: 'background 0.15s ease, opacity 0.15s ease',
             }}
           >
             {loading ? (

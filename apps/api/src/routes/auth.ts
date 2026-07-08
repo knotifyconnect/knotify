@@ -3,12 +3,17 @@ import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
 
+// Bump when the Terms of Service / Privacy Policy change in a way that requires
+// re-consent. Only recorded at account creation — see below.
+const TERMS_VERSION = 'v1'
+
 const completeProfileSchema = z.object({
   fullName: z.string().min(2),
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/),
   locationCity: z.string().min(2).default('Munich'),
   university: z.string().optional(),
   status: z.enum(['studying', 'open_to_work', 'employed']).default('open_to_work'),
+  termsAccepted: z.boolean().optional(),
 })
 
 export const authRouter = Router()
@@ -29,6 +34,26 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
   const university = parsed.data.university?.trim()
   const status = parsed.data.status
 
+  const existing = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', req.authUser.id)
+    .maybeSingle()
+
+  if (existing.error) {
+    return res.status(500).json({ error: existing.error.message })
+  }
+
+  const isNewAccount = !existing.data
+
+  // Legal consent is only required — and only recorded — at the moment the
+  // account row is actually created. This is a server-enforced gate, not just
+  // a UI checkbox: re-syncing an existing profile (e.g. on every login) never
+  // requires or overwrites the original consent timestamp.
+  if (isNewAccount && parsed.data.termsAccepted !== true) {
+    return res.status(422).json({ error: 'You must accept the Terms of Service and Privacy Policy to create an account.' })
+  }
+
   const upsert = await supabase
     .from('users')
     .upsert(
@@ -40,6 +65,7 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
         location_city: locationCity,
         university: university ?? null,
         status,
+        ...(isNewAccount ? { terms_accepted_at: new Date().toISOString(), terms_version: TERMS_VERSION } : {}),
       },
       { onConflict: 'auth_id' }
     )
