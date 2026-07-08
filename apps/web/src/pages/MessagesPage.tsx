@@ -369,6 +369,7 @@ const CONVERSATIONS_PATH = '/api/conversations'
 const MEETINGS_PATH = '/api/meetings'
 const CONNECTIONS_PATH = '/api/connections'
 const CAFES_PATH = '/api/cafes'
+const FAST_CONVERSATION_RECONCILE_GRACE_MS = 15_000
 
 function formatMeetingTime(value: string) {
   const date = new Date(value)
@@ -495,6 +496,7 @@ export function MessagesPage() {
   const conversationRefreshTimerRef = useRef<number | null>(null)
   const threadRefreshTimersRef = useRef<Record<string, number>>({})
   const conversationIdsRef = useRef<Set<string>>(new Set())
+  const fastConversationUpdatedAtRef = useRef<Record<string, number>>({})
 
   const selectedConv = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
@@ -584,14 +586,69 @@ export function MessagesPage() {
     setApiCacheSnapshot<ConversationsCache>(CONVERSATIONS_PATH, { conversations: next })
   }
 
-  function updateConversations(updater: (prev: ConversationSummary[]) => ConversationSummary[]) {
+  function updateConversations(
+    updater: (prev: ConversationSummary[]) => ConversationSummary[],
+    touchedConversationIds: string[] = []
+  ) {
     setConversations((prev) => {
       const next = updater(prev)
+      const touchedAt = Date.now()
+      for (const conversationId of touchedConversationIds) {
+        fastConversationUpdatedAtRef.current[conversationId] = touchedAt
+      }
       conversationsRef.current = next
       conversationIdsRef.current = new Set(next.map((conversation) => conversation.id))
       cacheConversations(next)
       return next
     })
+  }
+
+  function mergeRestConversationSnapshot(restConversations: ConversationSummary[], requestStartedAt: number) {
+    const localConversations = conversationsRef.current
+    const localById = new Map(localConversations.map((conversation) => [conversation.id, conversation]))
+    const restIds = new Set(restConversations.map((conversation) => conversation.id))
+    const now = Date.now()
+
+    const merged = restConversations.map((serverConversation) => {
+      const localConversation = localById.get(serverConversation.id)
+      const fastUpdatedAt = fastConversationUpdatedAtRef.current[serverConversation.id] ?? 0
+      if (!localConversation || fastUpdatedAt <= 0) return serverConversation
+
+      const serverLatestAt = serverConversation.latest_message?.created_at ?? serverConversation.created_at
+      const localLatestAt = localConversation.latest_message?.created_at ?? localConversation.created_at
+      const localHasNewerLatest = localLatestAt.localeCompare(serverLatestAt) > 0
+      const shouldPreserveFastState =
+        fastUpdatedAt > requestStartedAt ||
+        (localHasNewerLatest && now - fastUpdatedAt < FAST_CONVERSATION_RECONCILE_GRACE_MS)
+
+      if (!shouldPreserveFastState) return serverConversation
+
+      const latest_message =
+        localLatestAt.localeCompare(serverLatestAt) >= 0
+          ? localConversation.latest_message
+          : serverConversation.latest_message
+
+      return {
+        ...serverConversation,
+        peer: serverConversation.peer ?? localConversation.peer,
+        cleared_at: serverConversation.cleared_at ?? localConversation.cleared_at,
+        unread_count: localConversation.unread_count,
+        latest_message,
+      }
+    })
+
+    for (const localConversation of localConversations) {
+      const fastUpdatedAt = fastConversationUpdatedAtRef.current[localConversation.id] ?? 0
+      const shouldPreserveFastState =
+        fastUpdatedAt > requestStartedAt ||
+        (fastUpdatedAt > 0 && now - fastUpdatedAt < FAST_CONVERSATION_RECONCILE_GRACE_MS)
+
+      if (!restIds.has(localConversation.id) && shouldPreserveFastState) {
+        merged.push(localConversation)
+      }
+    }
+
+    return sortConversations(merged)
   }
 
   function peerForRealtimeRow(row: RealtimeMessageRow) {
@@ -605,30 +662,34 @@ export function MessagesPage() {
   }
 
   function upsertConversationShell(conversationId: string, peer: UserPreview | null, createdAt = new Date().toISOString()) {
-    updateConversations((prev) => {
-      if (prev.some((conversation) => conversation.id === conversationId)) return prev
+    updateConversations(
+      (prev) => {
+        if (prev.some((conversation) => conversation.id === conversationId)) return prev
 
-      return sortConversations([
-        {
-          id: conversationId,
-          created_at: createdAt,
-          cleared_at: null,
-          peer,
-          unread_count: 0,
-          latest_message: null,
-        },
-        ...prev,
-      ])
-    })
+        return sortConversations([
+          {
+            id: conversationId,
+            created_at: createdAt,
+            cleared_at: null,
+            peer,
+            unread_count: 0,
+            latest_message: null,
+          },
+          ...prev,
+        ])
+      },
+      [conversationId]
+    )
   }
 
   async function loadConvs(keepErr = false) {
     if (loadConvsInFlightRef.current) return loadConvsInFlightRef.current
     setLoadingConvs(true)
+    const requestStartedAt = Date.now()
     const task = (async () => {
       try {
         const res = await apiGet<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)
-        const next = res.conversations ?? []
+        const next = mergeRestConversationSnapshot(res.conversations ?? [], requestStartedAt)
         updateConversations(() => next)
         const activeSelectedId = selectedIdRef.current
         if (!next.length) {
@@ -680,15 +741,19 @@ export function MessagesPage() {
     scrollStateRef.current = { conversationId: null, lastMessageId: null }
     setMessages(messagesByConversationRef.current[conversationId] ?? [])
     setOptimistic((prev) => ({ ...prev, [conversationId]: prev[conversationId] ?? [] }))
-    updateConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c)))
+    updateConversations(
+      (prev) => prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c)),
+      [conversationId]
+    )
     setSelectedId(conversationId)
   }
 
   async function markRead(id: string) {
     try {
       await apiPost(`/api/conversations/${id}/read`, {})
-      updateConversations((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c))
+      updateConversations(
+        (prev) => prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c)),
+        [id]
       )
     } catch { /* best effort */ }
   }
@@ -898,8 +963,9 @@ export function MessagesPage() {
           setOptimistic((prev) => dropMatchingOptimistic(prev, row.conversation_id, message, currentUserId))
         }
 
-        updateConversations((prev) =>
-          mergeConversationPreview(prev, row, eventType, currentUserId, activeConversationId, peerForRealtimeRow)
+        updateConversations(
+          (prev) => mergeConversationPreview(prev, row, eventType, currentUserId, activeConversationId, peerForRealtimeRow),
+          [row.conversation_id]
         )
         refreshConversationListForRealtime(row.conversation_id, wasKnownConversation)
       })
@@ -1130,7 +1196,10 @@ export function MessagesPage() {
     scrollIntentRef.current = 'own-message'
     setSendLoading(true)
     setOptimistic((prev) => ({ ...prev, [conversationId]: [...(prev[conversationId] ?? []), opt] }))
-    updateConversations((prev) => mergeConversationPreview(prev, opt, 'INSERT', currentUserIdRef.current, selectedIdRef.current, peerForRealtimeRow))
+    updateConversations(
+      (prev) => mergeConversationPreview(prev, opt, 'INSERT', currentUserIdRef.current, selectedIdRef.current, peerForRealtimeRow),
+      [conversationId]
+    )
 
     try {
       const res = await apiPost<{ message: Message }>(`/api/conversations/${conversationId}/messages`, { content: trimmed })
@@ -1150,7 +1219,10 @@ export function MessagesPage() {
         ...prev,
         [conversationId]: mergeMessageList(prev[conversationId] ?? [], message),
       }))
-      updateConversations((prev) => mergeConversationPreview(prev, message, 'INSERT', currentUserIdRef.current, selectedIdRef.current, peerForRealtimeRow))
+      updateConversations(
+        (prev) => mergeConversationPreview(prev, message, 'INSERT', currentUserIdRef.current, selectedIdRef.current, peerForRealtimeRow),
+        [conversationId]
+      )
     } catch (err) {
       setOptimistic((prev) => ({
         ...prev,
