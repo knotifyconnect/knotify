@@ -348,8 +348,8 @@ body::before {
   position: relative; min-height: calc(100vh - 78px);
 }
 @media (max-width: 767px) {
-  .k-knot-stage { min-height: calc(100dvh - 140px); }
-  .your-knot-stage { height: calc(100dvh - 168px); min-height: 0; overflow: hidden; }
+  .k-knot-stage { min-height: 0; }
+  .your-knot-stage { height: 100%; min-height: 0; overflow: hidden; }
 }
 .k-knot-bg {
   position: relative; overflow: hidden; min-height: calc(100vh - 78px);
@@ -359,7 +359,7 @@ body::before {
   background-size: 100% 100%, 18px 18px;
 }
 @media (max-width: 767px) {
-  .k-knot-bg { min-height: calc(100dvh - 140px); }
+  .k-knot-bg { min-height: 0; }
   .your-knot-stage .k-knot-bg { height: 100%; min-height: 0; overflow: hidden; }
 }
 .k-knot-search-box {

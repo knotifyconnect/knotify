@@ -2208,14 +2208,14 @@ export function MessagesPage() {
           {/* Composer */}
           <div
             style={{
-              padding: isMobile ? '7px 14px calc(9px + env(safe-area-inset-bottom))' : '12px clamp(14px, 4vw, 46px) 14px',
+              padding: isMobile ? '5px 14px calc(7px + env(safe-area-inset-bottom))' : '12px clamp(14px, 4vw, 46px) 14px',
               borderTop: '0.5px solid rgba(26,24,21,0.07)',
               background: 'rgba(255,252,246,0.96)',
               display: selectedId ? 'block' : 'none',
             }}
           >
             <div style={isMobile ? MOBILE_MESSAGE_LANE_STYLE : MESSAGE_LANE_STYLE}>
-              {lastMineLabel && (
+              {!isMobile && lastMineLabel && (
                 <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 4, paddingRight: 4, fontFamily: "'IBM Plex Mono'" }}>
                   {lastMineLabel}
                 </div>

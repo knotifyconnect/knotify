@@ -14,7 +14,7 @@
  *  - Avatar editor
  */
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiGet, apiGetCached, apiPatch, apiPost, apiPostForm, apiPut } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { CareerPathCard } from '../components/profile/CareerPathCard'
@@ -291,7 +291,9 @@ const emptyExp = (): ExperienceEntry => ({ company: '', role: '', start_date: ''
 
 export function ProfilePage() {
   const { userId } = useParams<{ userId: string }>()
+  const [searchParams] = useSearchParams()
   const [meId, setMeId] = useState<string | null>(null)
+  const forcePublicView = searchParams.get('view') === 'public'
 
   // Resolve "is this my own profile or someone else's?"
   useEffect(() => {
@@ -302,11 +304,11 @@ export function ProfilePage() {
   }, [userId])
 
   // If we have a userId param AND it's not my own ID → public view
-  if (userId && meId && userId !== meId) {
+  if (userId && meId && (userId !== meId || forcePublicView)) {
     return <PublicProfileView userId={userId} />
   }
   // While we don't know yet whether it's me, show public view (safer)
-  if (userId && !meId) {
+  if (userId && (!meId || forcePublicView)) {
     return <PublicProfileView userId={userId} />
   }
 
@@ -851,7 +853,7 @@ function OwnProfileView() {
           {!me.banner_url && (
             <>
               <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(255,255,255,0.32) 1px, transparent 1px)', backgroundSize: '22px 22px', opacity: ['Bowline', 'Masthead'].includes(credibility?.tier ?? '') ? 0.5 : 0.32 }} />
-              <div style={{ position: 'absolute', left: isMobile ? 14 : 20, right: isMobile ? 14 : undefined, bottom: 16, minWidth: 0 }}>
+              <div style={{ position: 'absolute', left: isMobile ? 14 : 20, right: isMobile ? 14 : undefined, bottom: 16, minWidth: 0, display: isMobile ? 'none' : undefined }}>
                 <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 15, color: ['Bowline', 'Masthead'].includes(credibility?.tier ?? '') ? 'rgba(255,255,255,0.92)' : 'var(--ink-soft)' }}>
                   {credibility ? `${credibility.tier} · knotting Munich` : 'knotting Munich'}
                 </span>
@@ -890,7 +892,7 @@ function OwnProfileView() {
             <div className="k-profile-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingBottom: 4 }}>
               <KBtn variant={customizing ? 'signal' : 'ghost'} size="sm" onClick={() => setCustomizing((c) => !c)}>{customizing ? 'Done' : 'Customize'}</KBtn>
               <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
-              <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
+              <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}?view=public`)}>View as public</KBtn>
               <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
                 {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
               </KBtn>

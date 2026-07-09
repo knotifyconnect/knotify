@@ -422,8 +422,7 @@ export function KnotMobileGraph({
     prevQueryRef.current = query
 
     if (hasQuery) {
-      const hits = positioned.filter(p => p.n.matchesQuery)
-      if (hits.length) fitViewport(hits, { maxScale: 1.08, targetY: CY - 20 })
+      fitViewport(positioned, { maxScale: 1 })
       return
     }
     // Recenter when the query is cleared.
@@ -570,8 +569,7 @@ export function KnotMobileGraph({
     pointersRef.current.clear()
     suppressNodeClickRef.current = false
     setDragPositions({})
-    setPan({ x: 0, y: 0 })
-    setScale(1)
+    fitViewport(positioned, { maxScale: 1 })
     onClearSelection()
     onResetGraph?.()
   }
@@ -666,7 +664,7 @@ export function KnotMobileGraph({
               strokeWidth={sel ? 1.6 : isSecond ? 1.2 : 0.8}
               strokeDasharray={isSecond ? '5 4' : undefined}
               strokeLinecap="round"
-              opacity={searchMuted ? 0.1 : isDimmed(n) ? 0.18 : 1}
+              opacity={searchMuted ? 0.04 : isDimmed(n) ? 0.18 : 1}
             />
           )
         })}
@@ -703,7 +701,7 @@ export function KnotMobileGraph({
                 if (suppressNodeClickRef.current) return
                 sel ? onClearSelection() : onSelectNode(n)
               }}
-              style={{ cursor: 'pointer', touchAction: 'none', transformOrigin: `${x}px ${y}px`, opacity: searchMuted ? 0.16 : isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
+              style={{ cursor: 'pointer', touchAction: 'none', transformOrigin: `${x}px ${y}px`, opacity: searchMuted ? 0.06 : isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
             >
               {/* Outer selection / search-match / expanded-root / health ring */}
               {sel && <circle cx={0} cy={0} r={r + 5} fill="rgba(216,68,43,0.12)" stroke="#D8442B" strokeWidth={1.5} />}
