@@ -341,9 +341,9 @@ function CoffeeTimelineEventCard({
 }
 
 const QUICK_ACTIONS = [
-  { label: 'Video call 📹', message: "Would you be up for a quick video call?" },
-  { label: 'Intro request 🤝', message: "Could you introduce me to someone at your company?" },
-  { label: 'Vouch request ⭐', message: "Would you be willing to vouch for me on knotify?" },
+  { label: 'Pick a time', message: 'Want to find a time to catch up this week?' },
+  { label: 'Ask for intro', message: 'Could you introduce me to someone at your company?' },
+  { label: 'Request support', message: 'Would you be willing to write me a short recommendation on knotify?' },
 ]
 
 const MESSAGE_LANE_STYLE: React.CSSProperties = {
@@ -2169,7 +2169,7 @@ export function MessagesPage() {
           {selectedId && (
             <div
               style={{
-                padding: isMobile ? '8px 14px' : '9px clamp(14px, 4vw, 46px)',
+                padding: isMobile ? '6px 14px 4px' : '9px clamp(14px, 4vw, 46px)',
                 borderTop: '0.5px solid rgba(26,24,21,0.07)',
                 scrollbarWidth: 'none',
                 background: 'rgba(255,252,246,0.78)',
@@ -2182,11 +2182,11 @@ export function MessagesPage() {
                     type="button"
                     onClick={() => void sendMessage(message)}
                     style={{
-                      padding: isMobile ? '7px 12px' : '6px 12px',
+                      padding: isMobile ? '6px 11px' : '6px 12px',
                       borderRadius: 999,
                       border: '0.5px solid rgba(26,24,21,0.1)',
                       background: 'rgba(255,255,255,0.9)',
-                      fontSize: isMobile ? 11.5 : 12,
+                      fontSize: isMobile ? 11.25 : 12,
                       color: 'var(--ink-soft)',
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',
@@ -2208,7 +2208,7 @@ export function MessagesPage() {
           {/* Composer */}
           <div
             style={{
-              padding: isMobile ? '10px 14px calc(12px + env(safe-area-inset-bottom))' : '12px clamp(14px, 4vw, 46px) 14px',
+              padding: isMobile ? '7px 14px calc(9px + env(safe-area-inset-bottom))' : '12px clamp(14px, 4vw, 46px) 14px',
               borderTop: '0.5px solid rgba(26,24,21,0.07)',
               background: 'rgba(255,252,246,0.96)',
               display: selectedId ? 'block' : 'none',
@@ -2216,11 +2216,11 @@ export function MessagesPage() {
           >
             <div style={isMobile ? MOBILE_MESSAGE_LANE_STYLE : MESSAGE_LANE_STYLE}>
               {lastMineLabel && (
-                <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 6, paddingRight: 4, fontFamily: "'IBM Plex Mono'" }}>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 4, paddingRight: 4, fontFamily: "'IBM Plex Mono'" }}>
                   {lastMineLabel}
                 </div>
               )}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: isMobile ? 8 : 10 }}>
+            <div style={{ display: 'flex', alignItems: 'stretch', gap: isMobile ? 8 : 10 }}>
               <div style={{ flex: 1, position: 'relative' }}>
                 <textarea
                   value={composer}
@@ -2241,7 +2241,7 @@ export function MessagesPage() {
                     borderRadius: isMobile ? 22 : 22,
                     border: '0.5px solid rgba(26,24,21,0.1)',
                     background: isMobile ? 'rgba(255,255,255,0.94)' : 'rgba(238,231,216,0.7)',
-                    padding: isMobile ? '12px 42px 12px 15px' : '11px 42px 11px 16px',
+                    padding: isMobile ? '12px 42px 10px 15px' : '11px 42px 11px 16px',
                     fontSize: isMobile ? 13.5 : 14,
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     color: 'var(--ink)',
@@ -2254,7 +2254,7 @@ export function MessagesPage() {
                   onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--rule)' }}
                 />
                 {/* Emoji keyboard button */}
-                <div style={{ position: 'absolute', right: isMobile ? 10 : 8, bottom: isMobile ? 9 : 9 }}>
+                <div style={{ position: 'absolute', right: isMobile ? 9 : 8, top: isMobile ? 9 : undefined, bottom: isMobile ? undefined : 9 }}>
                   <button
                     type="button"
                     onClick={() => setEmojiPickerOpen((p) => !p)}
@@ -2278,7 +2278,7 @@ export function MessagesPage() {
                 size="sm"
                 disabled={!selectedId || !composer.trim() || sendLoading}
                 onClick={() => void sendMessage()}
-                  style={{ flexShrink: 0, height: isMobile ? 46 : 44, minWidth: isMobile ? 76 : 84, borderRadius: isMobile ? 22 : 22, padding: isMobile ? '0 18px' : '0 20px', fontSize: isMobile ? 13.5 : undefined, boxShadow: '0 10px 24px rgba(216,68,43,0.16)' }}
+                  style={{ flexShrink: 0, alignSelf: 'stretch', minHeight: isMobile ? 46 : 44, minWidth: isMobile ? 76 : 84, borderRadius: 22, padding: isMobile ? '0 18px' : '0 20px', fontSize: isMobile ? 13.5 : undefined, boxShadow: '0 10px 24px rgba(216,68,43,0.16)' }}
               >
                 Send
               </KBtn>
