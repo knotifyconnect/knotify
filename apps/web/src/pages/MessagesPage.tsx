@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { SmilePlus, Trash2 } from 'lucide-react'
-import { apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot, setApiCacheSnapshot } from '../lib/api'
+import { apiDeleteJson, apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot, setApiCacheSnapshot } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
-import { KAvatar, KBtn, KCard } from '../lib/knotify'
+import { KAvatar, KBtn, KCard, KnotifyMark } from '../lib/knotify'
 import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
 import { useEscapeClose } from '../hooks/useEscapeClose'
@@ -419,23 +419,6 @@ function coffeeErrorMessage(err: unknown) {
   }
 
   return message || 'Could not send the coffee proposal. Check the details and try again.'
-}
-
-async function apiDeleteJson<T>(path: string): Promise<T> {
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
-  const baseUrl = ((import.meta.env.VITE_API_URL ?? import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000') as string).replace(/\/$/, '')
-
-  const res = await fetch(`${baseUrl}${path}`, {
-    method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  })
-
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(json?.error ?? 'Request failed')
-  return json as T
 }
 
 const MSG_ICON_BTN: React.CSSProperties = {
@@ -1933,8 +1916,8 @@ export function MessagesPage() {
                     </div>
                   )}
                   <div style={{ textAlign: 'center', padding: '30px 32px', borderRadius: 24, background: 'rgba(255,252,246,0.78)', border: '0.5px solid rgba(26,24,21,0.08)', boxShadow: '0 14px 40px rgba(26,24,21,0.07)' }}>
-                    <div style={{ width: 48, height: 48, borderRadius: 18, margin: '0 auto 14px', display: 'grid', placeItems: 'center', background: 'var(--signal-soft)', color: 'var(--signal)', fontFamily: "'Fraunces', Georgia, serif", fontSize: 24, fontStyle: 'italic' }}>
-                      k
+                    <div style={{ width: 48, height: 48, borderRadius: 18, margin: '0 auto 14px', display: 'grid', placeItems: 'center', background: 'var(--signal-soft)', color: 'var(--signal)' }}>
+                      <KnotifyMark size={25} color="var(--signal)" />
                     </div>
                     <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 500, color: 'var(--ink)', marginBottom: 7 }}>
                       Pick up a thread

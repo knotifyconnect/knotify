@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { Bug, Lightbulb, MessageCircle, X } from 'lucide-react'
 import { apiPost } from '../lib/api'
-import { KnotifyMark } from '../lib/knotify'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 type FeedbackType = 'bug' | 'suggestion' | 'other'
@@ -69,9 +68,9 @@ export function FeedbackWidget() {
 
   if (typeof document === 'undefined') return null
 
-  // Bottom-left, clear of the mobile tab bar and the desktop sidebar.
+  // Mobile stacks with notifications at bottom-right; desktop clears the sidebar.
   const buttonPos: React.CSSProperties = isMobile
-    ? { left: 16, bottom: 'max(84px, calc(72px + env(safe-area-inset-bottom)))' }
+    ? { right: 16, bottom: 'max(84px, calc(72px + env(safe-area-inset-bottom)))' }
     : { left: 236, bottom: 20 }
 
   const fab = (
@@ -89,6 +88,7 @@ export function FeedbackWidget() {
         borderRadius: 999,
         background: 'var(--paper)',
         border: '1px solid var(--rule)',
+        color: 'var(--signal)',
         boxShadow: '0 8px 24px rgba(35,31,28,0.16)',
         cursor: 'pointer',
         display: open ? 'none' : 'flex',
@@ -97,7 +97,7 @@ export function FeedbackWidget() {
         padding: 0,
       }}
     >
-      <KnotifyMark size={24} color="var(--signal)" />
+      <MessageCircle size={21} />
     </button>
   )
 
@@ -145,7 +145,7 @@ export function FeedbackWidget() {
           <>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <KnotifyMark size={18} color="var(--signal)" />
+                <Lightbulb size={18} color="var(--signal)" />
                 <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Send feedback</span>
               </div>
               <button

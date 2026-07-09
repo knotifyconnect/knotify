@@ -18,21 +18,17 @@
  * Design tokens: Fraunces headings · IBM Plex Sans body · Paper #F4EFE6
  * Signal Red (#D84428) used ONLY on: Review button, cold dot, cold accents.
  */
-import { Suspense, lazy, useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet, apiGetCached, apiPost, getApiCacheSnapshot } from '../lib/api'
 import { runWhenIdle } from '../lib/schedule'
 import { HomeHub } from '../components/HomeHub'
-import type { Suggestion, PeerLite } from '../components/CompanionHero'
 import { KAvatar, KBtn } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 import { CreateAskModal } from '../components/asks/CreateAskModal'
 import { AskDrawer, type Ask } from '../components/asks/AskDrawer'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
-import { useEscapeClose } from '../hooks/useEscapeClose'
 import { MessageSquare, Coffee, X, MoreHorizontal } from 'lucide-react'
-
-const CompanionHero = lazy(() => import('../components/CompanionHero').then((m) => ({ default: m.CompanionHero })))
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -388,13 +384,8 @@ export function RelationshipHomePage() {
   const [askDetail, setAskDetail] = useState<Ask | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const [inviteCopied, setInviteCopied] = useState(false)
-  const [companionOpen, setCompanionOpen] = useState(false)
   const [inviteDismissed, setInviteDismissed] = useState(() => {
     try { return localStorage.getItem('knotify:inviteDismissed') === '1' } catch { return false }
-  })
-
-  useEscapeClose(companionOpen, () => setCompanionOpen(false), {
-    shouldIgnore: () => Boolean(document.querySelector('.k-overlay, [role="dialog"]')),
   })
 
   useEffect(() => {
@@ -579,111 +570,6 @@ export function RelationshipHomePage() {
   ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12)
 
   // ── Companion — a separate chat card, not fused into the queue below ────────
-  const companionPeers = new Map<string, PeerLite>(
-    ranked.map((r) => [r.peerId, { id: r.peer.id, full_name: r.peer.full_name, avatar_url: r.peer.avatar_url }])
-  )
-  const rankedByPeer = new Map(ranked.map((r) => [r.peerId, r]))
-
-  function handleCompanionSuggestion(s: Suggestion) {
-    const entry = s.peerId ? rankedByPeer.get(s.peerId) : undefined
-    switch (s.action) {
-      case 'open_message':
-        if (!s.peerId) return
-        if (entry) logAndAct(entry, 'acted')
-        openMessage(s.peerId, s.draft)
-        return
-      case 'open_coffee':
-        if (!s.peerId) return
-        if (entry) logAndAct(entry, 'acted')
-        openCoffeePlanner(s.peerId)
-        return
-      case 'open_profile':
-        if (s.peerId) navigate(`/profile/${s.peerId}`)
-        return
-      case 'open_quests':
-        navigate('/quests')
-        return
-      case 'open_events':
-        navigate('/events')
-        return
-    }
-  }
-
-  const companionNode = (
-    <>
-      <button
-        type="button"
-        onClick={() => setCompanionOpen(true)}
-        aria-label="Open Companion"
-        style={{
-          position: 'fixed',
-          right: 18,
-          bottom: 'max(98px, calc(84px + env(safe-area-inset-bottom)))',
-          zIndex: 48,
-          display: companionOpen ? 'none' : 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 14px',
-          borderRadius: 999,
-          border: `0.5px solid ${T.rule}`,
-          background: T.ink,
-          color: T.paperSoft,
-          boxShadow: '0 10px 28px rgba(26,24,21,0.18)',
-          cursor: 'pointer',
-          fontFamily: T.text,
-          fontSize: 13,
-          fontWeight: 700,
-        }}
-      >
-        <MessageSquare size={15} />
-        Companion
-      </button>
-
-      {companionOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            right: 16,
-            bottom: 'max(96px, calc(82px + env(safe-area-inset-bottom)))',
-            zIndex: 9991,
-            width: 'min(430px, calc(100vw - 24px))',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={() => setCompanionOpen(false)}
-              aria-label="Minimize Companion"
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 999,
-                border: `0.5px solid ${T.rule}`,
-                background: T.paperSoft,
-                color: T.inkMuted,
-                cursor: 'pointer',
-                display: 'grid',
-                placeItems: 'center',
-                boxShadow: '0 8px 22px rgba(26,24,21,0.12)',
-              }}
-            >
-              <X size={16} />
-            </button>
-          </div>
-          <Suspense
-            fallback={
-              <div style={{ padding: 14, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)', fontFamily: T.display, fontStyle: 'italic', fontSize: 13.5, color: T.inkMuted }}>
-                Opening Companion...
-              </div>
-            }
-          >
-            <CompanionHero peers={companionPeers} onSuggestion={handleCompanionSuggestion} />
-          </Suspense>
-        </div>
-      )}
-    </>
-  )
-
   // ── "Today's moves" — the unified queue ────────────────────────────────────
   const maintenanceNode = (stats.total > 0 || moves.length > 0) ? (
     <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
@@ -1033,7 +919,6 @@ export function RelationshipHomePage() {
 
       <DeskPage rail={rail}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {companionNode}
           <HomeHub maintenance={maintenanceNode} />
         </div>
       </DeskPage>

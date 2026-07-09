@@ -842,7 +842,7 @@ function OwnProfileView() {
   }
 
   return (
-    <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 22 }}>
+    <div className="k-profile-root" style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 22 }}>
 
       {/* ─── Banner + identity (interconnected: avatar overlaps the cover) ─── */}
       <div>
@@ -887,7 +887,7 @@ function OwnProfileView() {
                 Edit
               </button>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingBottom: 4 }}>
+            <div className="k-profile-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingBottom: 4 }}>
               <KBtn variant={customizing ? 'signal' : 'ghost'} size="sm" onClick={() => setCustomizing((c) => !c)}>{customizing ? 'Done' : 'Customize'}</KBtn>
               <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
               <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
