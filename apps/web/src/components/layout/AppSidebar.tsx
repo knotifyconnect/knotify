@@ -403,8 +403,8 @@ export function AppSidebar() {
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: 3,
-                  padding: '6px 0',
+                  gap: 4,
+                  padding: '7px 0 6px',
                   color: isActive ? 'var(--signal)' : 'var(--ink-faint)',
                 }}
               >
@@ -426,9 +426,10 @@ export function AppSidebar() {
                 </span>
                 <span
                   style={{
-                    fontSize: 9.5,
+                    fontSize: 10,
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     fontWeight: isActive ? 500 : 400,
+                    letterSpacing: 0,
                   }}
                 >
                   {item.title}

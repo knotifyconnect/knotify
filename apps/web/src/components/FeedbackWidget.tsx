@@ -70,7 +70,7 @@ export function FeedbackWidget() {
 
   // Mobile stacks with notifications at bottom-right; desktop clears the sidebar.
   const buttonPos: React.CSSProperties = isMobile
-    ? { right: 16, bottom: 'max(84px, calc(72px + env(safe-area-inset-bottom)))' }
+    ? { right: 14, bottom: 'max(72px, calc(60px + env(safe-area-inset-bottom)))' }
     : { left: 236, bottom: 20 }
 
   const fab = (
@@ -83,8 +83,8 @@ export function FeedbackWidget() {
         ...buttonPos,
         // Above the mobile bottom sheet (z 9900) so it stays tappable on the knot page.
         zIndex: 9990,
-        width: 46,
-        height: 46,
+        width: isMobile ? 40 : 46,
+        height: isMobile ? 40 : 46,
         borderRadius: 999,
         background: 'var(--paper)',
         border: '1px solid var(--rule)',
@@ -97,7 +97,7 @@ export function FeedbackWidget() {
         padding: 0,
       }}
     >
-      <MessageCircle size={21} />
+      <Bug size={isMobile ? 18 : 20} />
     </button>
   )
 

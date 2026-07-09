@@ -105,11 +105,11 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
       aria-label="Notifications"
       style={
         variant === 'floating'
-          ? { position: 'relative', width: 42, height: 42, borderRadius: '50%', border: `0.5px solid ${T.rule}`, background: T.paperSoft, color: T.ink, cursor: 'pointer', display: 'grid', placeItems: 'center', boxShadow: '0 6px 20px rgba(26,24,21,0.12)' }
+          ? { position: 'relative', width: 38, height: 38, borderRadius: '50%', border: `0.5px solid ${T.rule}`, background: T.paperSoft, color: T.ink, cursor: 'pointer', display: 'grid', placeItems: 'center', boxShadow: '0 6px 20px rgba(26,24,21,0.12)' }
           : { position: 'relative', width: 34, height: 34, borderRadius: 10, border: 'none', background: open ? T.paper : 'transparent', color: T.ink, cursor: 'pointer', display: 'grid', placeItems: 'center' }
       }
     >
-      <Bell size={variant === 'floating' ? 18 : 17} />
+      <Bell size={variant === 'floating' ? 16 : 17} />
       {total > 0 && (
         <span style={{ position: 'absolute', top: variant === 'floating' ? 4 : 2, right: variant === 'floating' ? 4 : 2, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999, background: T.signal, color: '#fff', fontSize: 10, fontWeight: 700, display: 'grid', placeItems: 'center', boxSizing: 'border-box', lineHeight: 1 }}>
           {total > 9 ? '9+' : total}
@@ -121,7 +121,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   return (
     <>
       {variant === 'floating' ? (
-        <div style={{ position: 'fixed', bottom: 'max(140px, calc(128px + env(safe-area-inset-bottom)))', right: 16, zIndex: 9991 }}>{bellButton}</div>
+        <div style={{ position: 'fixed', bottom: 'max(118px, calc(106px + env(safe-area-inset-bottom)))', right: 15, zIndex: 9991 }}>{bellButton}</div>
       ) : (
         bellButton
       )}
