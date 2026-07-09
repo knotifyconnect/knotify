@@ -246,6 +246,7 @@ export function KnotMobileGraph({
   expandedRootName = null,
   onCollapse,
   onResetGraph,
+  resetToken = 0,
 }: {
   me: MeNode
   nodes: KnotGraphNode[]
@@ -257,6 +258,7 @@ export function KnotMobileGraph({
   expandedRootName?: string | null
   onCollapse?: () => void
   onResetGraph?: () => void
+  resetToken?: number
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const panRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null)
@@ -323,6 +325,26 @@ export function KnotMobileGraph({
     ...directPositioned,
     ...second.map((n, i) => ({ n, x: dragPositions[n.id]?.x ?? secondSlots[i].x, y: dragPositions[n.id]?.y ?? secondSlots[i].y, r: 17 })),
   ]
+  const positionedSignature = positioned.map(({ n, x, y }) => `${n.id}:${Math.round(x)}:${Math.round(y)}`).join('|')
+  const layoutFitSignature = nodes.map((node) => node.id).join('|')
+
+  function fitViewport(items = positioned, options?: { maxScale?: number; targetY?: number }) {
+    const withCenter = [{ x: CX, y: CY, r: 42 }, ...items]
+    const minX = Math.min(...withCenter.map((item) => item.x - item.r - 18))
+    const maxX = Math.max(...withCenter.map((item) => item.x + item.r + 18))
+    const minY = Math.min(...withCenter.map((item) => item.y - item.r - 28))
+    const maxY = Math.max(...withCenter.map((item) => item.y + item.r + 42))
+    const width = Math.max(1, maxX - minX)
+    const height = Math.max(1, maxY - minY)
+    const nextScale = Math.max(MIN_ZOOM, Math.min((VW - 42) / width, (VH - 128) / height, options?.maxScale ?? 1))
+    const focusX = (minX + maxX) / 2
+    const focusY = (minY + maxY) / 2
+    setScale(nextScale)
+    setPan({
+      x: CX - nextScale * focusX - (1 - nextScale) * CX,
+      y: (options?.targetY ?? CY) - nextScale * focusY - (1 - nextScale) * CY,
+    })
+  }
 
   useEffect(() => {
     const liveIds = new Set(nodes.map((node) => node.id))
@@ -384,6 +406,12 @@ export function KnotMobileGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedRootId, expandedSignature, layoutRevision])
 
+  useEffect(() => {
+    if (expandedMode) return
+    fitViewport()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutFitSignature, layoutRevision, resetToken])
+
   // Search highlighting — mirrors the desktop graph: matching nodes stand out,
   // the rest dim, and the view pans to the first match.
   const normalizedQuery = query.trim().toLowerCase()
@@ -394,14 +422,14 @@ export function KnotMobileGraph({
     prevQueryRef.current = query
 
     if (hasQuery) {
-      const hit = positioned.find(p => p.n.matchesQuery)
-      if (hit) setPan({ x: -scale * (hit.x - CX), y: -scale * (hit.y - CY) })
+      const hits = positioned.filter(p => p.n.matchesQuery)
+      if (hits.length) fitViewport(hits, { maxScale: 1.08, targetY: CY - 20 })
       return
     }
     // Recenter when the query is cleared.
-    if (prevHadQuery) setPan({ x: 0, y: 0 })
+    if (prevHadQuery) fitViewport()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalizedQuery])
+  }, [normalizedQuery, positionedSignature])
 
   function clientToGraphPoint(clientX: number, clientY: number) {
     const rect = svgRef.current?.getBoundingClientRect()

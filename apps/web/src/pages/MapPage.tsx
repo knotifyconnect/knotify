@@ -278,6 +278,7 @@ export function MapPage() {
   const [expandError, setExpandError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<RelationshipTab>('Connected')
   const [query, setQuery] = useState('')
+  const [graphResetToken, setGraphResetToken] = useState(0)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
   const [selectedSecondDegreeUserId, setSelectedSecondDegreeUserId] = useState<string | null>(null)
@@ -520,6 +521,7 @@ export function MapPage() {
     clearExpandedKnot()
     setSelectedConnectionId(null)
     setQuery('')
+    setGraphResetToken((value) => value + 1)
   }
 
   async function toggleExpandKnot(connection: Connection) {
@@ -891,6 +893,7 @@ export function MapPage() {
           requestingUserId={requestingUserId}
           requestFeedback={requestFeedback}
           onResetGraphState={resetGraphState}
+          graphResetToken={graphResetToken}
           onCollapseExpanded={clearExpandedKnot}
           signalsByUserId={signalsByUserId}
         />
@@ -1058,6 +1061,7 @@ function KnotStage({
   requestingUserId,
   requestFeedback,
   onResetGraphState,
+  graphResetToken,
   onCollapseExpanded,
 }: {
   meId: string | null
@@ -1094,6 +1098,7 @@ function KnotStage({
   requestingUserId: string | null
   requestFeedback: string | null
   onResetGraphState: () => void
+  graphResetToken: number
   onCollapseExpanded: () => void
   signalsByUserId: Map<string, KnotSignals>
 }) {
@@ -1359,6 +1364,7 @@ function KnotStage({
                 expandedRootName={expandedRootUserId ? expandedRootName : null}
                 onCollapse={onCollapseExpanded}
                 onResetGraph={onResetGraphState}
+                resetToken={graphResetToken}
               />
               <MobileNodeOverlay
                 open={!!(selectedConnection || selectedSecondDegreeUser)}
