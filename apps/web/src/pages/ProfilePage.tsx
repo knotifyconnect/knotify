@@ -841,8 +841,39 @@ function OwnProfileView() {
     apiPatch('/api/users/me', { profileLayout: next }).catch(() => {})
   }
 
+  const profileActions = [
+    {
+      key: 'customize',
+      label: customizing ? 'Done' : 'Customize',
+      variant: customizing ? 'signal' as const : 'ghost' as const,
+      onClick: () => setCustomizing((c) => !c),
+      disabled: false,
+    },
+    {
+      key: 'settings',
+      label: 'Settings',
+      variant: 'ghost' as const,
+      onClick: () => navigate('/settings'),
+      disabled: false,
+    },
+    {
+      key: 'public',
+      label: 'View as public',
+      variant: 'ghost' as const,
+      onClick: () => navigate(`/profile/${me.id}`),
+      disabled: false,
+    },
+    {
+      key: 'edit',
+      label: editMode ? (saving ? 'Saving...' : 'Save profile') : 'Edit profile',
+      variant: editMode ? 'signal' as const : 'ink' as const,
+      onClick: () => { if (editMode) void onSave(); else setEditMode(true) },
+      disabled: saving,
+    },
+  ]
+
   return (
-    <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 22 }}>
+    <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: isMobile ? 18 : 22 }}>
 
       {/* ─── Banner + identity (interconnected: avatar overlaps the cover) ─── */}
       <div>
@@ -870,8 +901,8 @@ function OwnProfileView() {
         </div>
 
         {/* Identity — avatar overlaps the cover, actions sit alongside */}
-        <div style={{ padding: '0 6px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginTop: isMobile ? -40 : -52 }}>
+        <div style={{ padding: isMobile ? '0 2px' : '0 6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'flex-end', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 16 : 14, flexWrap: 'wrap', marginTop: isMobile ? -40 : -52 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <img
                 src={avatarDraft || me.avatar_url || avatarUrl(me.full_name, 160)}
@@ -887,13 +918,20 @@ function OwnProfileView() {
                 Edit
               </button>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingBottom: 4 }}>
-              <KBtn variant={customizing ? 'signal' : 'ghost'} size="sm" onClick={() => setCustomizing((c) => !c)}>{customizing ? 'Done' : 'Customize'}</KBtn>
-              <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
-              <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
-              <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
-                {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
-              </KBtn>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, auto)', gap: 8, width: isMobile ? '100%' : 'auto', paddingBottom: isMobile ? 0 : 4 }}>
+              {profileActions.map((action) => (
+                <KBtn
+                  key={action.key}
+                  variant={action.variant}
+                  size="sm"
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                  fullWidth={isMobile}
+                  style={{ minHeight: 40, justifyContent: 'center' }}
+                >
+                  {action.label}
+                </KBtn>
+              ))}
             </div>
           </div>
 
@@ -918,9 +956,9 @@ function OwnProfileView() {
               </p>
             )}
 
-            <div style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{profileMeta}</div>
+            <div style={{ fontSize: 13.5, color: 'var(--ink-muted)', lineHeight: 1.45 }}>{profileMeta}</div>
 
-            <div style={{ display: 'flex', gap: 22, marginTop: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, minmax(0, 1fr))' : 'repeat(3, max-content)', gap: isMobile ? 12 : 22, marginTop: 6 }}>
               {([
                 { label: 'connections', value: connectionCount, onClick: () => navigate('/map') },
                 { label: 'skills', value: userSkillIds.length, onClick: undefined },
@@ -930,7 +968,7 @@ function OwnProfileView() {
                   key={label}
                   type="button"
                   onClick={onClick}
-                  style={{ background: 'none', border: 'none', padding: 0, cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'baseline', gap: 5, fontFamily: "'IBM Plex Sans', sans-serif" }}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'baseline', justifyContent: 'flex-start', gap: 5, fontFamily: "'IBM Plex Sans', sans-serif" }}
                 >
                   <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>{value}</span>
                   <span style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{label}</span>

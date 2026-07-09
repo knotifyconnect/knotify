@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import { apiGetCached } from '../lib/api'
+import { apiGetCached, invalidateApiCache } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
 
@@ -16,9 +16,13 @@ export function useMessageUnreadCount() {
   useEffect(() => {
     disposedRef.current = false
 
-    async function refresh() {
+    async function refresh(force = false) {
       if (inFlightRef.current) return
       if (document.hidden) return
+
+      if (force) {
+        invalidateApiCache('/api/conversations/unread')
+      }
 
       inFlightRef.current = true
       try {
@@ -33,14 +37,14 @@ export function useMessageUnreadCount() {
       }
     }
 
-    function scheduleRefresh(delay = 250) {
+    function scheduleRefresh(delay = 250, force = false) {
       if (refreshTimerRef.current) {
         window.clearTimeout(refreshTimerRef.current)
       }
 
       refreshTimerRef.current = window.setTimeout(() => {
         refreshTimerRef.current = null
-        void refresh()
+        void refresh(force)
       }, delay)
     }
 
@@ -51,11 +55,11 @@ export function useMessageUnreadCount() {
     }, 60_000)
 
     function onFocus() {
-      scheduleRefresh(0)
+      scheduleRefresh(0, true)
     }
 
     function onVisibilityChange() {
-      if (!document.hidden) scheduleRefresh(0)
+      if (!document.hidden) scheduleRefresh(0, true)
     }
 
     window.addEventListener('focus', onFocus)
@@ -64,7 +68,7 @@ export function useMessageUnreadCount() {
     const channel = supabase
       .channel('message-unread-count:any')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
-        scheduleRefresh()
+        scheduleRefresh(120, true)
       })
       .subscribe()
 

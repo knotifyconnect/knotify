@@ -17,6 +17,11 @@ const TYPES: { value: FeedbackType; label: string; icon: typeof Bug; hint: strin
 export function FeedbackWidget() {
   const isMobile = useIsMobile()
   const location = useLocation()
+  const hideFloatingTrigger = isMobile && (
+    location.pathname === '/messages' ||
+    location.pathname === '/profile' ||
+    location.pathname.startsWith('/profile/')
+  )
   const [open, setOpen] = useState(false)
   const [type, setType] = useState<FeedbackType>('bug')
   const [message, setMessage] = useState('')
@@ -79,7 +84,7 @@ export function FeedbackWidget() {
         border: '1px solid var(--rule)',
         boxShadow: '0 8px 24px rgba(35,31,28,0.16)',
         cursor: 'pointer',
-        display: open ? 'none' : 'flex',
+        display: open || hideFloatingTrigger ? 'none' : 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: 0,

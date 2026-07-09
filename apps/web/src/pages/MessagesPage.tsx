@@ -6,6 +6,7 @@ import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
 import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 type UserPreview = {
   id: string
@@ -273,6 +274,7 @@ const MSG_MENU_ITEM: React.CSSProperties = {
 }
 
 export function MessagesPage() {
+  const isMobile = useIsMobile()
   const [conversations, setConversations] = useState<ConversationSummary[]>(() => getApiCacheSnapshot<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)?.conversations ?? [])
   const [connections, setConnections] = useState<Connection[]>(() => getApiCacheSnapshot<{ connections: Connection[] }>(CONNECTIONS_PATH)?.connections ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -339,6 +341,36 @@ export function MessagesPage() {
 
     return active[0] ?? null
   }, [meetings, selectedConv, meetingNow])
+
+  function syncConversationPreview(
+    conversationId: string,
+    latestMessage: Pick<Message, 'id' | 'content' | 'created_at' | 'sender_id'>
+  ) {
+    setConversations((prev) => {
+      const next = prev.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              latest_message: {
+                id: latestMessage.id,
+                content: latestMessage.content,
+                created_at: latestMessage.created_at,
+                sender_id: latestMessage.sender_id,
+              },
+              unread_count: 0,
+            }
+          : conversation
+      )
+
+      next.sort((a, b) => {
+        const aTime = a.latest_message?.created_at ?? a.created_at
+        const bTime = b.latest_message?.created_at ?? b.created_at
+        return bTime.localeCompare(aTime)
+      })
+
+      return next
+    })
+  }
 
   const filteredConvs = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -443,7 +475,7 @@ export function MessagesPage() {
 
   async function markRead(id: string) {
     try {
-      await apiPost(`/api/conversations/${id}/read`, {})
+      await apiPost(`/api/conversations/${id}/read`, {}, { invalidate: [CONVERSATIONS_PATH, `${CONVERSATIONS_PATH}/unread`] })
       setConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c))
       )
@@ -534,14 +566,15 @@ export function MessagesPage() {
 
     const activeConversationId = selectedId
 
-    function refreshSelectedThread() {
+    function refreshSelectedThread(includeConversationList = false) {
       void loadMsgs(activeConversationId, true, true)
-      void loadConvs(true)
-      void loadMeetings(true)
+      if (includeConversationList) {
+        void loadConvs(true)
+      }
     }
 
     // Mark delivered/read when opening conversation.
-    void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
+    void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}, { invalidate: false }).catch(() => {})
     void markRead(activeConversationId)
 
     const channel = supabase
@@ -551,10 +584,14 @@ export function MessagesPage() {
         schema: 'public',
         table: 'messages',
         filter: `conversation_id=eq.${activeConversationId}`,
-      }, () => {
-        refreshSelectedThread()
-        void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
-        void markRead(activeConversationId)
+      }, (payload) => {
+        const shouldRefreshList = payload.eventType !== 'UPDATE'
+        refreshSelectedThread(shouldRefreshList)
+
+        if (payload.eventType === 'INSERT') {
+          void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}, { invalidate: false }).catch(() => {})
+          void markRead(activeConversationId)
+        }
       })
       .subscribe()
 
@@ -601,7 +638,7 @@ export function MessagesPage() {
 
         // Conversation list and coffee state are useful, but not urgent enough to block
         // every message poll. Refresh them in the background to avoid request dogpiling.
-        if (now - lastBackgroundSync > 15000) {
+        if (now - lastBackgroundSync > 8000) {
           lastBackgroundSync = now
           void loadConvs(true)
           void loadMeetings(true)
@@ -609,7 +646,7 @@ export function MessagesPage() {
 
         if (now - lastPresenceSync > 7000) {
           lastPresenceSync = now
-          void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
+          void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}, { invalidate: false }).catch(() => {})
           void markRead(activeConversationId)
         }
       } finally {
@@ -618,7 +655,7 @@ export function MessagesPage() {
     }
 
     void syncOpenThread()
-    const interval = window.setInterval(() => { void syncOpenThread() }, 10000)
+    const interval = window.setInterval(() => { void syncOpenThread() }, 2500)
 
     return () => {
       disposed = true
@@ -781,13 +818,14 @@ export function MessagesPage() {
 
   async function sendMessage(contentOverride?: string) {
     if (!selectedId || sendLoading) return
+    const conversationId = selectedId
     const trimmed = (contentOverride ?? composer).trim()
     if (!trimmed) return
 
     const nowIso = new Date().toISOString()
     const tempId = `tmp-${Date.now()}`
     const opt: OptimisticMessage = {
-      id: tempId, conversation_id: selectedId, sender_id: 'me',
+      id: tempId, conversation_id: conversationId, sender_id: 'me',
       content: trimmed, read_at: null, delivered_at: null, deleted_at: null, deleted_by: null, created_at: nowIso,
       sender: null, is_mine: true, pending: true, failed: false, local: true,
       reactions: [],
@@ -796,18 +834,24 @@ export function MessagesPage() {
     if (!contentOverride) setComposer('')
     scrollIntentRef.current = 'own-message'
     setSendLoading(true)
-    setOptimistic((prev) => ({ ...prev, [selectedId]: [...(prev[selectedId] ?? []), opt] }))
+    setOptimistic((prev) => ({ ...prev, [conversationId]: [...(prev[conversationId] ?? []), opt] }))
+    syncConversationPreview(conversationId, opt)
 
     try {
-      const res = await apiPost<{ message: Message }>(`/api/conversations/${selectedId}/messages`, { content: trimmed })
+      const res = await apiPost<{ message: Message }>(
+        `/api/conversations/${conversationId}/messages`,
+        { content: trimmed },
+        { invalidate: [CONVERSATIONS_PATH, `${CONVERSATIONS_PATH}/unread`] }
+      )
       trackEvent('message_sent')
-      setOptimistic((prev) => ({ ...prev, [selectedId]: (prev[selectedId] ?? []).filter((m) => m.id !== tempId) }))
+      setOptimistic((prev) => ({ ...prev, [conversationId]: (prev[conversationId] ?? []).filter((m) => m.id !== tempId) }))
       setMessages((prev) => [...prev, res.message])
-      await loadConvs(true)
+      syncConversationPreview(conversationId, res.message)
+      void loadConvs(true)
     } catch (err) {
       setOptimistic((prev) => ({
         ...prev,
-        [selectedId]: (prev[selectedId] ?? []).map((m) => m.id === tempId ? { ...m, pending: false, failed: true } : m),
+        [conversationId]: (prev[conversationId] ?? []).map((m) => m.id === tempId ? { ...m, pending: false, failed: true } : m),
       }))
       setError(err instanceof Error ? err.message : 'Failed sending')
       if (contentOverride) setComposer(trimmed)
@@ -1132,12 +1176,12 @@ export function MessagesPage() {
           {/* Thread header */}
           <div
             style={{
-              padding: '12px 18px',
+              padding: isMobile ? '12px 14px' : '12px 18px',
               borderBottom: '0.5px solid var(--rule-soft)',
               background: 'var(--paper-soft)',
               display: 'flex',
               alignItems: 'center',
-              gap: 12,
+              gap: isMobile ? 10 : 12,
             }}
           >
             {selectedConv?.peer ? (
@@ -1147,14 +1191,14 @@ export function MessagesPage() {
                   type="button"
                   onClick={() => setSelectedId(null)}
                   className="md:hidden"
-                  style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'transparent', color: 'var(--ink)', cursor: 'pointer', fontSize: 18, lineHeight: 1, flexShrink: 0 }}
+                style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'transparent', color: 'var(--ink)', cursor: 'pointer', fontSize: 18, lineHeight: 1, flexShrink: 0 }}
                   aria-label="Back to chats"
                 >
                   ←
                 </button>
-                <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={36} />
+              <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={isMobile ? 38 : 36} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: isMobile ? 14 : 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {selectedConv.peer.full_name}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{selectedConv.peer.username}</div>
@@ -1165,20 +1209,24 @@ export function MessagesPage() {
                   onClick={() => setCoffeeOpen(true)}
                   style={{
                     flexShrink: 0,
-                    padding: '6px 12px',
+                    height: 36,
+                    padding: isMobile ? '0 14px' : '0 16px',
                     borderRadius: 999,
                     border: '0.5px solid var(--signal)',
                     background: 'var(--signal)',
                     color: '#fff',
-                    fontSize: 12,
+                    fontSize: 12.5,
                     fontWeight: 600,
                     cursor: 'pointer',
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 10px 24px rgba(216,68,43,0.16)',
                   }}
                 >
-                  <span className="hidden sm:inline">☕ Plan coffee</span>
-                  <span className="sm:hidden">☕</span>
+                  {isMobile ? 'Plan' : 'Plan coffee'}
                 </button>
                 {/* Live coffee status — only when a meeting actually exists */}
                 {selectedMeeting && (
@@ -1208,11 +1256,11 @@ export function MessagesPage() {
                       setConfirmDeleteConversation(false)
                     }}
                     style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      border: '0.5px solid var(--rule-soft)',
-                      background: 'var(--paper)',
+                      width: 36,
+                      height: 36,
+                      borderRadius: 999,
+                      border: '0.5px solid var(--rule)',
+                      background: 'rgba(255,255,255,0.84)',
                       color: 'var(--ink)',
                       cursor: 'pointer',
                       fontSize: 18,
@@ -1538,13 +1586,13 @@ export function MessagesPage() {
           {selectedId && (
             <div
               style={{
-                padding: '8px 16px',
+                padding: isMobile ? '10px 14px 6px' : '10px 16px 6px',
                 borderTop: '0.5px solid var(--rule-soft)',
                 display: 'flex',
-                gap: 6,
+                gap: 8,
                 overflowX: 'auto',
                 scrollbarWidth: 'none',
-                background: 'var(--paper-soft)',
+                background: 'linear-gradient(180deg, rgba(250,246,238,0.98), rgba(244,239,230,0.96))',
               }}
             >
               {QUICK_ACTIONS.map(({ label, message }) => (
@@ -1553,20 +1601,21 @@ export function MessagesPage() {
                   type="button"
                   onClick={() => void sendMessage(message)}
                   style={{
-                    padding: '4px 11px',
+                    padding: '7px 12px',
                     borderRadius: 999,
                     border: '0.5px solid var(--rule)',
-                    background: 'transparent',
-                    fontSize: 12,
-                    color: 'var(--ink-muted)',
+                    background: 'rgba(255,255,255,0.9)',
+                    fontSize: 12.5,
+                    color: 'var(--ink)',
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     transition: 'all 0.1s',
                     flexShrink: 0,
+                    boxShadow: '0 6px 18px rgba(26,24,21,0.05)',
                   }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper-soft)' }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,1)' }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.9)' }}
                 >
                   {label}
                 </button>
@@ -1577,18 +1626,18 @@ export function MessagesPage() {
           {/* Composer */}
           <div
             style={{
-              padding: '12px 16px',
-              borderTop: '0.5px solid var(--rule-soft)',
-              background: 'var(--paper-soft)',
+              padding: isMobile ? '8px 14px calc(14px + env(safe-area-inset-bottom))' : '10px 16px 16px',
+              borderTop: 'none',
+              background: 'linear-gradient(180deg, rgba(244,239,230,0.96), rgba(244,239,230,1))',
               display: selectedId ? 'block' : 'none',
             }}
           >
             {lastMineLabel && (
-              <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 6, fontFamily: "'IBM Plex Mono'" }}>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 8, fontFamily: "'IBM Plex Mono'" }}>
                 {lastMineLabel}
               </div>
             )}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
               <div style={{ flex: 1, position: 'relative' }}>
                 <textarea
                   value={composer}
@@ -1598,18 +1647,18 @@ export function MessagesPage() {
                     e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder={selectedId ? 'Type a message… (Enter to send, Shift+Enter for newline)' : 'Select a conversation first'}
+                  placeholder={selectedId ? (isMobile ? 'Type a message...' : 'Type a message... (Enter to send, Shift+Enter for newline)') : 'Select a conversation first'}
                   disabled={!selectedId || sendLoading}
                   rows={1}
                   style={{
                     width: '100%',
-                    minHeight: 42,
+                    minHeight: 48,
                     maxHeight: 120,
                     resize: 'none',
-                    borderRadius: 21,
+                    borderRadius: 24,
                     border: '0.5px solid var(--rule)',
-                    background: 'var(--paper-deep)',
-                    padding: '10px 42px 10px 16px',
+                    background: 'rgba(255,255,255,0.96)',
+                    padding: '12px 48px 12px 16px',
                     fontSize: 14,
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     color: 'var(--ink)',
@@ -1617,16 +1666,17 @@ export function MessagesPage() {
                     lineHeight: 1.5,
                     overflowY: 'auto',
                     boxSizing: 'border-box',
+                    boxShadow: '0 10px 26px rgba(26,24,21,0.06)',
                   }}
                   onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--signal)' }}
                   onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--rule)' }}
                 />
                 {/* Emoji keyboard button */}
-                <div style={{ position: 'absolute', right: 8, bottom: 9 }}>
+                <div style={{ position: 'absolute', right: 10, bottom: 10 }}>
                   <button
                     type="button"
                     onClick={() => setEmojiPickerOpen((p) => !p)}
-                    style={{ background: 'none', border: 'none', fontSize: 16, cursor: 'pointer', padding: 2, color: 'var(--ink-faint)', lineHeight: 1 }}
+                    style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(244,239,230,0.95)', border: '0.5px solid var(--rule-soft)', fontSize: 15, cursor: 'pointer', padding: 0, color: 'var(--ink-muted)', lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     😊
                   </button>
@@ -1646,7 +1696,7 @@ export function MessagesPage() {
                 size="sm"
                 disabled={!selectedId || !composer.trim() || sendLoading}
                 onClick={() => void sendMessage()}
-                style={{ flexShrink: 0, height: 42, borderRadius: 21, padding: '0 20px' }}
+                style={{ flexShrink: 0, height: 48, borderRadius: 18, padding: isMobile ? '0 18px' : '0 22px', boxShadow: '0 12px 24px rgba(216,68,43,0.18)' }}
               >
                 Send
               </KBtn>
