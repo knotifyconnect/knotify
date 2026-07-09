@@ -1745,8 +1745,8 @@ export function MessagesPage() {
                     boxShadow: '0 9px 20px rgba(216,68,43,0.18)',
                   }}
                 >
-                    <span className="hidden sm:inline">☕ Plan coffee</span>
-                  <span className="sm:hidden" style={{ lineHeight: 1 }}>☕</span>
+                    <span className="hidden sm:inline">Plan meetup</span>
+                  <span className="sm:hidden" style={{ lineHeight: 1 }}>Plan</span>
                 </button>
                 {/* Live coffee status — only when a meeting actually exists */}
                 {selectedMeeting && (
@@ -1764,7 +1764,7 @@ export function MessagesPage() {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    ☕ {formatMeetingTime(selectedMeeting.scheduled_at)}{selectedMeeting.status === 'proposed' ? ' · proposed' : ''}
+                    {formatMeetingTime(selectedMeeting.scheduled_at)}{selectedMeeting.status === 'proposed' ? ' · proposed' : ''}
                   </div>
                 )}
                 <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -2173,7 +2173,11 @@ export function MessagesPage() {
               }}
             >
               <div style={{ ...(isMobile ? MOBILE_MESSAGE_LANE_STYLE : MESSAGE_LANE_STYLE), display: 'flex', gap: isMobile ? 6 : 7, overflowX: 'auto', scrollbarWidth: 'none' }}>
-                {QUICK_ACTIONS.map(({ label, message }) => (
+                {[
+                  { label: 'Pick a time', message: 'Want to find a time to catch up this week?' },
+                  { label: 'Ask for intro', message: "Could you introduce me to someone at your company?" },
+                  { label: 'Request support', message: 'Would you be willing to write me a short recommendation on knotify?' },
+                ].map(({ label, message }) => (
                   <button
                     key={label}
                     type="button"

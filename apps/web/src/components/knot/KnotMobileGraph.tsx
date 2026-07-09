@@ -594,31 +594,6 @@ export function KnotMobileGraph({
         </button>
       </div>
     )}
-    <button
-      type="button"
-      data-graph-control="reset"
-      onClick={resetGraph}
-      style={{
-        position: 'absolute',
-        right: 12,
-        bottom: 'calc(86px + env(safe-area-inset-bottom))',
-        zIndex: 9,
-        border: '0.5px solid rgba(84,72,58,0.22)',
-        background: 'rgba(244,239,230,0.92)',
-        color: 'var(--ink)',
-        borderRadius: 999,
-        padding: '7px 11px',
-        fontSize: 12,
-        fontWeight: 700,
-        cursor: 'pointer',
-        fontFamily: "'IBM Plex Sans', sans-serif",
-        boxShadow: '0 10px 26px rgba(26,24,21,0.10)',
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(10px)',
-      }}
-    >
-      Reset
-    </button>
     <svg
       ref={svgRef}
       viewBox={`0 0 ${VW} ${VH}`}

@@ -24,6 +24,7 @@ function isEditableEscapeTarget(target: EventTarget | null) {
 export function FeedbackWidget() {
   const isMobile = useIsMobile()
   const location = useLocation()
+  const hideFloatingButton = isMobile && (location.pathname === '/messages' || location.pathname === '/map')
   const [open, setOpen] = useState(false)
   const [type, setType] = useState<FeedbackType>('bug')
   const [message, setMessage] = useState('')
@@ -241,5 +242,5 @@ export function FeedbackWidget() {
     </div>
   )
 
-  return createPortal(<>{fab}{panel}</>, document.body)
+  return createPortal(<>{!hideFloatingButton && fab}{panel}</>, document.body)
 }

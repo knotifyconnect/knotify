@@ -7,6 +7,8 @@ import { GlobalCompanionWidget } from '../components/GlobalCompanionWidget'
 export function AppLayout({ children }: PropsWithChildren) {
   const location = useLocation()
   const isMapPage = location.pathname === '/map'
+  const isMessagesPage = location.pathname === '/messages'
+  const lockViewport = isMapPage || isMessagesPage
 
   return (
     <div
@@ -21,7 +23,7 @@ export function AppLayout({ children }: PropsWithChildren) {
       <main
         // Mobile (default): leave room at bottom for the 64px tab bar (+ safe area)
         // Desktop: shift right by sidebar width, generous padding, no extra bottom space
-        style={isMapPage ? { height: '100dvh', overflow: 'hidden', paddingBottom: 0 } : { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))' }}
+        style={lockViewport ? { height: '100dvh', overflow: 'hidden', paddingBottom: 0 } : { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))' }}
         className={
           isMapPage
             ? 'px-2 pt-2 pb-[88px] md:ml-[220px] md:pb-6 md:pl-2 md:pr-2 md:pt-2'
