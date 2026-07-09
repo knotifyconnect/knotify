@@ -463,8 +463,6 @@ export function MessagesPage() {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [composer, setComposer] = useState('')
-  const [newChatOpen, setNewChatOpen] = useState(false)
-  const [newChatSearch, setNewChatSearch] = useState('')
   const [creatingFor, setCreatingFor] = useState<string | null>(null)
   const [coffeeOpen, setCoffeeOpen] = useState(false)
   const [cafeOptions, setCafeOptions] = useState<CafeOption[]>(() => getApiCacheSnapshot<{ cafes: CafeOption[] }>(CAFES_PATH)?.cafes ?? [])
@@ -488,6 +486,7 @@ export function MessagesPage() {
 
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const scrollStateRef = useRef<{ conversationId: string | null; lastMessageId: string | null }>({ conversationId: null, lastMessageId: null })
   const scrollIntentRef = useRef<'none' | 'open' | 'own-message'>('none')
   const openCreateInFlightRef = useRef<Map<string, Promise<string | null>>>(new Map())
@@ -543,30 +542,54 @@ export function MessagesPage() {
     return active[0] ?? null
   }, [meetings, selectedConv, meetingNow])
 
+  const upcomingMeetings = useMemo(() => {
+    return meetings
+      .filter((meeting) => {
+        const isActionableStatus = meeting.status === 'proposed' || meeting.status === 'confirmed'
+        const isUpcoming = new Date(meeting.scheduled_at).getTime() >= meetingNow
+
+        return isActionableStatus && isUpcoming
+      })
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())
+      .slice(0, 3)
+  }, [meetings, meetingNow])
+
+  const searchQuery = search.trim().toLowerCase()
+  const hasSearch = searchQuery.length > 0
+
   const filteredConvs = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return conversations
+    if (!searchQuery) return conversations
     return conversations.filter(
       (c) =>
-        c.peer?.full_name?.toLowerCase().includes(q) ||
-        c.peer?.username?.toLowerCase().includes(q)
+        c.peer?.full_name?.toLowerCase().includes(searchQuery) ||
+        c.peer?.username?.toLowerCase().includes(searchQuery) ||
+        c.latest_message?.content?.toLowerCase().includes(searchQuery)
     )
-  }, [conversations, search])
+  }, [conversations, searchQuery])
 
   const acceptedConns = useMemo(
     () => connections.filter((c) => c.status === 'accepted' && c.user),
     [connections]
   )
 
-  const filteredConns = useMemo(() => {
-    const q = newChatSearch.trim().toLowerCase()
-    if (!q) return acceptedConns
+  const conversationPeerIds = useMemo(
+    () => new Set(conversations.map((conversation) => conversation.peer?.id).filter(Boolean)),
+    [conversations]
+  )
+
+  const filteredNewChatConns = useMemo(() => {
+    if (!searchQuery) return []
+
     return acceptedConns.filter(
       (c) =>
-        c.user?.full_name?.toLowerCase().includes(q) ||
-        c.user?.username?.toLowerCase().includes(q)
+        c.user?.id &&
+        !conversationPeerIds.has(c.user.id) &&
+        (
+          c.user.full_name?.toLowerCase().includes(searchQuery) ||
+          c.user.username?.toLowerCase().includes(searchQuery)
+        )
     )
-  }, [acceptedConns, newChatSearch])
+  }, [acceptedConns, conversationPeerIds, searchQuery])
 
   const displayMessages = useMemo(() => {
     if (!selectedId) return [] as (Message | OptimisticMessage)[]
@@ -991,7 +1014,6 @@ export function MessagesPage() {
   useEscapeClose(Boolean(selectedId), () => setSelectedId(null), {
     disabled:
       coffeeOpen ||
-      newChatOpen ||
       threadMenuOpen ||
       Boolean(messageDeleteConfirm) ||
       Boolean(actionMenuMsgId) ||
@@ -1219,8 +1241,7 @@ export function MessagesPage() {
       openConversation(existingConversation.id)
       void loadMsgs(existingConversation.id, true, true)
       void markRead(existingConversation.id)
-      setNewChatOpen(false)
-      setNewChatSearch('')
+      setSearch('')
       setError(null)
       return existingConversation.id
     }
@@ -1244,8 +1265,7 @@ export function MessagesPage() {
         void loadConvs(true)
         void loadMsgs(res.conversation.id, true, true)
         void markRead(res.conversation.id)
-        setNewChatOpen(false)
-        setNewChatSearch('')
+        setSearch('')
         setError(null)
         return res.conversation.id
       } catch (err) {
@@ -1489,91 +1509,66 @@ export function MessagesPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setNewChatOpen((p) => !p)}
+                onClick={() => {
+                  setSelectedId(null)
+                  searchInputRef.current?.focus()
+                }}
                 aria-label="New chat"
                 style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'var(--ink)', color: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 21, lineHeight: 1, flexShrink: 0, boxShadow: '0 10px 22px rgba(26,24,21,0.18)' }}
               >
                 +
               </button>
             </div>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search"
-              style={{
-                width: '100%',
-                padding: '11px 15px',
-                borderRadius: 999,
-                border: '0.5px solid rgba(26,24,21,0.06)',
-                background: 'rgba(238,231,216,0.72)',
-                fontSize: 13.5,
-                fontFamily: "'IBM Plex Sans', sans-serif",
-                color: 'var(--ink)',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {/* New chat picker */}
-          {newChatOpen && (
-            <div style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--rule-soft)', background: 'var(--paper-soft)' }}>
+            <div style={{ position: 'relative' }}>
               <input
-                autoFocus
-                value={newChatSearch}
-                onChange={(e) => setNewChatSearch(e.target.value)}
-                placeholder="Search connections…"
+                ref={searchInputRef}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search threads or people"
                 style={{
                   width: '100%',
-                  padding: '7px 10px',
-                  borderRadius: 8,
-                  border: '0.5px solid var(--rule)',
-                  background: 'var(--paper)',
-                  fontSize: 12.5,
+                  padding: '11px 42px 11px 15px',
+                  borderRadius: 999,
+                  border: '0.5px solid rgba(26,24,21,0.06)',
+                  background: 'rgba(238,231,216,0.72)',
+                  fontSize: 13.5,
                   fontFamily: "'IBM Plex Sans', sans-serif",
                   color: 'var(--ink)',
                   outline: 'none',
                   boxSizing: 'border-box',
-                  marginBottom: 8,
                 }}
               />
-              <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {filteredConns.length ? filteredConns.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    disabled={creatingFor === c.user?.id}
-                    onClick={() => c.user && openOrCreate(c.user.id)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 8px',
-                      borderRadius: 8,
-                      border: 'none',
-                      background: 'var(--paper)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      width: '100%',
-                    }}
-                  >
-                    <KAvatar name={c.user?.full_name} src={c.user?.avatar_url} size={28} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {c.user?.full_name}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>@{c.user?.username}</div>
-                    </div>
-                    {creatingFor === c.user?.id && (
-                      <span style={{ fontSize: 11, color: 'var(--ink-faint)', marginLeft: 'auto' }}>…</span>
-                    )}
-                  </button>
-                )) : (
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0, padding: '4px 0' }}>No accepted connections.</p>
-                )}
-              </div>
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('')
+                    searchInputRef.current?.focus()
+                  }}
+                  aria-label="Clear search"
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    right: 9,
+                    transform: 'translateY(-50%)',
+                    width: 26,
+                    height: 26,
+                    borderRadius: '50%',
+                    border: 'none',
+                    background: 'rgba(26,24,21,0.08)',
+                    color: 'var(--ink-muted)',
+                    cursor: 'pointer',
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontSize: 15,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              )}
             </div>
-          )}
+          </div>
 
           {/* List */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px 14px' }}>
@@ -1582,10 +1577,15 @@ export function MessagesPage() {
                 Loading…
               </p>
             )}
-            {!filteredConvs.length && !loadingConvs && (
+            {!hasSearch && !filteredConvs.length && !loadingConvs && (
               <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                 No conversations yet.
               </p>
+            )}
+            {hasSearch && filteredConvs.length > 0 && (
+              <div style={{ padding: '6px 8px 5px', fontSize: 10.5, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: 0.7, fontFamily: "'IBM Plex Mono', monospace" }}>
+                Threads
+              </div>
             )}
             {filteredConvs.map((conv) => (
               <button
@@ -1646,6 +1646,52 @@ export function MessagesPage() {
                 </div>
               </button>
             ))}
+            {hasSearch && filteredNewChatConns.length > 0 && (
+              <>
+                <div style={{ padding: '12px 8px 5px', fontSize: 10.5, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: 0.7, fontFamily: "'IBM Plex Mono', monospace" }}>
+                  Start a new chat
+                </div>
+                {filteredNewChatConns.map((connection) => (
+                  <button
+                    key={connection.id}
+                    type="button"
+                    disabled={creatingFor === connection.user?.id}
+                    onClick={() => connection.user && openOrCreate(connection.user.id)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 11,
+                      padding: '10px 12px',
+                      borderRadius: 16,
+                      border: '0.5px solid transparent',
+                      background: 'rgba(255,252,246,0.58)',
+                      cursor: connection.user && creatingFor !== connection.user.id ? 'pointer' : 'default',
+                      textAlign: 'left',
+                      marginBottom: 4,
+                    }}
+                  >
+                    <KAvatar name={connection.user?.full_name} src={connection.user?.avatar_url} size={38} style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {connection.user?.full_name ?? 'Unknown'}
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        @{connection.user?.username} · start thread
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--signal)', flexShrink: 0 }}>
+                      {creatingFor === connection.user?.id ? 'Starting…' : 'New'}
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
+            {hasSearch && !filteredConvs.length && !filteredNewChatConns.length && !loadingConvs && (
+              <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', lineHeight: 1.45, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                No threads or connections match “{search.trim()}”.
+              </p>
+            )}
           </div>
         </div>
 
@@ -1850,23 +1896,63 @@ export function MessagesPage() {
           >
             {!selectedId ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-                <div style={{ maxWidth: 430, textAlign: 'center', padding: '30px 32px', borderRadius: 24, background: 'rgba(255,252,246,0.78)', border: '0.5px solid rgba(26,24,21,0.08)', boxShadow: '0 14px 40px rgba(26,24,21,0.07)' }}>
-                  <div style={{ width: 48, height: 48, borderRadius: 18, margin: '0 auto 14px', display: 'grid', placeItems: 'center', background: 'var(--signal-soft)', color: 'var(--signal)', fontFamily: "'Fraunces', Georgia, serif", fontSize: 24, fontStyle: 'italic' }}>
-                    k
+                <div style={{ width: 'min(100%, 560px)', display: 'grid', gap: 14 }}>
+                  {upcomingMeetings.length > 0 && (
+                    <div style={{ padding: '18px 18px 16px', borderRadius: 22, background: 'rgba(255,252,246,0.82)', border: '0.5px solid rgba(26,24,21,0.08)', boxShadow: '0 14px 40px rgba(26,24,21,0.07)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+                        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 500, color: 'var(--ink)' }}>
+                          Upcoming coffees
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>
+                          {upcomingMeetings.length}
+                        </span>
+                      </div>
+                      <div style={{ display: 'grid', gap: 7 }}>
+                        {upcomingMeetings.map((meeting) => (
+                          <button
+                            key={meeting.id}
+                            type="button"
+                            onClick={() => meeting.peer?.id && openOrCreate(meeting.peer.id)}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 14, border: '0.5px solid rgba(26,24,21,0.07)', background: 'rgba(244,239,230,0.5)', textAlign: 'left', cursor: meeting.peer?.id ? 'pointer' : 'default' }}
+                          >
+                            <KAvatar name={meeting.peer?.full_name} src={meeting.peer?.avatar_url} size={34} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {meeting.peer?.full_name ?? 'Coffee meeting'}
+                              </div>
+                              <div style={{ marginTop: 2, fontSize: 11.5, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {formatMeetingTime(meeting.scheduled_at)} · {meeting.cafe?.name ?? meeting.location_text ?? 'Location pending'}
+                              </div>
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: meeting.status === 'confirmed' ? 'var(--verd)' : 'var(--signal)' }}>
+                              {meeting.status === 'confirmed' ? 'Confirmed' : 'Proposed'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ textAlign: 'center', padding: '30px 32px', borderRadius: 24, background: 'rgba(255,252,246,0.78)', border: '0.5px solid rgba(26,24,21,0.08)', boxShadow: '0 14px 40px rgba(26,24,21,0.07)' }}>
+                    <div style={{ width: 48, height: 48, borderRadius: 18, margin: '0 auto 14px', display: 'grid', placeItems: 'center', background: 'var(--signal-soft)', color: 'var(--signal)', fontFamily: "'Fraunces', Georgia, serif", fontSize: 24, fontStyle: 'italic' }}>
+                      k
+                    </div>
+                    <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 500, color: 'var(--ink)', marginBottom: 7 }}>
+                      Pick up a thread
+                    </div>
+                    <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink-muted)', margin: 0 }}>
+                      Follow up, ask for an intro, or turn a useful connection into coffee.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(null)
+                        searchInputRef.current?.focus()
+                      }}
+                      style={{ marginTop: 18, padding: '9px 16px', borderRadius: 999, border: 'none', background: 'var(--ink)', color: 'var(--paper)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}
+                    >
+                      Search people
+                    </button>
                   </div>
-                  <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 500, color: 'var(--ink)', marginBottom: 7 }}>
-                    Pick up a thread
-                  </div>
-                  <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink-muted)', margin: 0 }}>
-                    Follow up, ask for an intro, or turn a useful connection into coffee.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setNewChatOpen(true)}
-                    style={{ marginTop: 18, padding: '9px 16px', borderRadius: 999, border: 'none', background: 'var(--ink)', color: 'var(--paper)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}
-                  >
-                    Start a chat
-                  </button>
                 </div>
               </div>
             ) : loadingMsgs && !displayMessages.length ? (
