@@ -35,7 +35,7 @@ export function GlobalCompanionWidget() {
     const keepInView = () => {
       setPos((p) => ({
         x: clamp(p.x, isMobile ? 10 : 12, window.innerWidth - (isMobile ? 52 : 58)),
-        y: clamp(p.y, isMobile ? window.innerHeight - 148 : 74, window.innerHeight - (isMobile ? 82 : 154)),
+        y: clamp(p.y, isMobile ? 88 : 74, window.innerHeight - (isMobile ? 82 : 154)),
       }))
     }
     keepInView()
@@ -78,7 +78,7 @@ export function GlobalCompanionWidget() {
             drag.moved = true
             setPos({
               x: clamp(e.clientX - drag.dx, isMobile ? 10 : 12, window.innerWidth - (isMobile ? 52 : 58)),
-              y: clamp(e.clientY - drag.dy, isMobile ? window.innerHeight - 148 : 74, window.innerHeight - (isMobile ? 82 : 154)),
+              y: clamp(e.clientY - drag.dy, isMobile ? 88 : 74, window.innerHeight - (isMobile ? 82 : 154)),
             })
           }}
           onPointerUp={() => {

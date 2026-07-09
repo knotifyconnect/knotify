@@ -1303,6 +1303,26 @@ function KnotStage({
                 Clear
               </button>
             )}
+            {isMobile && hasRelationships && (
+              <button
+                type="button"
+                onClick={onResetGraphState}
+                style={{
+                  border: '0.5px solid rgba(84,72,58,0.18)',
+                  background: 'rgba(244,239,230,0.92)',
+                  color: 'var(--ink)',
+                  borderRadius: 999,
+                  padding: '6px 10px',
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
+                  flexShrink: 0,
+                }}
+              >
+                Reset
+              </button>
+            )}
           </div>
 
           {!hasRelationships ? (
