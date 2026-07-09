@@ -351,6 +351,12 @@ const MESSAGE_LANE_STYLE: React.CSSProperties = {
   margin: '0 auto',
 }
 
+function messageTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 const MOBILE_MESSAGE_LANE_STYLE: React.CSSProperties = {
   width: '100%',
   margin: 0,
@@ -1453,7 +1459,7 @@ export function MessagesPage() {
   const EMOJI_KEYBOARD = ['😊', '😂', '❤️', '👍', '🙌', '🔥', '🎉', '🤔', '😎', '👏', '✨', '💪', '🚀', '💯', '🙏']
 
   return (
-    <div style={{ height: 'calc(100dvh - 104px)', minHeight: 460, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: isMobile ? '100%' : 'calc(100dvh - 104px)', minHeight: isMobile ? 0 : 460, paddingBottom: isMobile ? 'calc(64px + env(safe-area-inset-bottom))' : 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.2)', color: 'var(--signal)', fontSize: 13, marginBottom: 12 }}>
           {error}
@@ -2090,7 +2096,7 @@ export function MessagesPage() {
                         >
                           <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{isDeletedMessage ? 'Message deleted' : msg.content}</div>
                           <div style={{ marginTop: 3, fontSize: 10.5, color: msg.is_mine ? 'rgba(244,239,230,0.5)' : 'var(--ink-faint)', textAlign: msg.is_mine ? 'right' : 'left', display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', alignItems: 'center', gap: 4 }}>
-                            <span>{relativeTime(msg.created_at)}{isOpt(msg) && msg.pending ? ' · Sending…' : ''}{isOpt(msg) && msg.failed ? ' · Failed' : ''}</span>
+                            <span title={new Date(msg.created_at).toLocaleString()}>{messageTime(msg.created_at)} · {relativeTime(msg.created_at)}{isOpt(msg) && msg.pending ? ' · Sending…' : ''}{isOpt(msg) && msg.failed ? ' · Failed' : ''}</span>
                             {/* Status ticks for own messages */}
                             {msg.is_mine && !isOpt(msg) && !isDeletedMessage && (
                               <span style={{ color: msg.read_at ? 'var(--verd)' : 'rgba(244,239,230,0.5)', fontSize: 11 }}>

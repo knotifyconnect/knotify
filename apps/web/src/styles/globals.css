@@ -355,6 +355,7 @@ body::before {
   background: rgba(244,239,230,0.84); backdrop-filter: blur(12px);
   box-shadow: 0 12px 36px rgba(26,24,21,0.06);
 }
+@media (min-width: 768px) { .k-knot-legend-box { right: 76px; } }
 @media (max-width: 479px) { .k-knot-legend-box { display: none; } }
 .k-knot-stats-bar {
   position: absolute; left: 14px; bottom: 14px; z-index: 5;
@@ -372,6 +373,28 @@ body::before {
   box-shadow: 0 28px 80px rgba(26,24,21,0.16);
 }
 /* Mobile detail panel is now handled by MobileBottomSheet portal in KnotMobileGraph.tsx */
+
+@media (max-width: 767px) {
+  .your-knot-page,
+  .your-knot-page-inner {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .your-knot-page-inner {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0 !important;
+  }
+
+  .your-knot-page .your-knot-stage,
+  .your-knot-page .k-knot-bg {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+  }
+}
 
 /* Gradient text — signal red to verd */
 .gradient-text {

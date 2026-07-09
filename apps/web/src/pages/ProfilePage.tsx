@@ -14,7 +14,7 @@
  *  - Avatar editor
  */
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiGet, apiGetCached, apiPatch, apiPost, apiPostForm, apiPut } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { CareerPathCard } from '../components/profile/CareerPathCard'
@@ -291,7 +291,9 @@ const emptyExp = (): ExperienceEntry => ({ company: '', role: '', start_date: ''
 
 export function ProfilePage() {
   const { userId } = useParams<{ userId: string }>()
+  const [searchParams] = useSearchParams()
   const [meId, setMeId] = useState<string | null>(null)
+  const isPublicPreview = searchParams.get('view') === 'public'
 
   // Resolve "is this my own profile or someone else's?"
   useEffect(() => {
@@ -302,8 +304,8 @@ export function ProfilePage() {
   }, [userId])
 
   // If we have a userId param AND it's not my own ID → public view
-  if (userId && meId && userId !== meId) {
-    return <PublicProfileView userId={userId} />
+  if (userId && meId && (userId !== meId || isPublicPreview)) {
+    return <PublicProfileView userId={userId} isOwnPreview={userId === meId} />
   }
   // While we don't know yet whether it's me, show public view (safer)
   if (userId && !meId) {
@@ -890,7 +892,7 @@ function OwnProfileView() {
             <div className="k-profile-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingBottom: 4 }}>
               <KBtn variant={customizing ? 'signal' : 'ghost'} size="sm" onClick={() => setCustomizing((c) => !c)}>{customizing ? 'Done' : 'Customize'}</KBtn>
               <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
-              <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
+              <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}?view=public`)}>View as public</KBtn>
               <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
                 {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
               </KBtn>
@@ -1663,7 +1665,7 @@ type ConnectionRow = {
   status: 'pending' | 'accepted' | 'declined'
 }
 
-function PublicProfileView({ userId }: { userId: string }) {
+function PublicProfileView({ userId, isOwnPreview = false }: { userId: string; isOwnPreview?: boolean }) {
   const navigate = useNavigate()
   const [data, setData] = useState<PublicProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1766,6 +1768,10 @@ function PublicProfileView({ userId }: { userId: string }) {
               />
             )}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {isOwnPreview ? (
+                <KBtn variant="ink" size="sm" onClick={() => navigate('/profile')}>Back to editing</KBtn>
+              ) : (
+                <>
               {relation === 'connected' && <KPill color="verd">✓ Connected</KPill>}
               {relation === 'pending_out' && <KBtn variant="ghost" size="sm" disabled>Request sent</KBtn>}
               {relation === 'pending_in' && <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Accept in Discover</KBtn>}
@@ -1779,6 +1785,8 @@ function PublicProfileView({ userId }: { userId: string }) {
                 <KBtn variant="signal" size="sm" onClick={() => setReferralModalOpen(true)}>
                   Ask for referral
                 </KBtn>
+              )}
+                </>
               )}
             </div>
           </div>

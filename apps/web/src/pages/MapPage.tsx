@@ -520,6 +520,8 @@ export function MapPage() {
     clearExpandedKnot()
     setSelectedConnectionId(null)
     setQuery('')
+    setStatusFilter('All')
+    setActiveTab('Connected')
   }
 
   async function toggleExpandKnot(connection: Connection) {
@@ -820,14 +822,15 @@ export function MapPage() {
 
   return (
     <div
+      className="your-knot-page"
       style={{
-        minHeight: '100%',
+        height: '100%',
         background: 'var(--paper)',
         color: 'var(--ink)',
         fontFamily: "'IBM Plex Sans', sans-serif",
       }}
     >
-      <div style={{ maxWidth: 'none', margin: '0 auto', padding: '2px 0 24px' }}>
+      <div className="your-knot-page-inner" style={{ maxWidth: 'none', margin: '0 auto', padding: '2px 0 24px' }}>
         <TopCommandBar
           connectedCount={connected.length}
           incomingCount={incoming.length}
