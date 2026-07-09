@@ -42,6 +42,10 @@ const sendMessageSchema = z.object({
   content: z.string().trim().min(1).max(4000),
 })
 
+const conversationUpdatesQuerySchema = z.object({
+  since: z.string().datetime().optional(),
+})
+
 const conversationIdParamSchema = z.object({
   id: z.string().uuid(),
 })
@@ -230,6 +234,103 @@ function messagePreviewContent(message: MessageRow) {
   return message.deleted_at ? 'Message deleted' : message.content
 }
 
+async function buildConversationSummaries(appUserId: string, conversationIds: string[]) {
+  const uniqueConversationIds = [...new Set(conversationIds)].filter(Boolean)
+  if (!uniqueConversationIds.length) return []
+
+  const [conversations, participants, messages, unreadRows] = await Promise.all([
+    supabase.from('conversations').select('id, created_at').in('id', uniqueConversationIds).order('created_at', { ascending: false }),
+    supabase.from('conversation_participants').select('conversation_id, user_id, archived_at, cleared_at').in('conversation_id', uniqueConversationIds),
+    supabase
+      .from('messages')
+      .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
+      .in('conversation_id', uniqueConversationIds)
+      .order('created_at', { ascending: false })
+      .limit(1000),
+    supabase
+      .from('messages')
+      .select('id, conversation_id, created_at')
+      .in('conversation_id', uniqueConversationIds)
+      .neq('sender_id', appUserId)
+      .is('deleted_at', null)
+      .is('read_at', null),
+  ])
+
+  if (conversations.error) throw new Error(conversations.error.message)
+  if (participants.error) throw new Error(participants.error.message)
+  if (messages.error) throw new Error(messages.error.message)
+  if (unreadRows.error) throw new Error(unreadRows.error.message)
+
+  const participantRows = (participants.data ?? []) as ParticipantRow[]
+  const rawMessageRows = (messages.data ?? []) as MessageRow[]
+  const rawUnreadRows = (unreadRows.data ?? []) as { id: string; conversation_id: string; created_at: string }[]
+  const hiddenIds = await hiddenMessageIdSet(appUserId, [
+    ...rawMessageRows.map((row) => row.id),
+    ...rawUnreadRows.map((row) => row.id),
+  ])
+  const clearedAtByConversationId = clearedAtByConversationForUser(participantRows, appUserId)
+  const messageRows = visibleMessagesForUser(rawMessageRows, hiddenIds)
+    .filter((row) => isVisibleAfterClearedAt(row, clearedAtByConversationId.get(row.conversation_id)))
+  const visibleUnreadRows = visibleMessagesForUser(rawUnreadRows, hiddenIds)
+    .filter((row) => isVisibleAfterClearedAt(row, clearedAtByConversationId.get(row.conversation_id)))
+
+  const peerIds = [...new Set(participantRows.map((row) => row.user_id).filter((id) => id !== appUserId))]
+  const peerUsers = peerIds.length
+    ? await supabase.from('users').select('id, full_name, username, avatar_url').in('id', peerIds)
+    : { data: [], error: null }
+
+  if (peerUsers.error) throw new Error(peerUsers.error.message)
+
+  const usersById = new Map((peerUsers.data ?? []).map((user) => [user.id, user as UserPreview]))
+
+  const peerByConversationId = new Map<string, UserPreview | null>()
+  for (const row of participantRows) {
+    if (row.user_id === appUserId) continue
+    if (!peerByConversationId.has(row.conversation_id)) {
+      peerByConversationId.set(row.conversation_id, usersById.get(row.user_id) ?? null)
+    }
+  }
+
+  const latestByConversationId = new Map<string, MessageRow>()
+  for (const message of messageRows) {
+    if (!latestByConversationId.has(message.conversation_id)) {
+      latestByConversationId.set(message.conversation_id, message)
+    }
+  }
+
+  const unreadByConversationId = new Map<string, number>()
+  for (const row of visibleUnreadRows) {
+    const count = unreadByConversationId.get(row.conversation_id) ?? 0
+    unreadByConversationId.set(row.conversation_id, count + 1)
+  }
+
+  const payload = ((conversations.data ?? []) as ConversationRow[]).map((conversation) => {
+    const latest = latestByConversationId.get(conversation.id) ?? null
+    return {
+      id: conversation.id,
+      created_at: conversation.created_at,
+      peer: peerByConversationId.get(conversation.id) ?? null,
+      unread_count: unreadByConversationId.get(conversation.id) ?? 0,
+      latest_message: latest
+        ? {
+            id: latest.id,
+            content: messagePreviewContent(latest),
+            created_at: latest.created_at,
+            sender_id: latest.sender_id,
+          }
+        : null,
+    }
+  })
+
+  payload.sort((a, b) => {
+    const aTime = a.latest_message?.created_at ?? a.created_at
+    const bTime = b.latest_message?.created_at ?? b.created_at
+    return bTime.localeCompare(aTime)
+  })
+
+  return payload
+}
+
 async function loadMessageForDeletion(conversationId: string, msgId: string) {
   const message = await supabase
     .from('messages')
@@ -321,6 +422,47 @@ conversationsRouter.get('/unread', requireAuth, async (req, res) => {
   }
 })
 
+conversationsRouter.get('/updates', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+
+  const parsed = conversationUpdatesQuerySchema.safeParse(req.query)
+  if (!parsed.success) {
+    return res.status(422).json({ error: 'Invalid query', fields: parsed.error.flatten() })
+  }
+
+  const serverTime = new Date().toISOString()
+  const since = parsed.data.since
+
+  try {
+    const conversationIds = await listConversationIdsForUser(req.appUserId)
+    if (!conversationIds.length) return res.json({ conversations: [], server_time: serverTime })
+
+    let changedConversationIds = conversationIds
+    if (since) {
+      const changed = await supabase
+        .from('messages')
+        .select('conversation_id')
+        .in('conversation_id', conversationIds)
+        .gt('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(200)
+
+      if (changed.error) return res.status(500).json({ error: changed.error.message })
+
+      changedConversationIds = [...new Set((changed.data ?? []).map((row) => row.conversation_id as string))]
+    }
+
+    if (!changedConversationIds.length) return res.json({ conversations: [], server_time: serverTime })
+
+    return res.json({
+      conversations: await buildConversationSummaries(req.appUserId, changedConversationIds),
+      server_time: serverTime,
+    })
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed loading conversation updates' })
+  }
+})
+
 conversationsRouter.get('/', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
 
@@ -328,97 +470,7 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
     const conversationIds = await listConversationIdsForUser(req.appUserId)
     if (!conversationIds.length) return res.json({ conversations: [] })
 
-    const [conversations, participants, messages, unreadRows] = await Promise.all([
-      supabase.from('conversations').select('id, created_at').in('id', conversationIds).order('created_at', { ascending: false }),
-      supabase.from('conversation_participants').select('conversation_id, user_id, archived_at, cleared_at').in('conversation_id', conversationIds),
-      supabase
-        .from('messages')
-        .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
-        .in('conversation_id', conversationIds)
-        .order('created_at', { ascending: false })
-        .limit(1000),
-      supabase
-        .from('messages')
-        .select('id, conversation_id, created_at')
-        .in('conversation_id', conversationIds)
-        .neq('sender_id', req.appUserId)
-        .is('deleted_at', null)
-        .is('read_at', null),
-    ])
-
-    if (conversations.error) return res.status(500).json({ error: conversations.error.message })
-    if (participants.error) return res.status(500).json({ error: participants.error.message })
-    if (messages.error) return res.status(500).json({ error: messages.error.message })
-    if (unreadRows.error) return res.status(500).json({ error: unreadRows.error.message })
-
-    const participantRows = (participants.data ?? []) as ParticipantRow[]
-    const rawMessageRows = (messages.data ?? []) as MessageRow[]
-    const rawUnreadRows = (unreadRows.data ?? []) as { id: string; conversation_id: string; created_at: string }[]
-    const hiddenIds = await hiddenMessageIdSet(req.appUserId, [
-      ...rawMessageRows.map((row) => row.id),
-      ...rawUnreadRows.map((row) => row.id),
-    ])
-    const clearedAtByConversationId = clearedAtByConversationForUser(participantRows, req.appUserId)
-    const messagesRows = visibleMessagesForUser(rawMessageRows, hiddenIds)
-      .filter((row) => isVisibleAfterClearedAt(row, clearedAtByConversationId.get(row.conversation_id)))
-    const visibleUnreadRows = visibleMessagesForUser(rawUnreadRows, hiddenIds)
-      .filter((row) => isVisibleAfterClearedAt(row, clearedAtByConversationId.get(row.conversation_id)))
-
-    const peerIds = [...new Set(participantRows.map((row) => row.user_id).filter((id) => id !== req.appUserId))]
-    const peerUsers = peerIds.length
-      ? await supabase.from('users').select('id, full_name, username, avatar_url').in('id', peerIds)
-      : { data: [], error: null }
-
-    if (peerUsers.error) return res.status(500).json({ error: peerUsers.error.message })
-
-    const usersById = new Map((peerUsers.data ?? []).map((user) => [user.id, user as UserPreview]))
-
-    const peerByConversationId = new Map<string, UserPreview | null>()
-    for (const row of participantRows) {
-      if (row.user_id === req.appUserId) continue
-      if (!peerByConversationId.has(row.conversation_id)) {
-        peerByConversationId.set(row.conversation_id, usersById.get(row.user_id) ?? null)
-      }
-    }
-
-    const latestByConversationId = new Map<string, MessageRow>()
-    for (const message of messagesRows) {
-      if (!latestByConversationId.has(message.conversation_id)) {
-        latestByConversationId.set(message.conversation_id, message)
-      }
-    }
-
-    const unreadByConversationId = new Map<string, number>()
-    for (const row of visibleUnreadRows) {
-      const count = unreadByConversationId.get(row.conversation_id) ?? 0
-      unreadByConversationId.set(row.conversation_id, count + 1)
-    }
-
-    const payload = ((conversations.data ?? []) as ConversationRow[]).map((conversation) => {
-      const latest = latestByConversationId.get(conversation.id) ?? null
-      return {
-        id: conversation.id,
-        created_at: conversation.created_at,
-        peer: peerByConversationId.get(conversation.id) ?? null,
-        unread_count: unreadByConversationId.get(conversation.id) ?? 0,
-        latest_message: latest
-          ? {
-              id: latest.id,
-              content: messagePreviewContent(latest),
-              created_at: latest.created_at,
-              sender_id: latest.sender_id,
-            }
-          : null,
-      }
-    })
-
-    payload.sort((a, b) => {
-      const aTime = a.latest_message?.created_at ?? a.created_at
-      const bTime = b.latest_message?.created_at ?? b.created_at
-      return bTime.localeCompare(aTime)
-    })
-
-    return res.json({ conversations: payload })
+    return res.json({ conversations: await buildConversationSummaries(req.appUserId, conversationIds) })
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed loading conversations' })
   }

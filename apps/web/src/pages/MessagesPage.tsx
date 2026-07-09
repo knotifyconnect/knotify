@@ -33,6 +33,10 @@ type ConversationsCache = {
   conversations: ConversationSummary[]
 }
 
+type ConversationUpdatesResponse = ConversationsCache & {
+  server_time: string
+}
+
 type MessageReaction = { emoji: string; count: number; mine: boolean }
 
 type Message = {
@@ -371,6 +375,7 @@ const CONNECTIONS_PATH = '/api/connections'
 const CAFES_PATH = '/api/cafes'
 const MESSAGE_UNREAD_TOTAL_EVENT = 'knotify:message-unread-total'
 const FAST_CONVERSATION_RECONCILE_GRACE_MS = 15_000
+const CONVERSATION_UPDATES_OVERLAP_MS = 5_000
 
 function formatMeetingTime(value: string) {
   const date = new Date(value)
@@ -498,6 +503,8 @@ export function MessagesPage() {
   const threadRefreshTimersRef = useRef<Record<string, number>>({})
   const conversationIdsRef = useRef<Set<string>>(new Set())
   const fastConversationUpdatedAtRef = useRef<Record<string, number>>({})
+  const conversationUpdatesSinceRef = useRef<string | null>(null)
+  const conversationUpdatesInFlightRef = useRef(false)
 
   const selectedConv = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
@@ -611,6 +618,29 @@ export function MessagesPage() {
     })
   }
 
+  function rememberConversationUpdateTime(value: string) {
+    const time = new Date(value).getTime()
+    if (Number.isNaN(time)) return
+    conversationUpdatesSinceRef.current = new Date(Math.max(0, time - CONVERSATION_UPDATES_OVERLAP_MS)).toISOString()
+  }
+
+  function applyConversationSummaries(summaries: ConversationSummary[]) {
+    if (!summaries.length) return
+
+    updateConversations((prev) => {
+      const byId = new Map(prev.map((conversation) => [conversation.id, conversation]))
+      for (const summary of summaries) {
+        const existing = byId.get(summary.id)
+        byId.set(summary.id, {
+          ...summary,
+          peer: summary.peer ?? existing?.peer ?? null,
+          unread_count: selectedIdRef.current === summary.id ? 0 : summary.unread_count,
+        })
+      }
+      return sortConversations([...byId.values()])
+    })
+  }
+
   function mergeRestConversationSnapshot(restConversations: ConversationSummary[], requestStartedAt: number) {
     const localConversations = conversationsRef.current
     const localById = new Map(localConversations.map((conversation) => [conversation.id, conversation]))
@@ -706,6 +736,7 @@ export function MessagesPage() {
         const res = await apiGet<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)
         const next = mergeRestConversationSnapshot(res.conversations ?? [], requestStartedAt)
         updateConversations(() => next)
+        rememberConversationUpdateTime(new Date(requestStartedAt).toISOString())
         const activeSelectedId = selectedIdRef.current
         if (!next.length) {
           setSelectedId(null)
@@ -820,6 +851,25 @@ export function MessagesPage() {
     }, delay)
   }
 
+  async function syncConversationUpdates() {
+    if (conversationUpdatesInFlightRef.current) return
+    if (document.hidden) return
+
+    const since = conversationUpdatesSinceRef.current
+    if (!since) return
+
+    conversationUpdatesInFlightRef.current = true
+    try {
+      const res = await apiGet<ConversationUpdatesResponse>(`${CONVERSATIONS_PATH}/updates?since=${encodeURIComponent(since)}`)
+      applyConversationSummaries(res.conversations ?? [])
+      if (res.server_time) rememberConversationUpdateTime(res.server_time)
+    } catch {
+      // Realtime remains primary. Delta sync is best-effort repair, not a UI blocker.
+    } finally {
+      conversationUpdatesInFlightRef.current = false
+    }
+  }
+
   function messageFromRealtime(row: RealtimeMessageRow): Message {
     const activeConversation = selectedConvRef.current?.id === row.conversation_id
       ? selectedConvRef.current
@@ -899,6 +949,24 @@ export function MessagesPage() {
         try { const c = await apiGetCached<{ cafes: CafeOption[] }>(CAFES_PATH, { ttlMs: 60_000 }); setCafeOptions(c.cafes ?? []) } catch { /* noop */ }
       })()
     }, 1200)
+  }, [])
+
+  useEffect(() => {
+    const sync = () => { void syncConversationUpdates() }
+    const onVisibilityChange = () => {
+      if (!document.hidden) sync()
+    }
+
+    const interval = window.setInterval(sync, 1000)
+    window.addEventListener('focus', sync)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    sync()
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', sync)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [])
 
   useEffect(() => {
