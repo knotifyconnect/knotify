@@ -121,7 +121,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   return (
     <>
       {variant === 'floating' ? (
-        <div style={{ position: 'fixed', bottom: 'max(84px, calc(72px + env(safe-area-inset-bottom)))', right: 16, zIndex: 45 }}>{bellButton}</div>
+        <div style={{ position: 'fixed', bottom: 'max(140px, calc(128px + env(safe-area-inset-bottom)))', right: 16, zIndex: 9991 }}>{bellButton}</div>
       ) : (
         bellButton
       )}

@@ -2,6 +2,7 @@ import type { PropsWithChildren } from 'react'
 import { useLocation } from 'react-router-dom'
 import { AppSidebar } from '../components/layout/AppSidebar'
 import { FeedbackWidget } from '../components/FeedbackWidget'
+import { GlobalCompanionWidget } from '../components/GlobalCompanionWidget'
 
 export function AppLayout({ children }: PropsWithChildren) {
   const location = useLocation()
@@ -20,7 +21,7 @@ export function AppLayout({ children }: PropsWithChildren) {
       <main
         // Mobile (default): leave room at bottom for the 64px tab bar (+ safe area)
         // Desktop: shift right by sidebar width, generous padding, no extra bottom space
-        style={!isMapPage ? { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))' } : undefined}
+        style={isMapPage ? { height: '100dvh', overflow: 'hidden', paddingBottom: 0 } : { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))' }}
         className={
           isMapPage
             ? 'px-2 pt-2 pb-[88px] md:ml-[220px] md:pb-6 md:pl-2 md:pr-2 md:pt-2'
@@ -29,6 +30,7 @@ export function AppLayout({ children }: PropsWithChildren) {
       >
         {children}
       </main>
+      <GlobalCompanionWidget />
       <FeedbackWidget />
     </div>
   )

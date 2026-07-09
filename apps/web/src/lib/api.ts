@@ -377,6 +377,18 @@ export async function apiDelete(path: string): Promise<void> {
   invalidateApiCache()
 }
 
+export async function apiDeleteJson<T>(path: string): Promise<T> {
+  const headers = await authHeaders()
+  const res = await fetchApi(path, {
+    method: 'DELETE',
+    headers,
+  })
+  if (!res.ok) throw await buildError(res)
+  const data = await res.json() as T
+  invalidateApiCache()
+  return data
+}
+
 export async function apiPostForm<T>(
   path: string,
   formData: FormData,
