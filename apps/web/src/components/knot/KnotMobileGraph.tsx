@@ -246,6 +246,7 @@ export function KnotMobileGraph({
   expandedRootName = null,
   onCollapse,
   onResetGraph,
+  resetToken = 0,
 }: {
   me: MeNode
   nodes: KnotGraphNode[]
@@ -257,6 +258,7 @@ export function KnotMobileGraph({
   expandedRootName?: string | null
   onCollapse?: () => void
   onResetGraph?: () => void
+  resetToken?: number
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const panRef = useRef<{ startX: number; startY: number; ox: number; oy: number; moved: boolean } | null>(null)
@@ -326,6 +328,25 @@ export function KnotMobileGraph({
     ...directPositioned,
     ...second.map((n, i) => ({ n, x: dragPositions[n.id]?.x ?? secondSlots[i].x, y: dragPositions[n.id]?.y ?? secondSlots[i].y, r: 17 })),
   ]
+  const layoutFitSignature = nodes.map((node) => node.id).join('|')
+
+  function fitViewport(items = positioned, options?: { maxScale?: number; targetY?: number }) {
+    const withCenter = [{ x: CX, y: CY, r: 42 }, ...items]
+    const minX = Math.min(...withCenter.map((item) => item.x - item.r - 18))
+    const maxX = Math.max(...withCenter.map((item) => item.x + item.r + 18))
+    const minY = Math.min(...withCenter.map((item) => item.y - item.r - 28))
+    const maxY = Math.max(...withCenter.map((item) => item.y + item.r + 42))
+    const width = Math.max(1, maxX - minX)
+    const height = Math.max(1, maxY - minY)
+    const nextScale = Math.max(MIN_ZOOM, Math.min((VW - 42) / width, (VH - 128) / height, options?.maxScale ?? 1))
+    const focusX = (minX + maxX) / 2
+    const focusY = (minY + maxY) / 2
+    setScale(nextScale)
+    setPan({
+      x: CX - nextScale * focusX - (1 - nextScale) * CX,
+      y: (options?.targetY ?? CY) - nextScale * focusY - (1 - nextScale) * CY,
+    })
+  }
 
   useEffect(() => {
     const liveIds = new Set(nodes.map((node) => node.id))
@@ -386,6 +407,12 @@ export function KnotMobileGraph({
     // Refit only when expansion or container shape changes; user pan remains free afterward.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedRootId, expandedSignature, layoutRevision])
+
+  useEffect(() => {
+    if (expandedMode) return
+    fitViewport()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutFitSignature, layoutRevision, resetToken])
 
   // Search changes emphasis only: matching nodes stand out and the rest dim,
   // while positions, pan, and zoom stay exactly where the user left them.
@@ -531,8 +558,7 @@ export function KnotMobileGraph({
     pointersRef.current.clear()
     suppressNodeClickRef.current = false
     setDragPositions({})
-    setPan({ x: 0, y: 0 })
-    setScale(1)
+    fitViewport(positioned, { maxScale: 1 })
     onClearSelection()
     onResetGraph?.()
   }
@@ -627,7 +653,7 @@ export function KnotMobileGraph({
               strokeWidth={sel ? 1.6 : isSecond ? 1.2 : 0.8}
               strokeDasharray={isSecond ? '5 4' : undefined}
               strokeLinecap="round"
-              opacity={searchMuted ? 0.1 : isDimmed(n) ? 0.18 : 1}
+              opacity={searchMuted ? 0.04 : isDimmed(n) ? 0.18 : 1}
             />
           )
         })}
@@ -664,7 +690,7 @@ export function KnotMobileGraph({
                 if (suppressNodeClickRef.current) return
                 sel ? onClearSelection() : onSelectNode(n)
               }}
-              style={{ cursor: 'pointer', touchAction: 'none', transformOrigin: `${x}px ${y}px`, opacity: searchMuted ? 0.16 : isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
+              style={{ cursor: 'pointer', touchAction: 'none', transformOrigin: `${x}px ${y}px`, opacity: searchMuted ? 0.06 : isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
             >
               {/* Outer selection / search-match / expanded-root / health ring */}
               {sel && <circle cx={0} cy={0} r={r + 5} fill="rgba(216,68,43,0.12)" stroke="#D8442B" strokeWidth={1.5} />}

@@ -182,7 +182,18 @@ body::before {
 @media (max-width: 767px) {
   .k-profile-root {
     max-width: 100% !important;
+    min-width: 0;
     gap: 16px !important;
+    overflow-x: hidden;
+  }
+  .k-profile-root,
+  .k-profile-root * {
+    box-sizing: border-box;
+  }
+  .k-profile-root > *,
+  .k-profile-root p,
+  .k-profile-root div {
+    min-width: 0;
   }
   .k-profile-actions {
     width: 100%;
@@ -193,9 +204,15 @@ body::before {
   .k-profile-actions > button {
     width: 100%;
     justify-content: center;
+    min-width: 0;
   }
   .k-profile-cols > * {
     margin-bottom: 12px;
+    max-width: 100%;
+  }
+  .k-profile-root input,
+  .k-profile-root textarea {
+    max-width: 100%;
   }
 }
 
@@ -330,7 +347,10 @@ body::before {
 .k-knot-stage {
   position: relative; min-height: calc(100vh - 78px);
 }
-@media (max-width: 767px) { .k-knot-stage { min-height: calc(100dvh - 140px); } }
+@media (max-width: 767px) {
+  .k-knot-stage { min-height: 0; }
+  .your-knot-stage { height: 100%; min-height: 0; overflow: hidden; }
+}
 .k-knot-bg {
   position: relative; overflow: hidden; min-height: calc(100vh - 78px);
   border-radius: 0;
@@ -338,7 +358,10 @@ body::before {
               radial-gradient(rgba(84,72,58,0.10) 1px, transparent 1px);
   background-size: 100% 100%, 18px 18px;
 }
-@media (max-width: 767px) { .k-knot-bg { min-height: calc(100dvh - 140px); } }
+@media (max-width: 767px) {
+  .k-knot-bg { min-height: 0; }
+  .your-knot-stage .k-knot-bg { height: 100%; min-height: 0; overflow: hidden; }
+}
 .k-knot-search-box {
   position: absolute; left: 12px; top: 12px; z-index: 8;
   width: min(390px, calc(100% - 24px));

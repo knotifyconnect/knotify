@@ -293,7 +293,7 @@ export function ProfilePage() {
   const { userId } = useParams<{ userId: string }>()
   const [searchParams] = useSearchParams()
   const [meId, setMeId] = useState<string | null>(null)
-  const isPublicPreview = searchParams.get('view') === 'public'
+  const forcePublicView = searchParams.get('view') === 'public'
 
   // Resolve "is this my own profile or someone else's?"
   useEffect(() => {
@@ -304,11 +304,11 @@ export function ProfilePage() {
   }, [userId])
 
   // If we have a userId param AND it's not my own ID → public view
-  if (userId && meId && (userId !== meId || isPublicPreview)) {
+  if (userId && meId && (userId !== meId || forcePublicView)) {
     return <PublicProfileView userId={userId} isOwnPreview={userId === meId} />
   }
   // While we don't know yet whether it's me, show public view (safer)
-  if (userId && !meId) {
+  if (userId && (!meId || forcePublicView)) {
     return <PublicProfileView userId={userId} />
   }
 
@@ -853,15 +853,15 @@ function OwnProfileView() {
           {!me.banner_url && (
             <>
               <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(255,255,255,0.32) 1px, transparent 1px)', backgroundSize: '22px 22px', opacity: ['Bowline', 'Masthead'].includes(credibility?.tier ?? '') ? 0.5 : 0.32 }} />
-              <div style={{ position: 'absolute', left: 20, bottom: 16 }}>
+              <div style={{ position: 'absolute', left: isMobile ? 14 : 20, right: isMobile ? 14 : undefined, bottom: 16, minWidth: 0, display: isMobile ? 'none' : undefined }}>
                 <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: 'italic', fontSize: 15, color: ['Bowline', 'Masthead'].includes(credibility?.tier ?? '') ? 'rgba(255,255,255,0.92)' : 'var(--ink-soft)' }}>
                   {credibility ? `${credibility.tier} · knotting Munich` : 'knotting Munich'}
                 </span>
               </div>
             </>
           )}
-          <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 6 }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 999, background: 'rgba(26,24,21,0.5)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: bannerBusy ? 'wait' : 'pointer', backdropFilter: 'blur(4px)' }}>
+          <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 6, maxWidth: 'calc(100% - 24px)' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 999, background: 'rgba(26,24,21,0.5)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: bannerBusy ? 'wait' : 'pointer', backdropFilter: 'blur(4px)', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {bannerBusy ? 'Uploading…' : me.banner_url ? 'Change cover' : '＋ Cover photo'}
               <input type="file" accept="image/*" style={{ display: 'none' }} disabled={bannerBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void saveBanner(f) }} />
             </label>
@@ -872,8 +872,8 @@ function OwnProfileView() {
         </div>
 
         {/* Identity — avatar overlaps the cover, actions sit alongside */}
-        <div style={{ padding: '0 6px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginTop: isMobile ? -40 : -52 }}>
+        <div style={{ padding: isMobile ? '0 2px' : '0 6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'flex-end', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 16 : 14, flexWrap: 'wrap', marginTop: isMobile ? -40 : -52 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <img
                 src={avatarDraft || me.avatar_url || avatarUrl(me.full_name, 160)}
@@ -901,7 +901,7 @@ function OwnProfileView() {
 
           <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(28px, 4vw, 40px)', lineHeight: 1.02, fontWeight: 500, letterSpacing: '-0.03em', margin: 0, color: 'var(--ink)' }}>
+              <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: isMobile ? 28 : 'clamp(28px, 4vw, 40px)', lineHeight: 1.04, fontWeight: 500, letterSpacing: 0, margin: 0, color: 'var(--ink)', minWidth: 0 }}>
                 {me.full_name}
               </h1>
               <KPill color={pill.color}>{pill.label}</KPill>
@@ -915,14 +915,14 @@ function OwnProfileView() {
                 style={{ ...fieldStyle, maxWidth: 560 }}
               />
             ) : (
-              <p style={{ margin: 0, color: me.headline ? 'var(--ink-soft)' : 'var(--ink-faint)', fontSize: 16, lineHeight: 1.5, maxWidth: 620 }}>
+              <p style={{ margin: 0, color: me.headline ? 'var(--ink-soft)' : 'var(--ink-faint)', fontSize: isMobile ? 15 : 16, lineHeight: 1.5, maxWidth: 620, overflowWrap: 'anywhere' }}>
                 {me.headline || 'Add a headline so people know what to come to you for.'}
               </p>
             )}
 
-            <div style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{profileMeta}</div>
+            <div style={{ fontSize: 13.5, color: 'var(--ink-muted)', lineHeight: 1.45 }}>{profileMeta}</div>
 
-            <div style={{ display: 'flex', gap: 22, marginTop: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, minmax(0, 1fr))' : 'repeat(3, max-content)', gap: isMobile ? 12 : 22, marginTop: 6 }}>
               {([
                 { label: 'connections', value: connectionCount, onClick: () => navigate('/map') },
                 { label: 'skills', value: userSkillIds.length, onClick: undefined },
@@ -932,7 +932,7 @@ function OwnProfileView() {
                   key={label}
                   type="button"
                   onClick={onClick}
-                  style={{ background: 'none', border: 'none', padding: 0, cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'baseline', gap: 5, fontFamily: "'IBM Plex Sans', sans-serif" }}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'baseline', justifyContent: isMobile ? 'flex-start' : 'initial', gap: 5, fontFamily: "'IBM Plex Sans', sans-serif" }}
                 >
                   <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>{value}</span>
                   <span style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{label}</span>
@@ -1362,15 +1362,15 @@ function OwnProfileView() {
         <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>
           Review an editable preview before saving. The PDF and extracted raw text are not stored by this import flow.
         </p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <label style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '0.5px dashed var(--rule)', background: 'var(--paper-soft)', fontSize: 13, color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'stretch', gap: 10, flexDirection: isMobile ? 'column' : 'row' }}>
+          <label style={{ flex: 1, minWidth: 0, padding: '9px 12px', borderRadius: 10, border: '0.5px dashed var(--rule)', background: 'var(--paper-soft)', fontSize: 13, color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M7 2v8M3 6l4-4 4 4M2 12h10" stroke="var(--ink-faint)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             {cvFile ? cvFile.name : 'Upload CV (PDF)'}
             <input ref={cvInputRef} type="file" accept="application/pdf" onChange={(e) => setCvFile(e.target.files?.[0] ?? null)} style={{ display: 'none' }} />
           </label>
-          <KBtn variant="signal" size="sm" disabled={!cvFile || cvExtracting} onClick={extractCv}>
+          <KBtn variant="signal" size="sm" fullWidth={isMobile} disabled={!cvFile || cvExtracting} onClick={extractCv}>
             {cvExtracting ? 'Analysing…' : 'Upload & analyse'}
           </KBtn>
         </div>
@@ -1471,9 +1471,9 @@ function OwnProfileView() {
         <KCard style={{ padding: '18px 20px', marginBottom: 16 }}>
           <SectionHead label="Invite your network" />
           <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 12px', lineHeight: 1.5 }}>Share your personal link to bring people into Munich's professional graph.</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--paper-soft)', borderRadius: 10, border: '0.5px solid var(--rule)', padding: '8px 10px' }}>
+          <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, background: 'var(--paper-soft)', borderRadius: 10, border: '0.5px solid var(--rule)', padding: '8px 10px', flexDirection: isMobile ? 'column' : 'row' }}>
             <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteUrl}</div>
-            <button type="button" onClick={copyInvite} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: 8, border: 'none', background: inviteCopied ? 'var(--verd)' : 'var(--ink)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}>
+            <button type="button" onClick={copyInvite} style={{ flexShrink: 0, padding: '7px 14px', borderRadius: 8, border: 'none', background: inviteCopied ? 'var(--verd)' : 'var(--ink)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: "'IBM Plex Sans'", width: isMobile ? '100%' : undefined }}>
               {inviteCopied ? 'Copied!' : 'Copy link'}
             </button>
           </div>

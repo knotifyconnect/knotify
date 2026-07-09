@@ -278,6 +278,7 @@ export function MapPage() {
   const [expandError, setExpandError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<RelationshipTab>('Connected')
   const [query, setQuery] = useState('')
+  const [graphResetToken, setGraphResetToken] = useState(0)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null)
   const [selectedSecondDegreeUserId, setSelectedSecondDegreeUserId] = useState<string | null>(null)
@@ -522,6 +523,7 @@ export function MapPage() {
     setQuery('')
     setStatusFilter('All')
     setActiveTab('Connected')
+    setGraphResetToken((value) => value + 1)
   }
 
   async function toggleExpandKnot(connection: Connection) {
@@ -824,13 +826,15 @@ export function MapPage() {
     <div
       className="your-knot-page"
       style={{
-        height: '100%',
+        minHeight: '100%',
+        height: isMobileTop ? '100%' : undefined,
+        overflow: isMobileTop ? 'hidden' : undefined,
         background: 'var(--paper)',
         color: 'var(--ink)',
         fontFamily: "'IBM Plex Sans', sans-serif",
       }}
     >
-      <div className="your-knot-page-inner" style={{ maxWidth: 'none', margin: '0 auto', padding: '2px 0 24px' }}>
+      <div className="your-knot-page-inner" style={{ maxWidth: 'none', margin: '0 auto', padding: isMobileTop ? '2px 0 0' : '2px 0 24px', height: isMobileTop ? '100%' : undefined, display: isMobileTop ? 'flex' : undefined, flexDirection: isMobileTop ? 'column' : undefined, overflow: isMobileTop ? 'hidden' : undefined }}>
         <TopCommandBar
           connectedCount={connected.length}
           incomingCount={incoming.length}
@@ -894,6 +898,7 @@ export function MapPage() {
           requestingUserId={requestingUserId}
           requestFeedback={requestFeedback}
           onResetGraphState={resetGraphState}
+          graphResetToken={graphResetToken}
           onCollapseExpanded={clearExpandedKnot}
           signalsByUserId={signalsByUserId}
         />
@@ -1061,6 +1066,7 @@ function KnotStage({
   requestingUserId,
   requestFeedback,
   onResetGraphState,
+  graphResetToken,
   onCollapseExpanded,
 }: {
   meId: string | null
@@ -1097,6 +1103,7 @@ function KnotStage({
   requestingUserId: string | null
   requestFeedback: string | null
   onResetGraphState: () => void
+  graphResetToken: number
   onCollapseExpanded: () => void
   signalsByUserId: Map<string, KnotSignals>
 }) {
@@ -1262,6 +1269,8 @@ function KnotStage({
     <KCard
       style={{
         marginTop: 5,
+        flex: isMobile ? '1 1 auto' : undefined,
+        minHeight: isMobile ? 0 : undefined,
         padding: 0,
         overflow: 'hidden',
         border: 'none',
@@ -1362,6 +1371,7 @@ function KnotStage({
                 expandedRootName={expandedRootUserId ? expandedRootName : null}
                 onCollapse={onCollapseExpanded}
                 onResetGraph={onResetGraphState}
+                resetToken={graphResetToken}
               />
               <MobileNodeOverlay
                 open={!!(selectedConnection || selectedSecondDegreeUser)}

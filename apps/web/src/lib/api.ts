@@ -112,6 +112,11 @@ type ApiRequestOptions = {
   timeoutMs?: number
 }
 
+type MutationCachePolicy = boolean | string | string[]
+type MutationRequestOptions = ApiRequestOptions & {
+  invalidate?: MutationCachePolicy
+}
+
 const DEFAULT_API_TIMEOUT_MS = 15_000
 const DEFAULT_STALE_TTL_MS = 5 * 60_000
 const responseCache = new Map<string, { expiresAt: number; staleUntil: number; value: unknown }>()
@@ -143,6 +148,26 @@ export function invalidateApiCache(pathPrefix?: string) {
 
   for (const key of inFlightGets.keys()) {
     if (cacheKeyPath(key).startsWith(pathPrefix)) inFlightGets.delete(key)
+  }
+}
+
+function applyMutationCachePolicy(policy: MutationCachePolicy = true) {
+  if (policy === false) return
+  if (policy === true) {
+    invalidateApiCache()
+    return
+  }
+
+  const prefixes = Array.isArray(policy) ? policy : [policy]
+  const uniquePrefixes = Array.from(new Set(prefixes.filter(Boolean)))
+
+  if (!uniquePrefixes.length) {
+    invalidateApiCache()
+    return
+  }
+
+  for (const prefix of uniquePrefixes) {
+    invalidateApiCache(prefix)
   }
 }
 
@@ -328,53 +353,53 @@ export async function apiGetCached<T>(
   return request
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown, options: MutationRequestOptions = {}): Promise<T> {
   const headers = await authHeaders()
   const res = await fetchApi(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
-  })
+  }, options)
   if (!res.ok) throw await buildError(res)
   const data = await res.json() as T
-  invalidateApiCache()
+  applyMutationCachePolicy(options.invalidate)
   return data
 }
 
-export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+export async function apiPatch<T>(path: string, body: unknown, options: MutationRequestOptions = {}): Promise<T> {
   const headers = await authHeaders()
   const res = await fetchApi(path, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
-  })
+  }, options)
   if (!res.ok) throw await buildError(res)
   const data = await res.json() as T
-  invalidateApiCache()
+  applyMutationCachePolicy(options.invalidate)
   return data
 }
 
-export async function apiPut<T>(path: string, body: unknown): Promise<T> {
+export async function apiPut<T>(path: string, body: unknown, options: MutationRequestOptions = {}): Promise<T> {
   const headers = await authHeaders()
   const res = await fetchApi(path, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
-  })
+  }, options)
   if (!res.ok) throw await buildError(res)
   const data = await res.json() as T
-  invalidateApiCache()
+  applyMutationCachePolicy(options.invalidate)
   return data
 }
 
-export async function apiDelete(path: string): Promise<void> {
+export async function apiDelete(path: string, options: MutationRequestOptions = {}): Promise<void> {
   const headers = await authHeaders()
   const res = await fetchApi(path, {
     method: 'DELETE',
     headers,
-  })
+  }, options)
   if (!res.ok) throw await buildError(res)
-  invalidateApiCache()
+  applyMutationCachePolicy(options.invalidate)
 }
 
 export async function apiDeleteJson<T>(path: string): Promise<T> {
@@ -392,7 +417,7 @@ export async function apiDeleteJson<T>(path: string): Promise<T> {
 export async function apiPostForm<T>(
   path: string,
   formData: FormData,
-  options: ApiRequestOptions = {}
+  options: MutationRequestOptions = {}
 ): Promise<T> {
   const headers = await authHeaders()
   const res = await fetchApi(path, {
@@ -402,6 +427,6 @@ export async function apiPostForm<T>(
   }, options)
   if (!res.ok) throw await buildError(res)
   const data = await res.json() as T
-  invalidateApiCache()
+  applyMutationCachePolicy(options.invalidate)
   return data
 }
