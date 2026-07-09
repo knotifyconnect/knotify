@@ -824,12 +824,14 @@ export function MapPage() {
     <div
       style={{
         minHeight: '100%',
+        height: isMobileTop ? '100%' : undefined,
+        overflow: isMobileTop ? 'hidden' : undefined,
         background: 'var(--paper)',
         color: 'var(--ink)',
         fontFamily: "'IBM Plex Sans', sans-serif",
       }}
     >
-      <div style={{ maxWidth: 'none', margin: '0 auto', padding: '2px 0 24px' }}>
+      <div style={{ maxWidth: 'none', margin: '0 auto', padding: isMobileTop ? '2px 0 0' : '2px 0 24px', height: isMobileTop ? '100%' : undefined, display: isMobileTop ? 'flex' : undefined, flexDirection: isMobileTop ? 'column' : undefined, overflow: isMobileTop ? 'hidden' : undefined }}>
         <TopCommandBar
           connectedCount={connected.length}
           incomingCount={incoming.length}
@@ -1264,6 +1266,8 @@ function KnotStage({
     <KCard
       style={{
         marginTop: 5,
+        flex: isMobile ? '1 1 auto' : undefined,
+        minHeight: isMobile ? 0 : undefined,
         padding: 0,
         overflow: 'hidden',
         border: 'none',
