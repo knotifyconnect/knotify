@@ -345,6 +345,11 @@ const QUICK_ACTIONS = [
   { label: 'Vouch request ⭐', message: "Would you be willing to vouch for me on knotify?" },
 ]
 
+const MESSAGE_LANE_STYLE: React.CSSProperties = {
+  width: 'min(100%, 880px)',
+  margin: '0 auto',
+}
+
 type CafeOption = {
   id: string
   name: string
@@ -1448,39 +1453,45 @@ export function MessagesPage() {
       {/* App-shell: one surface split into conversation list + thread.
           Mobile: show EITHER list OR thread (switcher driven by selectedId). */}
       <div
-        className="!grid-cols-1 md:!grid-cols-[340px_1fr]"
+        className="grid grid-cols-1 md:grid-cols-[360px_minmax(0,1fr)]"
         style={{
           flex: 1,
           minHeight: 0,
-          display: 'grid',
-          gridTemplateColumns: '340px minmax(0,1fr)',
-          borderRadius: 18,
+          width: 'min(100%, 1440px)',
+          margin: '0 auto',
+          borderRadius: 24,
           overflow: 'hidden',
-          background: '#fff',
-          boxShadow: 'var(--lift-2)',
+          background: 'rgba(255,252,246,0.92)',
+          border: '0.5px solid rgba(26,24,21,0.07)',
+          boxShadow: '0 18px 54px rgba(26,24,21,0.11)',
         }}
       >
         {/* ── Conversation list ─────────────────────────────────────────── */}
         <div
           className={selectedId ? 'hidden md:flex' : 'flex'}
-          style={{ flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid var(--rule-soft)', background: 'var(--paper-soft)' }}
+          style={{ flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid rgba(26,24,21,0.08)', background: 'linear-gradient(180deg, rgba(255,252,246,0.96) 0%, rgba(244,239,230,0.82) 100%)' }}
         >
           {/* List header + search */}
-          <div style={{ padding: '18px 18px 12px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 500, letterSpacing: '-0.02em', margin: 0 }}>Messages</h1>
-                {unreadTotal > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'white', background: 'var(--signal)', borderRadius: 999, padding: '1px 8px' }}>
-                    {unreadTotal}
-                  </span>
-                )}
+          <div style={{ padding: '22px 20px 14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 25, fontWeight: 500, letterSpacing: '-0.02em', margin: 0 }}>Messages</h1>
+                  {unreadTotal > 0 && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'white', background: 'var(--signal)', borderRadius: 999, padding: '2px 8px', boxShadow: '0 5px 12px rgba(216,68,43,0.18)' }}>
+                      {unreadTotal}
+                    </span>
+                  )}
+                </div>
+                <div style={{ marginTop: 3, color: 'var(--ink-faint)', fontSize: 12.5, lineHeight: 1.35, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                  Warm intros, thoughtful asks, coffee plans.
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setNewChatOpen((p) => !p)}
                 aria-label="New chat"
-                style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--ink)', color: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 20, lineHeight: 1, flexShrink: 0 }}
+                style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'var(--ink)', color: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 21, lineHeight: 1, flexShrink: 0, boxShadow: '0 10px 22px rgba(26,24,21,0.18)' }}
               >
                 +
               </button>
@@ -1491,10 +1502,10 @@ export function MessagesPage() {
               placeholder="Search"
               style={{
                 width: '100%',
-                padding: '9px 14px',
+                padding: '11px 15px',
                 borderRadius: 999,
-                border: 'none',
-                background: 'var(--paper-deep)',
+                border: '0.5px solid rgba(26,24,21,0.06)',
+                background: 'rgba(238,231,216,0.72)',
                 fontSize: 13.5,
                 fontFamily: "'IBM Plex Sans', sans-serif",
                 color: 'var(--ink)',
@@ -1565,7 +1576,7 @@ export function MessagesPage() {
           )}
 
           {/* List */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px 14px' }}>
             {loadingConvs && !conversations.length && (
               <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                 Loading…
@@ -1590,29 +1601,30 @@ export function MessagesPage() {
                   width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 10,
-                  padding: '9px 10px',
-                  borderRadius: 11,
+                  gap: 11,
+                  padding: '10px 12px',
+                  borderRadius: 16,
                   border: selectedId === conv.id ? '0.5px solid rgba(216,68,43,0.22)' : '0.5px solid transparent',
-                  background: selectedId === conv.id ? 'var(--signal-soft)' : 'transparent',
+                  background: selectedId === conv.id ? 'rgba(216,68,43,0.11)' : 'transparent',
                   cursor: 'pointer',
                   textAlign: 'left',
-                  marginBottom: 2,
-                  transition: 'all 0.1s',
+                  marginBottom: 4,
+                  transition: 'background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease',
+                  boxShadow: selectedId === conv.id ? '0 10px 24px rgba(216,68,43,0.09)' : 'none',
                 }}
               >
                 <KAvatar name={conv.peer?.full_name} src={conv.peer?.avatar_url} size={38} style={{ flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
-                    <span style={{ fontSize: 13, fontWeight: conv.unread_count > 0 ? 600 : 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 13.5, fontWeight: conv.unread_count > 0 ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {conv.peer?.full_name ?? 'Unknown'}
                     </span>
                     <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', flexShrink: 0 }}>
                       {relativeTime(conv.latest_message?.created_at ?? conv.created_at)}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                    <span style={{ fontSize: 12, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 7, marginTop: 3 }}>
+                    <span style={{ fontSize: 12.5, color: conv.unread_count > 0 ? 'var(--ink)' : 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, lineHeight: 1.35 }}>
                       {conv.latest_message?.content ?? 'Start the conversation'}
                     </span>
                     {conv.unread_count > 0 && (
@@ -1641,17 +1653,18 @@ export function MessagesPage() {
         {/* On mobile: hidden when no chat selected */}
         <div
           className={selectedId ? 'flex' : 'hidden md:flex'}
-          style={{ flexDirection: 'column', overflow: 'hidden', background: '#fff' }}
+          style={{ flexDirection: 'column', overflow: 'hidden', background: 'rgba(255,252,246,0.94)' }}
         >
           {/* Thread header */}
           <div
             style={{
-              padding: '12px 18px',
-              borderBottom: '0.5px solid var(--rule-soft)',
-              background: 'var(--paper-soft)',
+              padding: '14px clamp(16px, 3vw, 26px)',
+              borderBottom: '0.5px solid rgba(26,24,21,0.08)',
+              background: 'rgba(255,252,246,0.96)',
               display: 'flex',
               alignItems: 'center',
               gap: 12,
+              minHeight: 72,
             }}
           >
             {selectedConv?.peer ? (
@@ -1666,12 +1679,14 @@ export function MessagesPage() {
                 >
                   ←
                 </button>
-                <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={36} />
+                <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={42} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {selectedConv.peer.full_name}
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{selectedConv.peer.username}</div>
+                  <div style={{ marginTop: 2, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    @{selectedConv.peer.username} · in your knot
+                  </div>
                 </div>
                 {/* Plan coffee button — icon-only on mobile */}
                 <button
@@ -1679,7 +1694,7 @@ export function MessagesPage() {
                   onClick={() => setCoffeeOpen(true)}
                   style={{
                     flexShrink: 0,
-                    padding: '6px 12px',
+                    padding: '8px 14px',
                     borderRadius: 999,
                     border: '0.5px solid var(--signal)',
                     background: 'var(--signal)',
@@ -1689,6 +1704,7 @@ export function MessagesPage() {
                     cursor: 'pointer',
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     whiteSpace: 'nowrap',
+                    boxShadow: '0 9px 20px rgba(216,68,43,0.18)',
                   }}
                 >
                   <span className="hidden sm:inline">☕ Plan coffee</span>
@@ -1802,8 +1818,8 @@ export function MessagesPage() {
               </>
             ) : (
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>Select a conversation</div>
-                <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Choose from the left or start a new one.</div>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>Messages are small acts of trust</div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-faint)', marginTop: 2 }}>Choose someone from your knot or start a new thread.</div>
               </div>
             )}
           </div>
@@ -1825,33 +1841,53 @@ export function MessagesPage() {
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '16px 20px',
+              padding: '22px clamp(14px, 4vw, 46px)',
               display: 'flex',
               flexDirection: 'column',
-              gap: 4,
-              background: 'var(--paper-soft)',
+              gap: 6,
+              background: 'linear-gradient(180deg, rgba(250,247,240,0.98) 0%, rgba(244,239,230,0.74) 100%)',
             }}
           >
             {!selectedId ? (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 14, color: 'var(--ink-faint)', textAlign: 'center' }}>
-                  Select a conversation to start messaging.
-                </p>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                <div style={{ maxWidth: 430, textAlign: 'center', padding: '30px 32px', borderRadius: 24, background: 'rgba(255,252,246,0.78)', border: '0.5px solid rgba(26,24,21,0.08)', boxShadow: '0 14px 40px rgba(26,24,21,0.07)' }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 18, margin: '0 auto 14px', display: 'grid', placeItems: 'center', background: 'var(--signal-soft)', color: 'var(--signal)', fontFamily: "'Fraunces', Georgia, serif", fontSize: 24, fontStyle: 'italic' }}>
+                    k
+                  </div>
+                  <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 500, color: 'var(--ink)', marginBottom: 7 }}>
+                    Pick up a thread
+                  </div>
+                  <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink-muted)', margin: 0 }}>
+                    Follow up, ask for an intro, or turn a useful connection into coffee.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setNewChatOpen(true)}
+                    style={{ marginTop: 18, padding: '9px 16px', borderRadius: 999, border: 'none', background: 'var(--ink)', color: 'var(--paper)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}
+                  >
+                    Start a chat
+                  </button>
+                </div>
               </div>
             ) : loadingMsgs && !displayMessages.length ? (
               <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, color: 'var(--ink-faint)' }}>
                 Loading…
               </p>
             ) : displayMessages.length === 0 ? (
-              <div style={{ maxWidth: 360, margin: 'auto', textAlign: 'center' }}>
+              <div style={{ maxWidth: 420, margin: 'auto', textAlign: 'center', padding: '28px 30px', borderRadius: 24, background: 'rgba(255,252,246,0.78)', border: '0.5px solid rgba(26,24,21,0.08)', boxShadow: '0 14px 40px rgba(26,24,21,0.07)' }}>
                 {selectedConv?.peer && !selectedHistoryCleared && (
                   <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={52} style={{ margin: '0 auto 12px' }} />
                 )}
-                <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 15, fontWeight: 500, color: 'var(--ink-muted)', margin: 0 }}>
+                <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 15.5, fontWeight: 700, color: 'var(--ink)', margin: 0 }}>
                   {selectedHistoryCleared
                     ? 'History cleared. New messages will appear here.'
                     : `Start the conversation with ${selectedConv?.peer?.full_name?.split(' ')[0] ?? 'them'}.`}
                 </p>
+                {!selectedHistoryCleared && (
+                  <p style={{ margin: '7px 0 0', fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'" }}>
+                    A small, specific ask is the easiest way to make the knot stronger.
+                  </p>
+                )}
                 {selectedHistoryCleared ? (
                   <p style={{ marginTop: 7, fontSize: 12, lineHeight: 1.45, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
                     This only affects your side of the conversation.
@@ -1891,10 +1927,10 @@ export function MessagesPage() {
                   ? { bottom: 'calc(100% + 6px)' }
                   : { top: 'calc(100% + 6px)' }
                 return (
-                  <div key={msg.id}>
+                  <div key={msg.id} style={MESSAGE_LANE_STYLE}>
                     {showDay && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '10px 0' }}>
-                        <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', background: 'rgba(244,239,230,0.9)', border: '0.5px solid var(--rule-soft)', borderRadius: 999, padding: '3px 10px', fontFamily: "'IBM Plex Sans'" }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '12px 0' }}>
+                        <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', background: 'rgba(255,252,246,0.86)', border: '0.5px solid var(--rule-soft)', borderRadius: 999, padding: '4px 11px', fontFamily: "'IBM Plex Sans'" }}>
                           {dayLabel(msg.created_at)}
                         </span>
                       </div>
@@ -1913,12 +1949,12 @@ export function MessagesPage() {
                       </div>
                     )}
                     <div
-                      style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 2, paddingLeft: msg.is_mine ? 68 : 0, paddingRight: msg.is_mine ? 0 : 68 }}
+                      style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 4, paddingLeft: msg.is_mine ? 44 : 0, paddingRight: msg.is_mine ? 0 : 44 }}
                       onMouseEnter={() => setHoveredMsgId(msg.id)}
                       onMouseLeave={() => setHoveredMsgId(null)}
                     >
                       <div
-                        style={{ maxWidth: '80%', position: 'relative' }}
+                        style={{ maxWidth: 'min(76%, 560px)', position: 'relative' }}
                         onContextMenu={(event) => {
                           if (!isOpt(msg) && !isDeletedMessage) {
                             event.preventDefault()
@@ -1963,15 +1999,15 @@ export function MessagesPage() {
                         {/* Bubble */}
                         <div
                           style={{
-                            padding: '9px 13px',
-                            borderRadius: msg.is_mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                            background: isDeletedMessage ? 'transparent' : msg.is_mine ? 'var(--ink)' : 'var(--paper-deep)',
+                            padding: '10px 14px',
+                            borderRadius: msg.is_mine ? '20px 20px 6px 20px' : '20px 20px 20px 6px',
+                            background: isDeletedMessage ? 'transparent' : msg.is_mine ? 'var(--ink)' : 'rgba(238,231,216,0.92)',
                             color: isDeletedMessage ? 'var(--ink-faint)' : msg.is_mine ? 'var(--paper)' : 'var(--ink)',
                             border: isDeletedMessage ? '0.5px dashed var(--rule-soft)' : 'none',
                             fontSize: 14,
                             lineHeight: 1.5,
                             fontStyle: isDeletedMessage ? 'italic' : 'normal',
-                            boxShadow: 'none',
+                            boxShadow: isDeletedMessage ? 'none' : msg.is_mine ? '0 10px 22px rgba(26,24,21,0.12)' : '0 8px 18px rgba(26,24,21,0.06)',
                           }}
                         >
                           <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{isDeletedMessage ? 'Message deleted' : msg.content}</div>
@@ -2052,57 +2088,58 @@ export function MessagesPage() {
           {selectedId && (
             <div
               style={{
-                padding: '8px 16px',
-                borderTop: '0.5px solid var(--rule-soft)',
-                display: 'flex',
-                gap: 6,
-                overflowX: 'auto',
+                padding: '9px clamp(14px, 4vw, 46px)',
+                borderTop: '0.5px solid rgba(26,24,21,0.07)',
                 scrollbarWidth: 'none',
-                background: 'var(--paper-soft)',
+                background: 'rgba(255,252,246,0.78)',
               }}
             >
-              {QUICK_ACTIONS.map(({ label, message }) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => void sendMessage(message)}
-                  style={{
-                    padding: '4px 11px',
-                    borderRadius: 999,
-                    border: '0.5px solid var(--rule)',
-                    background: 'transparent',
-                    fontSize: 12,
-                    color: 'var(--ink-muted)',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    fontFamily: "'IBM Plex Sans', sans-serif",
-                    transition: 'all 0.1s',
-                    flexShrink: 0,
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper-soft)' }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
-                >
-                  {label}
-                </button>
-              ))}
+              <div style={{ ...MESSAGE_LANE_STYLE, display: 'flex', gap: 7, overflowX: 'auto', scrollbarWidth: 'none' }}>
+                {QUICK_ACTIONS.map(({ label, message }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => void sendMessage(message)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 999,
+                      border: '0.5px solid rgba(26,24,21,0.1)',
+                      background: 'rgba(255,252,246,0.82)',
+                      fontSize: 12,
+                      color: 'var(--ink-muted)',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      fontFamily: "'IBM Plex Sans', sans-serif",
+                      transition: 'all 0.12s ease',
+                      flexShrink: 0,
+                      boxShadow: '0 4px 12px rgba(26,24,21,0.04)',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper)' }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,252,246,0.82)' }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
           {/* Composer */}
           <div
             style={{
-              padding: '12px 16px',
-              borderTop: '0.5px solid var(--rule-soft)',
-              background: 'var(--paper-soft)',
+              padding: '12px clamp(14px, 4vw, 46px) 14px',
+              borderTop: '0.5px solid rgba(26,24,21,0.07)',
+              background: 'rgba(255,252,246,0.96)',
               display: selectedId ? 'block' : 'none',
             }}
           >
-            {lastMineLabel && (
-              <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 6, fontFamily: "'IBM Plex Mono'" }}>
-                {lastMineLabel}
-              </div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+            <div style={MESSAGE_LANE_STYLE}>
+              {lastMineLabel && (
+                <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 6, fontFamily: "'IBM Plex Mono'" }}>
+                  {lastMineLabel}
+                </div>
+              )}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
               <div style={{ flex: 1, position: 'relative' }}>
                 <textarea
                   value={composer}
@@ -2117,13 +2154,13 @@ export function MessagesPage() {
                   rows={1}
                   style={{
                     width: '100%',
-                    minHeight: 42,
+                    minHeight: 44,
                     maxHeight: 120,
                     resize: 'none',
-                    borderRadius: 21,
-                    border: '0.5px solid var(--rule)',
-                    background: 'var(--paper-deep)',
-                    padding: '10px 42px 10px 16px',
+                    borderRadius: 22,
+                    border: '0.5px solid rgba(26,24,21,0.1)',
+                    background: 'rgba(238,231,216,0.7)',
+                    padding: '11px 42px 11px 16px',
                     fontSize: 14,
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     color: 'var(--ink)',
@@ -2160,10 +2197,11 @@ export function MessagesPage() {
                 size="sm"
                 disabled={!selectedId || !composer.trim() || sendLoading}
                 onClick={() => void sendMessage()}
-                style={{ flexShrink: 0, height: 42, borderRadius: 21, padding: '0 20px' }}
+                  style={{ flexShrink: 0, height: 44, borderRadius: 22, padding: '0 20px' }}
               >
                 Send
               </KBtn>
+            </div>
             </div>
           </div>
         </div>
