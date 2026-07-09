@@ -305,7 +305,7 @@ export function ProfilePage() {
 
   // If we have a userId param AND it's not my own ID → public view
   if (userId && meId && (userId !== meId || forcePublicView)) {
-    return <PublicProfileView userId={userId} />
+    return <PublicProfileView userId={userId} isOwnPreview={userId === meId} />
   }
   // While we don't know yet whether it's me, show public view (safer)
   if (userId && (!meId || forcePublicView)) {
@@ -1665,7 +1665,7 @@ type ConnectionRow = {
   status: 'pending' | 'accepted' | 'declined'
 }
 
-function PublicProfileView({ userId }: { userId: string }) {
+function PublicProfileView({ userId, isOwnPreview = false }: { userId: string; isOwnPreview?: boolean }) {
   const navigate = useNavigate()
   const [data, setData] = useState<PublicProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1768,6 +1768,10 @@ function PublicProfileView({ userId }: { userId: string }) {
               />
             )}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {isOwnPreview ? (
+                <KBtn variant="ink" size="sm" onClick={() => navigate('/profile')}>Back to editing</KBtn>
+              ) : (
+                <>
               {relation === 'connected' && <KPill color="verd">✓ Connected</KPill>}
               {relation === 'pending_out' && <KBtn variant="ghost" size="sm" disabled>Request sent</KBtn>}
               {relation === 'pending_in' && <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Accept in Discover</KBtn>}
@@ -1781,6 +1785,8 @@ function PublicProfileView({ userId }: { userId: string }) {
                 <KBtn variant="signal" size="sm" onClick={() => setReferralModalOpen(true)}>
                   Ask for referral
                 </KBtn>
+              )}
+                </>
               )}
             </div>
           </div>

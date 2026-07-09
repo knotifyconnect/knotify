@@ -521,6 +521,8 @@ export function MapPage() {
     clearExpandedKnot()
     setSelectedConnectionId(null)
     setQuery('')
+    setStatusFilter('All')
+    setActiveTab('Connected')
     setGraphResetToken((value) => value + 1)
   }
 
@@ -822,6 +824,7 @@ export function MapPage() {
 
   return (
     <div
+      className="your-knot-page"
       style={{
         minHeight: '100%',
         height: isMobileTop ? '100%' : undefined,
@@ -831,7 +834,7 @@ export function MapPage() {
         fontFamily: "'IBM Plex Sans', sans-serif",
       }}
     >
-      <div style={{ maxWidth: 'none', margin: '0 auto', padding: isMobileTop ? '2px 0 0' : '2px 0 24px', height: isMobileTop ? '100%' : undefined, display: isMobileTop ? 'flex' : undefined, flexDirection: isMobileTop ? 'column' : undefined, overflow: isMobileTop ? 'hidden' : undefined }}>
+      <div className="your-knot-page-inner" style={{ maxWidth: 'none', margin: '0 auto', padding: isMobileTop ? '2px 0 0' : '2px 0 24px', height: isMobileTop ? '100%' : undefined, display: isMobileTop ? 'flex' : undefined, flexDirection: isMobileTop ? 'column' : undefined, overflow: isMobileTop ? 'hidden' : undefined }}>
         <TopCommandBar
           connectedCount={connected.length}
           incomingCount={incoming.length}

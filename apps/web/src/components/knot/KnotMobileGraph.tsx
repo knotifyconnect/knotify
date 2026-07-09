@@ -289,9 +289,12 @@ export function KnotMobileGraph({
   const expandedMode = second.length > 0
   // A direct node is dimmed in expanded mode unless it's the root we expanded from
   const isDimmed = (n: KnotGraphNode) => expandedMode && n.degree !== 'second' && n.id !== expandedRootId
-  const r1Nodes = direct.slice(0, 10)
-  const r2Nodes = direct.slice(10)
-  const r1Pos = ring(r1Nodes.length, 132, CX, CY)
+  // Keep normal-sized knots on one fully visible ring. Larger networks can
+  // intentionally use the outer ring and remain available through pan/zoom.
+  const firstRingCapacity = 14
+  const r1Nodes = direct.slice(0, firstRingCapacity)
+  const r2Nodes = direct.slice(firstRingCapacity)
+  const r1Pos = ring(r1Nodes.length, 145, CX, CY)
   const r2Pos = ring(r2Nodes.length, 208, CX, CY)
 
   const directPositioned = [
@@ -325,7 +328,6 @@ export function KnotMobileGraph({
     ...directPositioned,
     ...second.map((n, i) => ({ n, x: dragPositions[n.id]?.x ?? secondSlots[i].x, y: dragPositions[n.id]?.y ?? secondSlots[i].y, r: 17 })),
   ]
-  const positionedSignature = positioned.map(({ n, x, y }) => `${n.id}:${Math.round(x)}:${Math.round(y)}`).join('|')
   const layoutFitSignature = nodes.map((node) => node.id).join('|')
 
   function fitViewport(items = positioned, options?: { maxScale?: number; targetY?: number }) {
@@ -412,23 +414,10 @@ export function KnotMobileGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutFitSignature, layoutRevision, resetToken])
 
-  // Search highlighting — mirrors the desktop graph: matching nodes stand out,
-  // the rest dim, and the view pans to the first match.
+  // Search changes emphasis only: matching nodes stand out and the rest dim,
+  // while positions, pan, and zoom stay exactly where the user left them.
   const normalizedQuery = query.trim().toLowerCase()
   const hasQuery = normalizedQuery.length > 0
-  const prevQueryRef = useRef('')
-  useEffect(() => {
-    const prevHadQuery = prevQueryRef.current.trim().length > 0
-    prevQueryRef.current = query
-
-    if (hasQuery) {
-      fitViewport(positioned, { maxScale: 1 })
-      return
-    }
-    // Recenter when the query is cleared.
-    if (prevHadQuery) fitViewport()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalizedQuery, positionedSignature])
 
   function clientToGraphPoint(clientX: number, clientY: number) {
     const rect = svgRef.current?.getBoundingClientRect()

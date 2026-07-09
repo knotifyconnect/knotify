@@ -24,13 +24,8 @@ function isEditableEscapeTarget(target: EventTarget | null) {
 export function FeedbackWidget() {
   const isMobile = useIsMobile()
   const location = useLocation()
-  const hideFloatingButton = location.pathname === '/map' || (
-    isMobile && (
-      location.pathname === '/messages' ||
-      location.pathname === '/profile' ||
-      location.pathname.startsWith('/profile/')
-    )
-  )
+  const isKnotPage = location.pathname === '/map'
+  const isMessagesPage = location.pathname === '/messages'
   const [open, setOpen] = useState(false)
   const [type, setType] = useState<FeedbackType>('bug')
   const [message, setMessage] = useState('')
@@ -75,10 +70,11 @@ export function FeedbackWidget() {
 
   if (typeof document === 'undefined') return null
 
-  // Mobile stacks with notifications at bottom-right; desktop clears the sidebar.
   const buttonPos: React.CSSProperties = isMobile
-    ? { right: 14, bottom: 'max(72px, calc(60px + env(safe-area-inset-bottom)))' }
-    : { left: 236, bottom: 20 }
+    ? { right: 14, bottom: isMessagesPage ? 'max(204px, calc(182px + env(safe-area-inset-bottom)))' : 'max(92px, calc(70px + env(safe-area-inset-bottom)))' }
+    : isKnotPage
+      ? { right: 18, top: 12 }
+      : { right: 24, bottom: 24 }
 
   const fab = (
     <button
@@ -248,5 +244,5 @@ export function FeedbackWidget() {
     </div>
   )
 
-  return createPortal(<>{!hideFloatingButton && fab}{panel}</>, document.body)
+  return createPortal(<>{fab}{panel}</>, document.body)
 }

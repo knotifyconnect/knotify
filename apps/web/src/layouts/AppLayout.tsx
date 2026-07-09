@@ -26,8 +26,10 @@ export function AppLayout({ children }: PropsWithChildren) {
         style={lockViewport ? { height: '100dvh', overflow: 'hidden', paddingBottom: 0 } : { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))' }}
         className={
           isMapPage
-            ? 'px-2 pt-2 pb-[88px] md:ml-[220px] md:pb-6 md:pl-2 md:pr-2 md:pt-2'
-            : 'px-4 pt-4 md:ml-[220px] md:pb-8 md:px-8 md:py-8'
+            ? 'p-0 md:ml-[220px] md:pb-6 md:pl-2 md:pr-2 md:pt-2'
+            : isMessagesPage
+              ? 'p-0 md:ml-[220px] md:px-8 md:py-8'
+              : 'px-4 pt-4 md:ml-[220px] md:pb-8 md:px-8 md:py-8'
         }
       >
         {children}
