@@ -5,6 +5,7 @@ import { useSessionStore } from './store/session'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { CookieConsentBanner } from './components/CookieConsentBanner'
 import { ApiError, apiGetCached } from './lib/api'
+import { runWhenIdle } from './lib/schedule'
 
 // Everything below is code-split so it does not ship in the landing-page bundle.
 // Logged-out visitors and crawlers only load LandingPage + its deps.
@@ -25,6 +26,7 @@ const GigsPage = lazy(() => import('./pages/GigsPage').then((m) => ({ default: m
 const CafesPage = lazy(() => import('./pages/CafesPage').then((m) => ({ default: m.CafesPage })))
 const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })))
+const TermsPage = lazy(() => import('./pages/TermsPage').then((m) => ({ default: m.TermsPage })))
 const ImpressumPage = lazy(() => import('./pages/ImpressumPage').then((m) => ({ default: m.ImpressumPage })))
 const EmployersPage = lazy(() => import('./pages/EmployersPage').then((m) => ({ default: m.EmployersPage })))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })))
@@ -108,6 +110,7 @@ function isProbablyPublicPath(pathname: string) {
     pathname === '/forgot-password' ||
     pathname === '/reset-password' ||
     pathname === '/privacy' ||
+    pathname === '/terms' ||
     pathname === '/impressum' ||
     pathname === '/employers' ||
     pathname.startsWith('/guides')
@@ -299,6 +302,7 @@ function PublicRoutes() {
       <Route path="/forgot-password" element={<AuthPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route path="/impressum" element={<ImpressumPage />} />
       <Route path="/employers" element={<EmployersPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -318,6 +322,7 @@ function ReentryLandingRoutes({ onContinue }: { onContinue: () => void }) {
   return (
     <Routes>
       <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route path="/impressum" element={<ImpressumPage />} />
       <Route path="/auth" element={<ReentryContinue onContinue={onContinue} />} />
       <Route path="/login" element={<ReentryContinue onContinue={onContinue} />} />
@@ -361,6 +366,7 @@ export default function App() {
   const token = useSessionStore((s) => s.token)
   const setToken = useSessionStore((s) => s.setToken)
   const [hydrating, setHydrating] = useState(true)
+  const [showNonCriticalLayers, setShowNonCriticalLayers] = useState(false)
   const [reentryState, setReentryState] = useState<ReentryState>({
     token: null,
     ready: true,
@@ -371,6 +377,10 @@ export default function App() {
     void import('./lib/analytics')
       .then((m) => m.initAnalytics())
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    return runWhenIdle(() => setShowNonCriticalLayers(true), 1800)
   }, [])
 
   useEffect(() => {
@@ -495,12 +505,16 @@ export default function App() {
           showReentryLanding={reentryState.showLanding}
           onReentryContinue={onReentryContinue}
         />
-        <Suspense fallback={null}>
-          <ToastContainer />
-        </Suspense>
-        <Suspense fallback={null}>
-          <CelebrationLayer />
-        </Suspense>
+        {showNonCriticalLayers && (
+          <>
+            <Suspense fallback={null}>
+              <ToastContainer />
+            </Suspense>
+            <Suspense fallback={null}>
+              <CelebrationLayer />
+            </Suspense>
+          </>
+        )}
         <CookieConsentBanner />
       </BrowserRouter>
     </AppErrorBoundary>

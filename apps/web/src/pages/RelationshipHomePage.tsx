@@ -11,9 +11,9 @@
  *   · Coffee → /messages?to=X&action=coffee (real meeting planner)
  *   · Snooze → durable server-side feedback, gone on every device
  *
- * The Companion chat (CompanionHero) is a deliberately SEPARATE card above
- * this queue, not a replacement for it — the tiles and the AI chat are two
- * independent surfaces over the same engine data, by explicit request.
+ * The Companion chat is a deliberately SEPARATE surface from this queue, not
+ * a replacement for it — the tiles and the AI chat are two independent
+ * surfaces over the same engine data, by explicit request.
  *
  * Design tokens: Fraunces headings · IBM Plex Sans body · Paper #F4EFE6
  * Signal Red (#D84428) used ONLY on: Review button, cold dot, cold accents.
@@ -23,7 +23,6 @@ import { useNavigate } from 'react-router-dom'
 import { apiGet, apiGetCached, apiPost, getApiCacheSnapshot } from '../lib/api'
 import { runWhenIdle } from '../lib/schedule'
 import { HomeHub } from '../components/HomeHub'
-import { CompanionHero, type Suggestion, type PeerLite } from '../components/CompanionHero'
 import { KAvatar, KBtn } from '../lib/knotify'
 import { ReferralAskModal } from '../components/ReferralAskModal'
 import { CreateAskModal } from '../components/asks/CreateAskModal'
@@ -571,40 +570,6 @@ export function RelationshipHomePage() {
   ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 12)
 
   // ── Companion — a separate chat card, not fused into the queue below ────────
-  const companionPeers = new Map<string, PeerLite>(
-    ranked.map((r) => [r.peerId, { id: r.peer.id, full_name: r.peer.full_name, avatar_url: r.peer.avatar_url }])
-  )
-  const rankedByPeer = new Map(ranked.map((r) => [r.peerId, r]))
-
-  function handleCompanionSuggestion(s: Suggestion) {
-    const entry = s.peerId ? rankedByPeer.get(s.peerId) : undefined
-    switch (s.action) {
-      case 'open_message':
-        if (!s.peerId) return
-        if (entry) logAndAct(entry, 'acted')
-        openMessage(s.peerId, s.draft)
-        return
-      case 'open_coffee':
-        if (!s.peerId) return
-        if (entry) logAndAct(entry, 'acted')
-        openCoffeePlanner(s.peerId)
-        return
-      case 'open_profile':
-        if (s.peerId) navigate(`/profile/${s.peerId}`)
-        return
-      case 'open_quests':
-        navigate('/quests')
-        return
-      case 'open_events':
-        navigate('/events')
-        return
-    }
-  }
-
-  const companionNode = (
-    <CompanionHero peers={companionPeers} onSuggestion={handleCompanionSuggestion} />
-  )
-
   // ── "Today's moves" — the unified queue ────────────────────────────────────
   const maintenanceNode = (stats.total > 0 || moves.length > 0) ? (
     <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
@@ -954,7 +919,6 @@ export function RelationshipHomePage() {
 
       <DeskPage rail={rail}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {companionNode}
           <HomeHub maintenance={maintenanceNode} />
         </div>
       </DeskPage>

@@ -12,11 +12,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Bell, MessageSquare, Briefcase, Check, X } from 'lucide-react'
 import { apiGetCached, apiPatch } from '../lib/api'
 import { KAvatar } from '../lib/knotify'
 import { runWhenIdle } from '../lib/schedule'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 type Peer = { id: string; full_name: string; username: string; avatar_url: string | null }
 type RawConn = {
@@ -36,6 +37,8 @@ const T = {
 
 export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, referralUnread = 0 }: { variant?: 'sidebar' | 'floating'; messageUnread?: number; referralUnread?: number }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const isMobile = useIsMobile()
   const [open, setOpen] = useState(false)
   const [requests, setRequests] = useState<Request[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -60,7 +63,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   }, [])
 
   useEffect(() => {
-    const cancelInitialLoad = runWhenIdle(() => void load(), 2000)
+    const cancelInitialLoad = runWhenIdle(() => void load(), 10_000)
     const interval = window.setInterval(() => void load(), 120000)
     return () => {
       cancelInitialLoad()
@@ -69,6 +72,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   }, [load])
 
   const total = requests.length + messageUnread + referralUnread
+  const hideFloatingButton = variant === 'floating' && isMobile && (location.pathname === '/messages' || location.pathname === '/map')
 
   function toggle() {
     if (!open && btnRef.current) {
@@ -105,11 +109,11 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
       aria-label="Notifications"
       style={
         variant === 'floating'
-          ? { position: 'relative', width: 42, height: 42, borderRadius: '50%', border: `0.5px solid ${T.rule}`, background: T.paperSoft, color: T.ink, cursor: 'pointer', display: 'grid', placeItems: 'center', boxShadow: '0 6px 20px rgba(26,24,21,0.12)' }
+          ? { position: 'relative', width: 38, height: 38, borderRadius: '50%', border: `0.5px solid ${T.rule}`, background: T.paperSoft, color: T.ink, cursor: 'pointer', display: 'grid', placeItems: 'center', boxShadow: '0 6px 20px rgba(26,24,21,0.12)' }
           : { position: 'relative', width: 34, height: 34, borderRadius: 10, border: 'none', background: open ? T.paper : 'transparent', color: T.ink, cursor: 'pointer', display: 'grid', placeItems: 'center' }
       }
     >
-      <Bell size={variant === 'floating' ? 18 : 17} />
+      <Bell size={variant === 'floating' ? 16 : 17} />
       {total > 0 && (
         <span style={{ position: 'absolute', top: variant === 'floating' ? 4 : 2, right: variant === 'floating' ? 4 : 2, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999, background: T.signal, color: '#fff', fontSize: 10, fontWeight: 700, display: 'grid', placeItems: 'center', boxSizing: 'border-box', lineHeight: 1 }}>
           {total > 9 ? '9+' : total}
@@ -120,11 +124,11 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
 
   return (
     <>
-      {variant === 'floating' ? (
-        <div style={{ position: 'fixed', bottom: 'max(84px, calc(72px + env(safe-area-inset-bottom)))', right: 16, zIndex: 45 }}>{bellButton}</div>
-      ) : (
+      {variant === 'floating' && !hideFloatingButton ? (
+        <div style={{ position: 'fixed', bottom: 'max(118px, calc(106px + env(safe-area-inset-bottom)))', right: 15, zIndex: 9991 }}>{bellButton}</div>
+      ) : variant !== 'floating' ? (
         bellButton
-      )}
+      ) : null}
 
       {open && pos && createPortal(
         <>

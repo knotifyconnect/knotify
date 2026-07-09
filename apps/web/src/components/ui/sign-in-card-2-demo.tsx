@@ -8,6 +8,7 @@ export function SignInCard2Demo() {
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
+  const [termsAccepted, setTermsAccepted] = useState(false)
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -29,6 +30,8 @@ export function SignInCard2Demo() {
       onFullNameChange={setFullName}
       onUsernameChange={setUsername}
       onSubmit={onSubmit}
+      termsAccepted={termsAccepted}
+      onTermsAcceptedChange={setTermsAccepted}
     />
   )
 }

@@ -1100,6 +1100,14 @@ function KnotStage({
   const normalizedGraphQuery = query.trim().toLowerCase()
   const hasGraphQuery = normalizedGraphQuery.length > 0
 
+  // Clicking empty canvas should drop the selection AND collapse any expanded
+  // second-degree cluster — otherwise the wheel's child nodes stay stranded
+  // on screen with nothing selected to explain why they're there.
+  function onBoardClear() {
+    onClear()
+    onCollapseExpanded()
+  }
+
   // Mobile detection — used to keep the mobile graph clean (direct ties only)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   useEffect(() => {
@@ -1295,6 +1303,26 @@ function KnotStage({
                 Clear
               </button>
             )}
+            {isMobile && hasRelationships && (
+              <button
+                type="button"
+                onClick={onResetGraphState}
+                style={{
+                  border: '0.5px solid rgba(84,72,58,0.18)',
+                  background: 'rgba(244,239,230,0.92)',
+                  color: 'var(--ink)',
+                  borderRadius: 999,
+                  padding: '6px 10px',
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
+                  flexShrink: 0,
+                }}
+              >
+                Reset
+              </button>
+            )}
           </div>
 
           {!hasRelationships ? (
@@ -1326,7 +1354,7 @@ function KnotStage({
                   if (match.degree === 'second') { onSelectSecondDegreeUser(match.userId); return }
                   onSelect(match.connection, match.tab)
                 }}
-                onClearSelection={onClear}
+                onClearSelection={onBoardClear}
                 expandedRootId={expandedRootUserId ? `person:${expandedRootUserId}` : null}
                 expandedRootName={expandedRootUserId ? expandedRootName : null}
                 onCollapse={onCollapseExpanded}
@@ -1387,7 +1415,7 @@ function KnotStage({
                     if (match.degree === 'second') { onSelectSecondDegreeUser(match.userId); return }
                     onSelect(match.connection, match.tab)
                   }}
-                  onClearSelection={onClear}
+                  onClearSelection={onBoardClear}
                 />
               </Suspense>
               <div className="k-knot-stats-bar">

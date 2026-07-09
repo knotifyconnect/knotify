@@ -186,6 +186,18 @@ export function getApiCacheSnapshot<T>(
   return null
 }
 
+export function setApiCacheSnapshot<T>(
+  path: string,
+  value: T,
+  { ttlMs = 10_000, staleMs = DEFAULT_STALE_TTL_MS }: { ttlMs?: number; staleMs?: number } = {}
+) {
+  responseCache.set(cacheKey(path), {
+    expiresAt: Date.now() + ttlMs,
+    staleUntil: Date.now() + Math.max(ttlMs, staleMs),
+    value,
+  })
+}
+
 async function fetchApi(
   path: string,
   init: RequestInit,
@@ -388,6 +400,18 @@ export async function apiDelete(path: string, options: MutationRequestOptions = 
   }, options)
   if (!res.ok) throw await buildError(res)
   applyMutationCachePolicy(options.invalidate)
+}
+
+export async function apiDeleteJson<T>(path: string): Promise<T> {
+  const headers = await authHeaders()
+  const res = await fetchApi(path, {
+    method: 'DELETE',
+    headers,
+  })
+  if (!res.ok) throw await buildError(res)
+  const data = await res.json() as T
+  invalidateApiCache()
+  return data
 }
 
 export async function apiPostForm<T>(

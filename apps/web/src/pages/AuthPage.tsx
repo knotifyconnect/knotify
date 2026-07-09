@@ -93,6 +93,7 @@ export function AuthPage() {
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [messageTone, setMessageTone] = useState<MessageTone>('error')
@@ -149,6 +150,7 @@ export function AuthPage() {
       username: username.trim(),
       locationCity: 'Munich',
       status: 'open_to_work',
+      termsAccepted,
     })
   }
 
@@ -164,6 +166,10 @@ export function AuthPage() {
       username: metadataUsername,
       locationCity: 'Munich',
       status: 'open_to_work',
+      // Recorded at signup time in the auth identity metadata — the server only
+      // trusts this to satisfy the requirement for brand-new accounts (see
+      // apps/api/src/routes/auth.ts), never to overwrite an existing acceptance.
+      termsAccepted: metadata.termsAccepted === true,
     })
   }
 
@@ -225,6 +231,9 @@ export function AuthPage() {
       if (!normalizedEmail || !trimmedPassword) {
         throw new Error('Email and password are required')
       }
+      if (!termsAccepted) {
+        throw new Error('Please accept the Terms of Service and Privacy Policy to continue.')
+      }
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: normalizedEmail,
@@ -237,6 +246,7 @@ export function AuthPage() {
             // Travels with the auth identity so the server can validate access
             // server-side at first request, without trusting localStorage.
             ...(inviteCode ? { inviteCode } : {}),
+            termsAccepted: true,
           },
         },
       })
@@ -391,6 +401,8 @@ export function AuthPage() {
       inviteBanner={invited ? inviterName : null}
       hideSignupTab={accessMode === 'invite_only' && !inviteValid}
       emailLocked={Boolean(lockedEmail) && mode === 'signup'}
+      termsAccepted={termsAccepted}
+      onTermsAcceptedChange={setTermsAccepted}
     />
   )
 }

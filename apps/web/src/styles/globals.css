@@ -172,6 +172,31 @@ body::before {
 @media (max-width: 767px) {
   ::-webkit-scrollbar { display: none; }
   * { scrollbar-width: none; }
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .k-profile-root {
+    max-width: 100% !important;
+    gap: 16px !important;
+  }
+  .k-profile-actions {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px !important;
+  }
+  .k-profile-actions > button {
+    width: 100%;
+    justify-content: center;
+  }
+  .k-profile-cols > * {
+    margin-bottom: 12px;
+  }
 }
 
 /* ── Large-screen content cap ──────────────────────────────────────────────── */

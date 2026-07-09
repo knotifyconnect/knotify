@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { Bug, Lightbulb, MessageCircle, X } from 'lucide-react'
 import { apiPost } from '../lib/api'
-import { KnotifyMark } from '../lib/knotify'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 type FeedbackType = 'bug' | 'suggestion' | 'other'
@@ -14,11 +13,20 @@ const TYPES: { value: FeedbackType; label: string; icon: typeof Bug; hint: strin
   { value: 'other', label: 'Other', icon: MessageCircle, hint: 'Anything else on your mind' },
 ]
 
+function isEditableEscapeTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+
+  const tagName = target.tagName.toLowerCase()
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select'
+}
+
 export function FeedbackWidget() {
   const isMobile = useIsMobile()
   const location = useLocation()
-  const hideFloatingTrigger = isMobile && (
+  const hideFloatingButton = isMobile && (
     location.pathname === '/messages' ||
+    location.pathname === '/map' ||
     location.pathname === '/profile' ||
     location.pathname.startsWith('/profile/')
   )
@@ -40,7 +48,11 @@ export function FeedbackWidget() {
   // Close on Escape.
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (e.isComposing || isEditableEscapeTarget(e.target)) return
+      setOpen(false)
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
@@ -62,9 +74,9 @@ export function FeedbackWidget() {
 
   if (typeof document === 'undefined') return null
 
-  // Bottom-left, clear of the mobile tab bar and the desktop sidebar.
+  // Mobile stacks with notifications at bottom-right; desktop clears the sidebar.
   const buttonPos: React.CSSProperties = isMobile
-    ? { left: 16, bottom: 'max(84px, calc(72px + env(safe-area-inset-bottom)))' }
+    ? { right: 14, bottom: 'max(72px, calc(60px + env(safe-area-inset-bottom)))' }
     : { left: 236, bottom: 20 }
 
   const fab = (
@@ -77,20 +89,21 @@ export function FeedbackWidget() {
         ...buttonPos,
         // Above the mobile bottom sheet (z 9900) so it stays tappable on the knot page.
         zIndex: 9990,
-        width: 46,
-        height: 46,
+        width: isMobile ? 40 : 46,
+        height: isMobile ? 40 : 46,
         borderRadius: 999,
         background: 'var(--paper)',
         border: '1px solid var(--rule)',
+        color: 'var(--signal)',
         boxShadow: '0 8px 24px rgba(35,31,28,0.16)',
         cursor: 'pointer',
-        display: open || hideFloatingTrigger ? 'none' : 'flex',
+        display: open ? 'none' : 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: 0,
       }}
     >
-      <KnotifyMark size={24} color="var(--signal)" />
+      <Bug size={isMobile ? 18 : 20} />
     </button>
   )
 
@@ -138,7 +151,7 @@ export function FeedbackWidget() {
           <>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <KnotifyMark size={18} color="var(--signal)" />
+                <Lightbulb size={18} color="var(--signal)" />
                 <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Send feedback</span>
               </div>
               <button
@@ -234,5 +247,5 @@ export function FeedbackWidget() {
     </div>
   )
 
-  return createPortal(<>{fab}{panel}</>, document.body)
+  return createPortal(<>{!hideFloatingButton && fab}{panel}</>, document.body)
 }

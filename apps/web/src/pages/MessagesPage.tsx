@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { SmilePlus, Trash2 } from 'lucide-react'
-import { apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
+import { apiDeleteJson, apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot, setApiCacheSnapshot } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
-import { KAvatar, KBtn, KCard } from '../lib/knotify'
+import { KAvatar, KBtn, KCard, KnotifyMark } from '../lib/knotify'
 import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
+import { useEscapeClose } from '../hooks/useEscapeClose'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 type UserPreview = {
@@ -27,6 +28,14 @@ type ConversationSummary = {
     created_at: string
     sender_id: string
   } | null
+}
+
+type ConversationsCache = {
+  conversations: ConversationSummary[]
+}
+
+type ConversationUpdatesResponse = ConversationsCache & {
+  server_time: string
 }
 
 type MessageReaction = { emoji: string; count: number; mine: boolean }
@@ -52,6 +61,18 @@ type OptimisticMessage = Message & {
   local: true
 }
 
+type RealtimeMessageRow = {
+  id: string
+  conversation_id: string
+  sender_id: string
+  content: string
+  read_at: string | null
+  delivered_at: string | null
+  deleted_at?: string | null
+  deleted_by?: string | null
+  created_at: string
+}
+
 type MessageDeleteScope = 'for-me' | 'for-everyone'
 
 type Connection = {
@@ -62,6 +83,154 @@ type Connection = {
 
 function isOpt(m: Message | OptimisticMessage): m is OptimisticMessage {
   return (m as OptimisticMessage).local === true
+}
+
+function realtimeMessageRow(value: unknown): RealtimeMessageRow | null {
+  if (!value || typeof value !== 'object') return null
+  const row = value as Partial<RealtimeMessageRow>
+  if (
+    typeof row.id !== 'string' ||
+    typeof row.conversation_id !== 'string' ||
+    typeof row.sender_id !== 'string' ||
+    typeof row.content !== 'string' ||
+    typeof row.created_at !== 'string'
+  ) return null
+
+  return {
+    id: row.id,
+    conversation_id: row.conversation_id,
+    sender_id: row.sender_id,
+    content: row.content,
+    read_at: row.read_at ?? null,
+    delivered_at: row.delivered_at ?? null,
+    deleted_at: row.deleted_at ?? null,
+    deleted_by: row.deleted_by ?? null,
+    created_at: row.created_at,
+  }
+}
+
+function previewContent(message: Pick<RealtimeMessageRow, 'content' | 'deleted_at'>) {
+  return message.deleted_at ? 'Message deleted' : message.content
+}
+
+function mergeMessageList(prev: Message[], next: Message) {
+  const existing = prev.find((message) => message.id === next.id)
+  const merged = existing
+    ? {
+        ...existing,
+        ...next,
+        sender: next.sender ?? existing.sender,
+        reactions: existing.reactions ?? next.reactions ?? [],
+      }
+    : next
+
+  return [
+    ...prev.filter((message) => message.id !== next.id),
+    merged,
+  ].sort((a, b) => a.created_at.localeCompare(b.created_at))
+}
+
+function dropMatchingOptimistic(
+  prev: Record<string, OptimisticMessage[]>,
+  conversationId: string,
+  serverMessage: Pick<Message, 'sender_id' | 'content' | 'created_at'>,
+  currentUserId: string | null
+) {
+  if (!currentUserId || serverMessage.sender_id !== currentUserId) return prev
+
+  const list = prev[conversationId] ?? []
+  if (!list.length) return prev
+
+  const serverTime = new Date(serverMessage.created_at).getTime()
+  let removed = false
+  const nextList = list.filter((message) => {
+    if (removed || message.failed || message.content !== serverMessage.content) return true
+
+    const localTime = new Date(message.created_at).getTime()
+    const closeEnough =
+      Number.isNaN(serverTime) ||
+      Number.isNaN(localTime) ||
+      Math.abs(serverTime - localTime) < 120_000
+
+    if (!closeEnough) return true
+    removed = true
+    return false
+  })
+
+  if (!removed) return prev
+  return { ...prev, [conversationId]: nextList }
+}
+
+function mergeConversationPreview(
+  prev: ConversationSummary[],
+  row: RealtimeMessageRow,
+  eventType: string,
+  currentUserId: string | null,
+  activeConversationId: string | null,
+  resolvePeer?: (row: RealtimeMessageRow) => UserPreview | null
+) {
+  let found = false
+  const isMine = Boolean(currentUserId && row.sender_id === currentUserId)
+  const isActive = activeConversationId === row.conversation_id
+
+  const next = prev.map((conversation) => {
+    if (conversation.id !== row.conversation_id) return conversation
+
+    found = true
+    const latest = conversation.latest_message
+    const shouldUseAsLatest =
+      !latest ||
+      latest.id === row.id ||
+      row.created_at.localeCompare(latest.created_at) >= 0
+
+    const unreadIncrement =
+      eventType === 'INSERT' && latest?.id !== row.id && !isMine && !isActive
+        ? 1
+        : 0
+
+    return {
+      ...conversation,
+      unread_count: isActive ? 0 : Math.max(0, (conversation.unread_count ?? 0) + unreadIncrement),
+      latest_message: shouldUseAsLatest
+        ? {
+            id: row.id,
+            content: previewContent(row),
+            created_at: row.created_at,
+            sender_id: row.sender_id,
+          }
+        : latest,
+    }
+  })
+
+  if (!found) {
+    if (eventType !== 'INSERT') return prev
+
+    const seeded: ConversationSummary = {
+      id: row.conversation_id,
+      created_at: row.created_at,
+      cleared_at: null,
+      peer: resolvePeer?.(row) ?? null,
+      unread_count: !isMine && !isActive ? 1 : 0,
+      latest_message: {
+        id: row.id,
+        content: previewContent(row),
+        created_at: row.created_at,
+        sender_id: row.sender_id,
+      },
+    }
+
+    return sortConversations([seeded, ...prev])
+  }
+
+  return sortConversations(next)
+}
+
+function sortConversations(conversations: ConversationSummary[]) {
+  return conversations.sort((a, b) => {
+    const aTime = a.latest_message?.created_at ?? a.created_at
+    const bTime = b.latest_message?.created_at ?? b.created_at
+    return bTime.localeCompare(aTime)
+  })
 }
 
 function relativeTime(value: string) {
@@ -177,6 +346,16 @@ const QUICK_ACTIONS = [
   { label: 'Vouch request ⭐', message: "Would you be willing to vouch for me on knotify?" },
 ]
 
+const MESSAGE_LANE_STYLE: React.CSSProperties = {
+  width: 'min(100%, 880px)',
+  margin: '0 auto',
+}
+
+const MOBILE_MESSAGE_LANE_STYLE: React.CSSProperties = {
+  width: '100%',
+  margin: 0,
+}
+
 type CafeOption = {
   id: string
   name: string
@@ -205,6 +384,9 @@ const CONVERSATIONS_PATH = '/api/conversations'
 const MEETINGS_PATH = '/api/meetings'
 const CONNECTIONS_PATH = '/api/connections'
 const CAFES_PATH = '/api/cafes'
+const MESSAGE_UNREAD_TOTAL_EVENT = 'knotify:message-unread-total'
+const FAST_CONVERSATION_RECONCILE_GRACE_MS = 15_000
+const CONVERSATION_UPDATES_OVERLAP_MS = 5_000
 
 function formatMeetingTime(value: string) {
   const date = new Date(value)
@@ -245,23 +427,6 @@ function coffeeErrorMessage(err: unknown) {
   return message || 'Could not send the coffee proposal. Check the details and try again.'
 }
 
-async function apiDeleteJson<T>(path: string): Promise<T> {
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
-  const baseUrl = ((import.meta.env.VITE_API_URL ?? import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000') as string).replace(/\/$/, '')
-
-  const res = await fetch(`${baseUrl}${path}`, {
-    method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  })
-
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(json?.error ?? 'Request failed')
-  return json as T
-}
-
 const MSG_ICON_BTN: React.CSSProperties = {
   width: 26, height: 26, borderRadius: '50%', background: 'var(--paper)', border: '0.5px solid var(--rule)',
   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
@@ -279,15 +444,15 @@ export function MessagesPage() {
   const [connections, setConnections] = useState<Connection[]>(() => getApiCacheSnapshot<{ connections: Connection[] }>(CONNECTIONS_PATH)?.connections ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [messagesByConversation, setMessagesByConversation] = useState<Record<string, Message[]>>({})
   const [optimistic, setOptimistic] = useState<Record<string, OptimisticMessage[]>>({})
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [loadingConvs, setLoadingConvs] = useState(() => !getApiCacheSnapshot<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH))
   const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [sendLoading, setSendLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [composer, setComposer] = useState('')
-  const [newChatOpen, setNewChatOpen] = useState(false)
-  const [newChatSearch, setNewChatSearch] = useState('')
   const [creatingFor, setCreatingFor] = useState<string | null>(null)
   const [coffeeOpen, setCoffeeOpen] = useState(false)
   const [cafeOptions, setCafeOptions] = useState<CafeOption[]>(() => getApiCacheSnapshot<{ cafes: CafeOption[] }>(CAFES_PATH)?.cafes ?? [])
@@ -311,17 +476,42 @@ export function MessagesPage() {
 
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const scrollStateRef = useRef<{ conversationId: string | null; lastMessageId: string | null }>({ conversationId: null, lastMessageId: null })
   const scrollIntentRef = useRef<'none' | 'open' | 'own-message'>('none')
   const openCreateInFlightRef = useRef<Map<string, Promise<string | null>>>(new Map())
   const handledDeepLinkRef = useRef<string | null>(null)
   const loadConvsInFlightRef = useRef<Promise<void> | null>(null)
   const loadMeetingsInFlightRef = useRef<Promise<void> | null>(null)
+  const selectedIdRef = useRef<string | null>(null)
+  const selectedConvRef = useRef<ConversationSummary | null>(null)
+  const currentUserIdRef = useRef<string | null>(null)
+  const conversationsRef = useRef<ConversationSummary[]>([])
+  const connectionsRef = useRef<Connection[]>([])
+  const messagesByConversationRef = useRef<Record<string, Message[]>>({})
+  const loadConvsRef = useRef<(keepErr?: boolean) => Promise<void>>(async () => {})
+  const loadMsgsRef = useRef<(id: string, keepErr?: boolean, quiet?: boolean) => Promise<void>>(async () => {})
+  const loadMeetingsRef = useRef<(keepErr?: boolean) => Promise<void>>(async () => {})
+  const markReadRef = useRef<(id: string) => Promise<void>>(async () => {})
+  const conversationRefreshTimerRef = useRef<number | null>(null)
+  const threadRefreshTimersRef = useRef<Record<string, number>>({})
+  const conversationIdsRef = useRef<Set<string>>(new Set())
+  const fastConversationUpdatedAtRef = useRef<Record<string, number>>({})
+  const conversationUpdatesSinceRef = useRef<string | null>(null)
+  const conversationUpdatesInFlightRef = useRef(false)
 
   const selectedConv = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
     [conversations, selectedId]
   )
+
+  selectedIdRef.current = selectedId
+  selectedConvRef.current = selectedConv
+  currentUserIdRef.current = currentUserId
+  conversationsRef.current = conversations
+  connectionsRef.current = connections
+  messagesByConversationRef.current = messagesByConversation
+  conversationIdsRef.current = new Set(conversations.map((conversation) => conversation.id))
 
   const selectedHistoryCleared = Boolean(selectedConv?.cleared_at)
 
@@ -342,60 +532,54 @@ export function MessagesPage() {
     return active[0] ?? null
   }, [meetings, selectedConv, meetingNow])
 
-  function syncConversationPreview(
-    conversationId: string,
-    latestMessage: Pick<Message, 'id' | 'content' | 'created_at' | 'sender_id'>
-  ) {
-    setConversations((prev) => {
-      const next = prev.map((conversation) =>
-        conversation.id === conversationId
-          ? {
-              ...conversation,
-              latest_message: {
-                id: latestMessage.id,
-                content: latestMessage.content,
-                created_at: latestMessage.created_at,
-                sender_id: latestMessage.sender_id,
-              },
-              unread_count: 0,
-            }
-          : conversation
-      )
+  const upcomingMeetings = useMemo(() => {
+    return meetings
+      .filter((meeting) => {
+        const isActionableStatus = meeting.status === 'proposed' || meeting.status === 'confirmed'
+        const isUpcoming = new Date(meeting.scheduled_at).getTime() >= meetingNow
 
-      next.sort((a, b) => {
-        const aTime = a.latest_message?.created_at ?? a.created_at
-        const bTime = b.latest_message?.created_at ?? b.created_at
-        return bTime.localeCompare(aTime)
+        return isActionableStatus && isUpcoming
       })
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())
+      .slice(0, 3)
+  }, [meetings, meetingNow])
 
-      return next
-    })
-  }
+  const searchQuery = search.trim().toLowerCase()
+  const hasSearch = searchQuery.length > 0
 
   const filteredConvs = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return conversations
+    if (!searchQuery) return conversations
     return conversations.filter(
       (c) =>
-        c.peer?.full_name?.toLowerCase().includes(q) ||
-        c.peer?.username?.toLowerCase().includes(q)
+        c.peer?.full_name?.toLowerCase().includes(searchQuery) ||
+        c.peer?.username?.toLowerCase().includes(searchQuery) ||
+        c.latest_message?.content?.toLowerCase().includes(searchQuery)
     )
-  }, [conversations, search])
+  }, [conversations, searchQuery])
 
   const acceptedConns = useMemo(
     () => connections.filter((c) => c.status === 'accepted' && c.user),
     [connections]
   )
 
-  const filteredConns = useMemo(() => {
-    const q = newChatSearch.trim().toLowerCase()
-    if (!q) return acceptedConns
+  const conversationPeerIds = useMemo(
+    () => new Set(conversations.map((conversation) => conversation.peer?.id).filter(Boolean)),
+    [conversations]
+  )
+
+  const filteredNewChatConns = useMemo(() => {
+    if (!searchQuery) return []
+
     return acceptedConns.filter(
       (c) =>
-        c.user?.full_name?.toLowerCase().includes(q) ||
-        c.user?.username?.toLowerCase().includes(q)
+        c.user?.id &&
+        !conversationPeerIds.has(c.user.id) &&
+        (
+          c.user.full_name?.toLowerCase().includes(searchQuery) ||
+          c.user.username?.toLowerCase().includes(searchQuery)
+        )
     )
-  }, [acceptedConns, newChatSearch])
+  }, [acceptedConns, conversationPeerIds, searchQuery])
 
   const displayMessages = useMemo(() => {
     if (!selectedId) return [] as (Message | OptimisticMessage)[]
@@ -424,18 +608,158 @@ export function MessagesPage() {
     return lastMine.read_at ? 'Seen' : 'Delivered'
   }, [lastMine])
 
+  function cacheConversations(next: ConversationSummary[]) {
+    setApiCacheSnapshot<ConversationsCache>(CONVERSATIONS_PATH, { conversations: next })
+  }
+
+  function publishUnreadTotal(next: ConversationSummary[]) {
+    if (typeof window === 'undefined') return
+    const count = next.reduce((sum, conversation) => sum + (conversation.unread_count ?? 0), 0)
+    window.dispatchEvent(new CustomEvent(MESSAGE_UNREAD_TOTAL_EVENT, { detail: { count } }))
+  }
+
+  function updateConversations(
+    updater: (prev: ConversationSummary[]) => ConversationSummary[],
+    touchedConversationIds: string[] = []
+  ) {
+    setConversations((prev) => {
+      const next = updater(prev)
+      const touchedAt = Date.now()
+      for (const conversationId of touchedConversationIds) {
+        fastConversationUpdatedAtRef.current[conversationId] = touchedAt
+      }
+      conversationsRef.current = next
+      conversationIdsRef.current = new Set(next.map((conversation) => conversation.id))
+      cacheConversations(next)
+      publishUnreadTotal(next)
+      return next
+    })
+  }
+
+  function rememberConversationUpdateTime(value: string) {
+    const time = new Date(value).getTime()
+    if (Number.isNaN(time)) return
+    conversationUpdatesSinceRef.current = new Date(Math.max(0, time - CONVERSATION_UPDATES_OVERLAP_MS)).toISOString()
+  }
+
+  function applyConversationSummaries(summaries: ConversationSummary[]) {
+    if (!summaries.length) return
+
+    updateConversations((prev) => {
+      const byId = new Map(prev.map((conversation) => [conversation.id, conversation]))
+      for (const summary of summaries) {
+        const existing = byId.get(summary.id)
+        byId.set(summary.id, {
+          ...summary,
+          peer: summary.peer ?? existing?.peer ?? null,
+          unread_count: selectedIdRef.current === summary.id ? 0 : summary.unread_count,
+        })
+      }
+      return sortConversations([...byId.values()])
+    })
+  }
+
+  function mergeRestConversationSnapshot(restConversations: ConversationSummary[], requestStartedAt: number) {
+    const localConversations = conversationsRef.current
+    const localById = new Map(localConversations.map((conversation) => [conversation.id, conversation]))
+    const restIds = new Set(restConversations.map((conversation) => conversation.id))
+    const now = Date.now()
+
+    const merged = restConversations.map((serverConversation) => {
+      const localConversation = localById.get(serverConversation.id)
+      const isSelectedConversation = selectedIdRef.current === serverConversation.id
+      const fastUpdatedAt = fastConversationUpdatedAtRef.current[serverConversation.id] ?? 0
+      if (!localConversation || fastUpdatedAt <= 0) {
+        return isSelectedConversation ? { ...serverConversation, unread_count: 0 } : serverConversation
+      }
+
+      const serverLatestAt = serverConversation.latest_message?.created_at ?? serverConversation.created_at
+      const localLatestAt = localConversation.latest_message?.created_at ?? localConversation.created_at
+      const localHasNewerLatest = localLatestAt.localeCompare(serverLatestAt) > 0
+      const shouldPreserveFastState =
+        (localHasNewerLatest && fastUpdatedAt > requestStartedAt) ||
+        (localHasNewerLatest && now - fastUpdatedAt < FAST_CONVERSATION_RECONCILE_GRACE_MS)
+
+      if (!shouldPreserveFastState) {
+        return isSelectedConversation ? { ...serverConversation, unread_count: 0 } : serverConversation
+      }
+
+      const latest_message =
+        localLatestAt.localeCompare(serverLatestAt) >= 0
+          ? localConversation.latest_message
+          : serverConversation.latest_message
+
+      return {
+        ...serverConversation,
+        peer: serverConversation.peer ?? localConversation.peer,
+        cleared_at: serverConversation.cleared_at ?? localConversation.cleared_at,
+        unread_count: isSelectedConversation
+          ? 0
+          : localHasNewerLatest ? localConversation.unread_count : serverConversation.unread_count,
+        latest_message,
+      }
+    })
+
+    for (const localConversation of localConversations) {
+      const fastUpdatedAt = fastConversationUpdatedAtRef.current[localConversation.id] ?? 0
+      const shouldPreserveFastState =
+        fastUpdatedAt > requestStartedAt ||
+        (fastUpdatedAt > 0 && now - fastUpdatedAt < FAST_CONVERSATION_RECONCILE_GRACE_MS)
+
+      if (!restIds.has(localConversation.id) && shouldPreserveFastState) {
+        merged.push(localConversation)
+      }
+    }
+
+    return sortConversations(merged)
+  }
+
+  function peerForRealtimeRow(row: RealtimeMessageRow) {
+    const existing = conversationsRef.current.find((conversation) => conversation.id === row.conversation_id)
+    if (existing?.peer) return existing.peer
+
+    const selected = selectedConvRef.current
+    if (selected?.id === row.conversation_id && selected.peer) return selected.peer
+
+    return connectionsRef.current.find((connection) => connection.user?.id === row.sender_id)?.user ?? null
+  }
+
+  function upsertConversationShell(conversationId: string, peer: UserPreview | null, createdAt = new Date().toISOString()) {
+    updateConversations(
+      (prev) => {
+        if (prev.some((conversation) => conversation.id === conversationId)) return prev
+
+        return sortConversations([
+          {
+            id: conversationId,
+            created_at: createdAt,
+            cleared_at: null,
+            peer,
+            unread_count: 0,
+            latest_message: null,
+          },
+          ...prev,
+        ])
+      },
+      [conversationId]
+    )
+  }
+
   async function loadConvs(keepErr = false) {
     if (loadConvsInFlightRef.current) return loadConvsInFlightRef.current
     setLoadingConvs(true)
+    const requestStartedAt = Date.now()
     const task = (async () => {
       try {
         const res = await apiGet<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)
-        const next = res.conversations ?? []
-        setConversations(next)
+        const next = mergeRestConversationSnapshot(res.conversations ?? [], requestStartedAt)
+        updateConversations(() => next)
+        rememberConversationUpdateTime(new Date(requestStartedAt).toISOString())
+        const activeSelectedId = selectedIdRef.current
         if (!next.length) {
           setSelectedId(null)
           setMessages([])
-        } else if (selectedId && !next.some((c) => c.id === selectedId)) {
+        } else if (activeSelectedId && !next.some((c) => c.id === activeSelectedId)) {
           setSelectedId(null)
           setMessages([])
         }
@@ -455,7 +779,18 @@ export function MessagesPage() {
     if (!quiet) setLoadingMsgs(true)
     try {
       const res = await apiGet<{ messages: Message[] }>(`/api/conversations/${id}/messages`)
-      setMessages(res.messages ?? [])
+      const nextMessages = res.messages ?? []
+      setMessagesByConversation((prev) => ({ ...prev, [id]: nextMessages }))
+      if (selectedIdRef.current === id) {
+        setMessages(nextMessages)
+        setOptimistic((prev) => {
+          let next = prev
+          for (const message of nextMessages) {
+            next = dropMatchingOptimistic(next, id, message, currentUserIdRef.current)
+          }
+          return next
+        })
+      }
       if (!keepErr) setError(null)
     } catch (err) {
       if (!keepErr) setError(err instanceof Error ? err.message : 'Failed loading messages')
@@ -468,16 +803,19 @@ export function MessagesPage() {
     if (conversationId === selectedId) return
     scrollIntentRef.current = 'open'
     scrollStateRef.current = { conversationId: null, lastMessageId: null }
-    setMessages([])
+    setMessages(messagesByConversationRef.current[conversationId] ?? [])
     setOptimistic((prev) => ({ ...prev, [conversationId]: prev[conversationId] ?? [] }))
+    updateConversations(
+      (prev) => prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c))
+    )
     setSelectedId(conversationId)
   }
 
   async function markRead(id: string) {
     try {
-      await apiPost(`/api/conversations/${id}/read`, {}, { invalidate: [CONVERSATIONS_PATH, `${CONVERSATIONS_PATH}/unread`] })
-      setConversations((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c))
+      await apiPost(`/api/conversations/${id}/read`, {})
+      updateConversations(
+        (prev) => prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c))
       )
     } catch { /* best effort */ }
   }
@@ -496,6 +834,72 @@ export function MessagesPage() {
     })()
     loadMeetingsInFlightRef.current = task
     return task
+  }
+
+  loadConvsRef.current = loadConvs
+  loadMsgsRef.current = loadMsgs
+  loadMeetingsRef.current = loadMeetings
+  markReadRef.current = markRead
+
+  function scheduleConversationRefresh(delay = 750) {
+    if (conversationRefreshTimerRef.current !== null) {
+      window.clearTimeout(conversationRefreshTimerRef.current)
+    }
+
+    conversationRefreshTimerRef.current = window.setTimeout(() => {
+      conversationRefreshTimerRef.current = null
+      void loadConvsRef.current(true)
+    }, delay)
+  }
+
+  function refreshConversationListForRealtime(conversationId: string, wasKnown: boolean) {
+    if (wasKnown) return
+    void loadConvsRef.current(true)
+  }
+
+  function scheduleThreadRefresh(conversationId: string, delay = 1200) {
+    const existing = threadRefreshTimersRef.current[conversationId]
+    if (existing !== undefined) window.clearTimeout(existing)
+
+    threadRefreshTimersRef.current[conversationId] = window.setTimeout(() => {
+      delete threadRefreshTimersRef.current[conversationId]
+      if (selectedIdRef.current === conversationId) {
+        void loadMsgsRef.current(conversationId, true, true)
+      }
+    }, delay)
+  }
+
+  async function syncConversationUpdates() {
+    if (conversationUpdatesInFlightRef.current) return
+    if (document.hidden) return
+
+    const since = conversationUpdatesSinceRef.current
+    if (!since) return
+
+    conversationUpdatesInFlightRef.current = true
+    try {
+      const res = await apiGet<ConversationUpdatesResponse>(`${CONVERSATIONS_PATH}/updates?since=${encodeURIComponent(since)}`)
+      applyConversationSummaries(res.conversations ?? [])
+      if (res.server_time) rememberConversationUpdateTime(res.server_time)
+    } catch {
+      // Realtime remains primary. Delta sync is best-effort repair, not a UI blocker.
+    } finally {
+      conversationUpdatesInFlightRef.current = false
+    }
+  }
+
+  function messageFromRealtime(row: RealtimeMessageRow): Message {
+    const activeConversation = selectedConvRef.current?.id === row.conversation_id
+      ? selectedConvRef.current
+      : null
+    const isMine = Boolean(currentUserIdRef.current && row.sender_id === currentUserIdRef.current)
+
+    return {
+      ...row,
+      sender: !isMine && activeConversation?.peer?.id === row.sender_id ? activeConversation.peer : null,
+      is_mine: isMine,
+      reactions: [],
+    }
   }
 
   async function scheduleCoffee(payload: { inviteeId: string; scheduledAt: string; cafeId: string | null; locationText: string | null; note: string | null }): Promise<void> {
@@ -536,6 +940,25 @@ export function MessagesPage() {
   }
 
   useEffect(() => {
+    let disposed = false
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!disposed) setCurrentUserId(data.session?.user.id ?? null)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUserId(session?.user.id ?? null)
+    })
+
+    return () => {
+      disposed = true
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
     void loadConvs()
     void loadMeetings(true)
     return runWhenIdle(() => {
@@ -544,6 +967,24 @@ export function MessagesPage() {
         try { const c = await apiGetCached<{ cafes: CafeOption[] }>(CAFES_PATH, { ttlMs: 60_000 }); setCafeOptions(c.cafes ?? []) } catch { /* noop */ }
       })()
     }, 1200)
+  }, [])
+
+  useEffect(() => {
+    const sync = () => { void syncConversationUpdates() }
+    const onVisibilityChange = () => {
+      if (!document.hidden) sync()
+    }
+
+    const interval = window.setInterval(sync, 1000)
+    window.addEventListener('focus', sync)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    sync()
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', sync)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [])
 
   useEffect(() => {
@@ -556,64 +997,90 @@ export function MessagesPage() {
     setThreadMenuOpen(false)
     setConfirmDeleteConversation(false)
     if (!selectedId) return
-    void loadMsgs(selectedId)
+    void loadMsgs(selectedId, false, true)
     void markRead(selectedId)
   }, [selectedId])
 
-  // Realtime: selected thread should react to both new messages and delivery/read updates.
+  useEscapeClose(Boolean(selectedId), () => setSelectedId(null), {
+    disabled:
+      coffeeOpen ||
+      threadMenuOpen ||
+      Boolean(messageDeleteConfirm) ||
+      Boolean(actionMenuMsgId) ||
+      Boolean(pickerOpenMsgId) ||
+      emojiPickerOpen,
+    shouldIgnore: () => Boolean(document.querySelector('.k-overlay, [role="dialog"]')),
+  })
+
+  // Realtime is the fast path. REST refetches below verify state, but message paint
+  // should not wait on a full thread or conversation-list request.
   useEffect(() => {
-    if (!selectedId) return
-
-    const activeConversationId = selectedId
-
-    function refreshSelectedThread(includeConversationList = false) {
-      void loadMsgs(activeConversationId, true, true)
-      if (includeConversationList) {
-        void loadConvs(true)
-      }
-    }
-
-    // Mark delivered/read when opening conversation.
-    void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}, { invalidate: false }).catch(() => {})
-    void markRead(activeConversationId)
-
     const channel = supabase
-      .channel(`messages:conv:${activeConversationId}`)
+      .channel('messages:any')
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'messages',
-        filter: `conversation_id=eq.${activeConversationId}`,
       }, (payload) => {
-        const shouldRefreshList = payload.eventType !== 'UPDATE'
-        refreshSelectedThread(shouldRefreshList)
+        const eventType = String(payload.eventType ?? '')
+        const row = realtimeMessageRow(payload.new ?? payload.old)
 
-        if (payload.eventType === 'INSERT') {
-          void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}, { invalidate: false }).catch(() => {})
-          void markRead(activeConversationId)
+        if (!row) {
+          scheduleConversationRefresh()
+          return
         }
+
+        const activeConversationId = selectedIdRef.current
+        const wasKnownConversation = conversationIdsRef.current.has(row.conversation_id)
+        const isActiveThread = activeConversationId === row.conversation_id
+        const currentUserId = currentUserIdRef.current
+        const isMine = Boolean(currentUserId && row.sender_id === currentUserId)
+
+        if (payload.new && eventType === 'INSERT' && !isMine && !row.delivered_at) {
+          void apiPost(`/api/conversations/${row.conversation_id}/delivered`, {}).catch(() => {})
+        }
+
+        if (isActiveThread && payload.new) {
+          const message = messageFromRealtime(row)
+          setMessages((prev) => mergeMessageList(prev, message))
+
+          if (!isMine && (eventType === 'INSERT' || !row.read_at)) {
+            if (!row.read_at) {
+              void markReadRef.current(row.conversation_id)
+            }
+          }
+
+          scheduleThreadRefresh(row.conversation_id)
+        }
+
+        if (payload.new) {
+          const message = messageFromRealtime(row)
+          setMessagesByConversation((prev) => ({
+            ...prev,
+            [row.conversation_id]: mergeMessageList(prev[row.conversation_id] ?? [], message),
+          }))
+          setOptimistic((prev) => dropMatchingOptimistic(prev, row.conversation_id, message, currentUserId))
+        }
+
+        updateConversations(
+          (prev) => mergeConversationPreview(prev, row, eventType, currentUserId, activeConversationId, peerForRealtimeRow),
+          [row.conversation_id]
+        )
+        refreshConversationListForRealtime(row.conversation_id, wasKnownConversation)
       })
       .subscribe()
 
-    return () => { void supabase.removeChannel(channel) }
-  }, [selectedId])
-
-  // Realtime: any message insert/update can affect conversation ordering, unread counts, delivery/read ticks.
-  useEffect(() => {
-    const channel = supabase
-      .channel('messages:any')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
-        if (document.hidden) return
-        const changedConversationId =
-          typeof payload.new === 'object' && payload.new && 'conversation_id' in payload.new
-            ? String(payload.new.conversation_id)
-            : null
-        if (changedConversationId && changedConversationId === selectedId) return
-        void loadConvs(true)
-      })
-      .subscribe()
-    return () => { void supabase.removeChannel(channel) }
-  }, [selectedId])
+    return () => {
+      if (conversationRefreshTimerRef.current !== null) {
+        window.clearTimeout(conversationRefreshTimerRef.current)
+      }
+      for (const timer of Object.values(threadRefreshTimersRef.current)) {
+        window.clearTimeout(timer)
+      }
+      threadRefreshTimersRef.current = {}
+      void supabase.removeChannel(channel)
+    }
+  }, [])
 
   // Reliability path: keep the open thread fresh even if Supabase message realtime
   // misses an event. Keep this single-flight so slow requests cannot pile up.
@@ -638,7 +1105,7 @@ export function MessagesPage() {
 
         // Conversation list and coffee state are useful, but not urgent enough to block
         // every message poll. Refresh them in the background to avoid request dogpiling.
-        if (now - lastBackgroundSync > 8000) {
+        if (now - lastBackgroundSync > 15000) {
           lastBackgroundSync = now
           void loadConvs(true)
           void loadMeetings(true)
@@ -646,7 +1113,7 @@ export function MessagesPage() {
 
         if (now - lastPresenceSync > 7000) {
           lastPresenceSync = now
-          void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}, { invalidate: false }).catch(() => {})
+          void apiPost(`/api/conversations/${activeConversationId}/delivered`, {}).catch(() => {})
           void markRead(activeConversationId)
         }
       } finally {
@@ -655,7 +1122,7 @@ export function MessagesPage() {
     }
 
     void syncOpenThread()
-    const interval = window.setInterval(() => { void syncOpenThread() }, 2500)
+    const interval = window.setInterval(() => { void syncOpenThread() }, 10000)
 
     return () => {
       disposed = true
@@ -738,11 +1205,8 @@ export function MessagesPage() {
       let conversationId: string | null = null
       if (deepLinkConversationId) {
         conversationId = deepLinkConversationId
-        scrollIntentRef.current = 'open'
-        scrollStateRef.current = { conversationId: null, lastMessageId: null }
-        setSelectedId(deepLinkConversationId)
-        await loadMsgs(deepLinkConversationId, true)
-        await markRead(deepLinkConversationId)
+        openConversation(deepLinkConversationId)
+        if (!conversationIdsRef.current.has(deepLinkConversationId)) void loadConvs(true)
       } else if (deepLinkUserId) {
         conversationId = await openOrCreate(deepLinkUserId)
       }
@@ -764,13 +1228,10 @@ export function MessagesPage() {
   async function openOrCreate(userId: string): Promise<string | null> {
     const existingConversation = conversations.find((conv) => conv.peer?.id === userId)
     if (existingConversation) {
-      scrollIntentRef.current = 'open'
-      scrollStateRef.current = { conversationId: null, lastMessageId: null }
-      setSelectedId(existingConversation.id)
-      await loadMsgs(existingConversation.id, true)
-      await markRead(existingConversation.id)
-      setNewChatOpen(false)
-      setNewChatSearch('')
+      openConversation(existingConversation.id)
+      void loadMsgs(existingConversation.id, true, true)
+      void markRead(existingConversation.id)
+      setSearch('')
       setError(null)
       return existingConversation.id
     }
@@ -779,9 +1240,7 @@ export function MessagesPage() {
     if (inFlight) {
       const conversationId = await inFlight
       if (conversationId) {
-        scrollIntentRef.current = 'open'
-        scrollStateRef.current = { conversationId: null, lastMessageId: null }
-        setSelectedId(conversationId)
+        openConversation(conversationId)
       }
       return conversationId
     }
@@ -789,15 +1248,14 @@ export function MessagesPage() {
     const task = (async () => {
       setCreatingFor(userId)
       try {
-        const res = await apiPost<{ conversation: { id: string } }>('/api/conversations', { userId })
-        await loadConvs(true)
-        scrollIntentRef.current = 'open'
-        scrollStateRef.current = { conversationId: null, lastMessageId: null }
-        setSelectedId(res.conversation.id)
-        await loadMsgs(res.conversation.id, true)
-        await markRead(res.conversation.id)
-        setNewChatOpen(false)
-        setNewChatSearch('')
+        const res = await apiPost<{ conversation: { id: string; created_at?: string } }>('/api/conversations', { userId })
+        const peer = connectionsRef.current.find((connection) => connection.user?.id === userId)?.user ?? null
+        upsertConversationShell(res.conversation.id, peer, res.conversation.created_at)
+        openConversation(res.conversation.id)
+        void loadConvs(true)
+        void loadMsgs(res.conversation.id, true, true)
+        void markRead(res.conversation.id)
+        setSearch('')
         setError(null)
         return res.conversation.id
       } catch (err) {
@@ -825,7 +1283,7 @@ export function MessagesPage() {
     const nowIso = new Date().toISOString()
     const tempId = `tmp-${Date.now()}`
     const opt: OptimisticMessage = {
-      id: tempId, conversation_id: conversationId, sender_id: 'me',
+      id: tempId, conversation_id: conversationId, sender_id: currentUserIdRef.current ?? 'me',
       content: trimmed, read_at: null, delivered_at: null, deleted_at: null, deleted_by: null, created_at: nowIso,
       sender: null, is_mine: true, pending: true, failed: false, local: true,
       reactions: [],
@@ -835,19 +1293,33 @@ export function MessagesPage() {
     scrollIntentRef.current = 'own-message'
     setSendLoading(true)
     setOptimistic((prev) => ({ ...prev, [conversationId]: [...(prev[conversationId] ?? []), opt] }))
-    syncConversationPreview(conversationId, opt)
+    updateConversations(
+      (prev) => mergeConversationPreview(prev, opt, 'INSERT', currentUserIdRef.current, selectedIdRef.current, peerForRealtimeRow),
+      [conversationId]
+    )
 
     try {
-      const res = await apiPost<{ message: Message }>(
-        `/api/conversations/${conversationId}/messages`,
-        { content: trimmed },
-        { invalidate: [CONVERSATIONS_PATH, `${CONVERSATIONS_PATH}/unread`] }
-      )
+      const res = await apiPost<{ message: Message }>(`/api/conversations/${conversationId}/messages`, { content: trimmed })
+      const message = { ...res.message, reactions: res.message.reactions ?? [] }
       trackEvent('message_sent')
-      setOptimistic((prev) => ({ ...prev, [conversationId]: (prev[conversationId] ?? []).filter((m) => m.id !== tempId) }))
-      setMessages((prev) => [...prev, res.message])
-      syncConversationPreview(conversationId, res.message)
-      void loadConvs(true)
+      setOptimistic((prev) => {
+        const reconciled = dropMatchingOptimistic(prev, conversationId, message, currentUserIdRef.current)
+        return {
+          ...reconciled,
+          [conversationId]: (reconciled[conversationId] ?? []).filter((m) => m.id !== tempId),
+        }
+      })
+      if (selectedIdRef.current === conversationId) {
+        setMessages((prev) => mergeMessageList(prev, message))
+      }
+      setMessagesByConversation((prev) => ({
+        ...prev,
+        [conversationId]: mergeMessageList(prev[conversationId] ?? [], message),
+      }))
+      updateConversations(
+        (prev) => mergeConversationPreview(prev, message, 'INSERT', currentUserIdRef.current, selectedIdRef.current, peerForRealtimeRow),
+        [conversationId]
+      )
     } catch (err) {
       setOptimistic((prev) => ({
         ...prev,
@@ -877,15 +1349,23 @@ export function MessagesPage() {
       if (scope === 'for-me') {
         await apiDeleteJson<{ deleted_for_me: boolean; message_id: string }>(`/api/conversations/${conversationId}/messages/${msg.id}/for-me`)
         setMessages((prev) => prev.filter((item) => item.id !== msg.id))
+        setMessagesByConversation((prev) => ({
+          ...prev,
+          [conversationId]: (prev[conversationId] ?? []).filter((item) => item.id !== msg.id),
+        }))
       } else {
         const res = await apiDeleteJson<{ message: Message; deleted: boolean }>(`/api/conversations/${conversationId}/messages/${msg.id}/for-everyone`)
-        setMessages((prev) =>
-          prev.map((item) =>
+        const applyDeletedMessage = (items: Message[]) =>
+          items.map((item) =>
             item.id === msg.id
               ? { ...item, ...res.message, content: 'Message deleted', reactions: [] }
               : item
           )
-        )
+        setMessages((prev) => applyDeletedMessage(prev))
+        setMessagesByConversation((prev) => ({
+          ...prev,
+          [conversationId]: applyDeletedMessage(prev[conversationId] ?? []),
+        }))
       }
 
       setMessageDeleteConfirm(null)
@@ -912,9 +1392,14 @@ export function MessagesPage() {
 
     try {
       await apiDeleteJson<{ archived: boolean }>(`/api/conversations/${conversationId}`)
-      setConversations((prev) => prev.filter((conv) => conv.id !== conversationId))
+      updateConversations((prev) => prev.filter((conv) => conv.id !== conversationId))
       setSelectedId(null)
       setMessages([])
+      setMessagesByConversation((prev) => {
+        const next = { ...prev }
+        delete next[conversationId]
+        return next
+      })
       setComposer('')
       setThreadMenuOpen(false)
       setConfirmDeleteConversation(false)
@@ -978,133 +1463,119 @@ export function MessagesPage() {
       {/* App-shell: one surface split into conversation list + thread.
           Mobile: show EITHER list OR thread (switcher driven by selectedId). */}
       <div
-        className="!grid-cols-1 md:!grid-cols-[340px_1fr]"
+        className="grid grid-cols-1 md:grid-cols-[360px_minmax(0,1fr)]"
         style={{
           flex: 1,
           minHeight: 0,
-          display: 'grid',
-          gridTemplateColumns: '340px minmax(0,1fr)',
-          borderRadius: 18,
+          width: 'min(100%, 1440px)',
+          margin: '0 auto',
+          borderRadius: 24,
           overflow: 'hidden',
-          background: '#fff',
-          boxShadow: 'var(--lift-2)',
+          background: 'rgba(255,252,246,0.92)',
+          border: '0.5px solid rgba(26,24,21,0.07)',
+          boxShadow: '0 18px 54px rgba(26,24,21,0.11)',
         }}
       >
         {/* ── Conversation list ─────────────────────────────────────────── */}
         <div
           className={selectedId ? 'hidden md:flex' : 'flex'}
-          style={{ flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid var(--rule-soft)', background: 'var(--paper-soft)' }}
+          style={{ flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid rgba(26,24,21,0.08)', background: 'linear-gradient(180deg, rgba(255,252,246,0.96) 0%, rgba(244,239,230,0.82) 100%)' }}
         >
           {/* List header + search */}
-          <div style={{ padding: '18px 18px 12px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 500, letterSpacing: '-0.02em', margin: 0 }}>Messages</h1>
-                {unreadTotal > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'white', background: 'var(--signal)', borderRadius: 999, padding: '1px 8px' }}>
-                    {unreadTotal}
-                  </span>
-                )}
+          <div style={{ padding: '22px 20px 14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 25, fontWeight: 500, letterSpacing: '-0.02em', margin: 0 }}>Messages</h1>
+                  {unreadTotal > 0 && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'white', background: 'var(--signal)', borderRadius: 999, padding: '2px 8px', boxShadow: '0 5px 12px rgba(216,68,43,0.18)' }}>
+                      {unreadTotal}
+                    </span>
+                  )}
+                </div>
+                <div style={{ marginTop: 3, color: 'var(--ink-faint)', fontSize: 12.5, lineHeight: 1.35, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                  Warm intros, thoughtful asks, coffee plans.
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setNewChatOpen((p) => !p)}
+                onClick={() => {
+                  setSelectedId(null)
+                  searchInputRef.current?.focus()
+                }}
                 aria-label="New chat"
-                style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--ink)', color: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 20, lineHeight: 1, flexShrink: 0 }}
+                style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'var(--ink)', color: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 21, lineHeight: 1, flexShrink: 0, boxShadow: '0 10px 22px rgba(26,24,21,0.18)' }}
               >
                 +
               </button>
             </div>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search"
-              style={{
-                width: '100%',
-                padding: '9px 14px',
-                borderRadius: 999,
-                border: 'none',
-                background: 'var(--paper-deep)',
-                fontSize: 13.5,
-                fontFamily: "'IBM Plex Sans', sans-serif",
-                color: 'var(--ink)',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {/* New chat picker */}
-          {newChatOpen && (
-            <div style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--rule-soft)', background: 'var(--paper-soft)' }}>
+            <div style={{ position: 'relative' }}>
               <input
-                autoFocus
-                value={newChatSearch}
-                onChange={(e) => setNewChatSearch(e.target.value)}
-                placeholder="Search connections…"
+                ref={searchInputRef}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search threads or people"
                 style={{
                   width: '100%',
-                  padding: '7px 10px',
-                  borderRadius: 8,
-                  border: '0.5px solid var(--rule)',
-                  background: 'var(--paper)',
-                  fontSize: 12.5,
+                  padding: '11px 42px 11px 15px',
+                  borderRadius: 999,
+                  border: '0.5px solid rgba(26,24,21,0.06)',
+                  background: 'rgba(238,231,216,0.72)',
+                  fontSize: 13.5,
                   fontFamily: "'IBM Plex Sans', sans-serif",
                   color: 'var(--ink)',
                   outline: 'none',
                   boxSizing: 'border-box',
-                  marginBottom: 8,
                 }}
               />
-              <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {filteredConns.length ? filteredConns.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    disabled={creatingFor === c.user?.id}
-                    onClick={() => c.user && openOrCreate(c.user.id)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 8px',
-                      borderRadius: 8,
-                      border: 'none',
-                      background: 'var(--paper)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      width: '100%',
-                    }}
-                  >
-                    <KAvatar name={c.user?.full_name} src={c.user?.avatar_url} size={28} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {c.user?.full_name}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>@{c.user?.username}</div>
-                    </div>
-                    {creatingFor === c.user?.id && (
-                      <span style={{ fontSize: 11, color: 'var(--ink-faint)', marginLeft: 'auto' }}>…</span>
-                    )}
-                  </button>
-                )) : (
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0, padding: '4px 0' }}>No accepted connections.</p>
-                )}
-              </div>
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('')
+                    searchInputRef.current?.focus()
+                  }}
+                  aria-label="Clear search"
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    right: 9,
+                    transform: 'translateY(-50%)',
+                    width: 26,
+                    height: 26,
+                    borderRadius: '50%',
+                    border: 'none',
+                    background: 'rgba(26,24,21,0.08)',
+                    color: 'var(--ink-muted)',
+                    cursor: 'pointer',
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontSize: 15,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              )}
             </div>
-          )}
+          </div>
 
           {/* List */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px 14px' }}>
             {loadingConvs && !conversations.length && (
               <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                 Loading…
               </p>
             )}
-            {!filteredConvs.length && !loadingConvs && (
+            {!hasSearch && !filteredConvs.length && !loadingConvs && (
               <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                 No conversations yet.
               </p>
+            )}
+            {hasSearch && filteredConvs.length > 0 && (
+              <div style={{ padding: '6px 8px 5px', fontSize: 10.5, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: 0.7, fontFamily: "'IBM Plex Mono', monospace" }}>
+                Threads
+              </div>
             )}
             {filteredConvs.map((conv) => (
               <button
@@ -1120,29 +1591,30 @@ export function MessagesPage() {
                   width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 10,
-                  padding: '9px 10px',
-                  borderRadius: 11,
+                  gap: 11,
+                  padding: '10px 12px',
+                  borderRadius: 16,
                   border: selectedId === conv.id ? '0.5px solid rgba(216,68,43,0.22)' : '0.5px solid transparent',
-                  background: selectedId === conv.id ? 'var(--signal-soft)' : 'transparent',
+                  background: selectedId === conv.id ? 'rgba(216,68,43,0.11)' : 'transparent',
                   cursor: 'pointer',
                   textAlign: 'left',
-                  marginBottom: 2,
-                  transition: 'all 0.1s',
+                  marginBottom: 4,
+                  transition: 'background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease',
+                  boxShadow: selectedId === conv.id ? '0 10px 24px rgba(216,68,43,0.09)' : 'none',
                 }}
               >
                 <KAvatar name={conv.peer?.full_name} src={conv.peer?.avatar_url} size={38} style={{ flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
-                    <span style={{ fontSize: 13, fontWeight: conv.unread_count > 0 ? 600 : 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 13.5, fontWeight: conv.unread_count > 0 ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {conv.peer?.full_name ?? 'Unknown'}
                     </span>
                     <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', flexShrink: 0 }}>
                       {relativeTime(conv.latest_message?.created_at ?? conv.created_at)}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                    <span style={{ fontSize: 12, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 7, marginTop: 3 }}>
+                    <span style={{ fontSize: 12.5, color: conv.unread_count > 0 ? 'var(--ink)' : 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, lineHeight: 1.35 }}>
                       {conv.latest_message?.content ?? 'Start the conversation'}
                     </span>
                     {conv.unread_count > 0 && (
@@ -1164,6 +1636,52 @@ export function MessagesPage() {
                 </div>
               </button>
             ))}
+            {hasSearch && filteredNewChatConns.length > 0 && (
+              <>
+                <div style={{ padding: '12px 8px 5px', fontSize: 10.5, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: 0.7, fontFamily: "'IBM Plex Mono', monospace" }}>
+                  Start a new chat
+                </div>
+                {filteredNewChatConns.map((connection) => (
+                  <button
+                    key={connection.id}
+                    type="button"
+                    disabled={creatingFor === connection.user?.id}
+                    onClick={() => connection.user && openOrCreate(connection.user.id)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 11,
+                      padding: '10px 12px',
+                      borderRadius: 16,
+                      border: '0.5px solid transparent',
+                      background: 'rgba(255,252,246,0.58)',
+                      cursor: connection.user && creatingFor !== connection.user.id ? 'pointer' : 'default',
+                      textAlign: 'left',
+                      marginBottom: 4,
+                    }}
+                  >
+                    <KAvatar name={connection.user?.full_name} src={connection.user?.avatar_url} size={38} style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {connection.user?.full_name ?? 'Unknown'}
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        @{connection.user?.username} · start thread
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--signal)', flexShrink: 0 }}>
+                      {creatingFor === connection.user?.id ? 'Starting…' : 'New'}
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
+            {hasSearch && !filteredConvs.length && !filteredNewChatConns.length && !loadingConvs && (
+              <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', lineHeight: 1.45, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+                No threads or connections match “{search.trim()}”.
+              </p>
+            )}
           </div>
         </div>
 
@@ -1171,17 +1689,18 @@ export function MessagesPage() {
         {/* On mobile: hidden when no chat selected */}
         <div
           className={selectedId ? 'flex' : 'hidden md:flex'}
-          style={{ flexDirection: 'column', overflow: 'hidden', background: '#fff' }}
+          style={{ flexDirection: 'column', overflow: 'hidden', background: 'rgba(255,252,246,0.94)' }}
         >
           {/* Thread header */}
           <div
             style={{
-              padding: isMobile ? '12px 14px' : '12px 18px',
-              borderBottom: '0.5px solid var(--rule-soft)',
-              background: 'var(--paper-soft)',
+              padding: '14px clamp(16px, 3vw, 26px)',
+              borderBottom: '0.5px solid rgba(26,24,21,0.08)',
+              background: 'rgba(255,252,246,0.96)',
               display: 'flex',
               alignItems: 'center',
               gap: isMobile ? 10 : 12,
+              minHeight: isMobile ? 64 : 72,
             }}
           >
             {selectedConv?.peer ? (
@@ -1191,17 +1710,19 @@ export function MessagesPage() {
                   type="button"
                   onClick={() => setSelectedId(null)}
                   className="md:hidden"
-                style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'transparent', color: 'var(--ink)', cursor: 'pointer', fontSize: 18, lineHeight: 1, flexShrink: 0 }}
+                  style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'transparent', color: 'var(--ink)', cursor: 'pointer', fontSize: 18, lineHeight: 1, flexShrink: 0 }}
                   aria-label="Back to chats"
                 >
                   ←
                 </button>
-              <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={isMobile ? 38 : 36} />
+                <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={isMobile ? 38 : 42} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: isMobile ? 14 : 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: isMobile ? 600 : 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {selectedConv.peer.full_name}
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{selectedConv.peer.username}</div>
+                  <div style={{ marginTop: 2, fontSize: isMobile ? 11 : 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    @{selectedConv.peer.username} · in your knot
+                  </div>
                 </div>
                 {/* Plan coffee button — icon-only on mobile */}
                 <button
@@ -1209,8 +1730,10 @@ export function MessagesPage() {
                   onClick={() => setCoffeeOpen(true)}
                   style={{
                     flexShrink: 0,
-                    height: 36,
                     padding: isMobile ? '0 14px' : '0 16px',
+                    width: 'auto',
+                    minWidth: isMobile ? 62 : 0,
+                    height: 36,
                     borderRadius: 999,
                     border: '0.5px solid var(--signal)',
                     background: 'var(--signal)',
@@ -1226,7 +1749,7 @@ export function MessagesPage() {
                     boxShadow: '0 10px 24px rgba(216,68,43,0.16)',
                   }}
                 >
-                  {isMobile ? 'Plan' : 'Plan coffee'}
+                  <span>{isMobile ? 'Plan' : 'Plan meetup'}</span>
                 </button>
                 {/* Live coffee status — only when a meeting actually exists */}
                 {selectedMeeting && (
@@ -1244,7 +1767,7 @@ export function MessagesPage() {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    ☕ {formatMeetingTime(selectedMeeting.scheduled_at)}{selectedMeeting.status === 'proposed' ? ' · proposed' : ''}
+                    {formatMeetingTime(selectedMeeting.scheduled_at)}{selectedMeeting.status === 'proposed' ? ' · proposed' : ''}
                   </div>
                 )}
                 <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -1258,9 +1781,9 @@ export function MessagesPage() {
                     style={{
                       width: 36,
                       height: 36,
-                      borderRadius: 999,
-                      border: '0.5px solid var(--rule)',
-                      background: 'rgba(255,255,255,0.84)',
+                      borderRadius: '50%',
+                      border: '0.5px solid var(--rule-soft)',
+                      background: 'var(--paper)',
                       color: 'var(--ink)',
                       cursor: 'pointer',
                       fontSize: 18,
@@ -1336,8 +1859,8 @@ export function MessagesPage() {
               </>
             ) : (
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>Select a conversation</div>
-                <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>Choose from the left or start a new one.</div>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>Messages are small acts of trust</div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-faint)', marginTop: 2 }}>Choose someone from your knot or start a new thread.</div>
               </div>
             )}
           </div>
@@ -1359,33 +1882,93 @@ export function MessagesPage() {
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '16px 20px',
+              padding: isMobile ? '16px 14px 18px' : '22px clamp(14px, 4vw, 46px)',
               display: 'flex',
               flexDirection: 'column',
-              gap: 4,
-              background: 'var(--paper-soft)',
+              gap: isMobile ? 10 : 6,
+              background: 'linear-gradient(180deg, rgba(250,247,240,0.98) 0%, rgba(244,239,230,0.74) 100%)',
             }}
           >
             {!selectedId ? (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 14, color: 'var(--ink-faint)', textAlign: 'center' }}>
-                  Select a conversation to start messaging.
-                </p>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                <div style={{ width: 'min(100%, 560px)', display: 'grid', gap: 14 }}>
+                  {upcomingMeetings.length > 0 && (
+                    <div style={{ padding: '18px 18px 16px', borderRadius: 22, background: 'rgba(255,252,246,0.82)', border: '0.5px solid rgba(26,24,21,0.08)', boxShadow: '0 14px 40px rgba(26,24,21,0.07)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+                        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 500, color: 'var(--ink)' }}>
+                          Upcoming coffees
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Mono'" }}>
+                          {upcomingMeetings.length}
+                        </span>
+                      </div>
+                      <div style={{ display: 'grid', gap: 7 }}>
+                        {upcomingMeetings.map((meeting) => (
+                          <button
+                            key={meeting.id}
+                            type="button"
+                            onClick={() => meeting.peer?.id && openOrCreate(meeting.peer.id)}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 14, border: '0.5px solid rgba(26,24,21,0.07)', background: 'rgba(244,239,230,0.5)', textAlign: 'left', cursor: meeting.peer?.id ? 'pointer' : 'default' }}
+                          >
+                            <KAvatar name={meeting.peer?.full_name} src={meeting.peer?.avatar_url} size={34} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {meeting.peer?.full_name ?? 'Coffee meeting'}
+                              </div>
+                              <div style={{ marginTop: 2, fontSize: 11.5, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {formatMeetingTime(meeting.scheduled_at)} · {meeting.cafe?.name ?? meeting.location_text ?? 'Location pending'}
+                              </div>
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: meeting.status === 'confirmed' ? 'var(--verd)' : 'var(--signal)' }}>
+                              {meeting.status === 'confirmed' ? 'Confirmed' : 'Proposed'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ textAlign: 'center', padding: '30px 32px', borderRadius: 24, background: 'rgba(255,252,246,0.78)', border: '0.5px solid rgba(26,24,21,0.08)', boxShadow: '0 14px 40px rgba(26,24,21,0.07)' }}>
+                    <div style={{ width: 48, height: 48, borderRadius: 18, margin: '0 auto 14px', display: 'grid', placeItems: 'center', background: 'var(--signal-soft)', color: 'var(--signal)' }}>
+                      <KnotifyMark size={25} color="var(--signal)" />
+                    </div>
+                    <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 500, color: 'var(--ink)', marginBottom: 7 }}>
+                      Pick up a thread
+                    </div>
+                    <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink-muted)', margin: 0 }}>
+                      Follow up, ask for an intro, or turn a useful connection into coffee.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(null)
+                        searchInputRef.current?.focus()
+                      }}
+                      style={{ marginTop: 18, padding: '9px 16px', borderRadius: 999, border: 'none', background: 'var(--ink)', color: 'var(--paper)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: "'IBM Plex Sans'" }}
+                    >
+                      Search people
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : loadingMsgs && !displayMessages.length ? (
               <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13.5, color: 'var(--ink-faint)' }}>
                 Loading…
               </p>
             ) : displayMessages.length === 0 ? (
-              <div style={{ maxWidth: 360, margin: 'auto', textAlign: 'center' }}>
+              <div style={{ maxWidth: 420, margin: 'auto', textAlign: 'center', padding: '28px 30px', borderRadius: 24, background: 'rgba(255,252,246,0.78)', border: '0.5px solid rgba(26,24,21,0.08)', boxShadow: '0 14px 40px rgba(26,24,21,0.07)' }}>
                 {selectedConv?.peer && !selectedHistoryCleared && (
                   <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={52} style={{ margin: '0 auto 12px' }} />
                 )}
-                <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 15, fontWeight: 500, color: 'var(--ink-muted)', margin: 0 }}>
+                <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 15.5, fontWeight: 700, color: 'var(--ink)', margin: 0 }}>
                   {selectedHistoryCleared
                     ? 'History cleared. New messages will appear here.'
                     : `Start the conversation with ${selectedConv?.peer?.full_name?.split(' ')[0] ?? 'them'}.`}
                 </p>
+                {!selectedHistoryCleared && (
+                  <p style={{ margin: '7px 0 0', fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink-muted)', fontFamily: "'IBM Plex Sans'" }}>
+                    A small, specific ask is the easiest way to make the knot stronger.
+                  </p>
+                )}
                 {selectedHistoryCleared ? (
                   <p style={{ marginTop: 7, fontSize: 12, lineHeight: 1.45, color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
                     This only affects your side of the conversation.
@@ -1425,10 +2008,10 @@ export function MessagesPage() {
                   ? { bottom: 'calc(100% + 6px)' }
                   : { top: 'calc(100% + 6px)' }
                 return (
-                  <div key={msg.id}>
+                  <div key={msg.id} style={isMobile ? MOBILE_MESSAGE_LANE_STYLE : MESSAGE_LANE_STYLE}>
                     {showDay && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '10px 0' }}>
-                        <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', background: 'rgba(244,239,230,0.9)', border: '0.5px solid var(--rule-soft)', borderRadius: 999, padding: '3px 10px', fontFamily: "'IBM Plex Sans'" }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '12px 0' }}>
+                        <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', background: 'rgba(255,252,246,0.86)', border: '0.5px solid var(--rule-soft)', borderRadius: 999, padding: '4px 11px', fontFamily: "'IBM Plex Sans'" }}>
                           {dayLabel(msg.created_at)}
                         </span>
                       </div>
@@ -1447,12 +2030,12 @@ export function MessagesPage() {
                       </div>
                     )}
                     <div
-                      style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 2, paddingLeft: msg.is_mine ? 68 : 0, paddingRight: msg.is_mine ? 0 : 68 }}
+                      style={{ display: 'flex', justifyContent: msg.is_mine ? 'flex-end' : 'flex-start', marginBottom: 4, paddingLeft: msg.is_mine ? 44 : 0, paddingRight: msg.is_mine ? 0 : 44 }}
                       onMouseEnter={() => setHoveredMsgId(msg.id)}
                       onMouseLeave={() => setHoveredMsgId(null)}
                     >
                       <div
-                        style={{ maxWidth: '80%', position: 'relative' }}
+                        style={{ maxWidth: 'min(76%, 560px)', position: 'relative' }}
                         onContextMenu={(event) => {
                           if (!isOpt(msg) && !isDeletedMessage) {
                             event.preventDefault()
@@ -1497,15 +2080,15 @@ export function MessagesPage() {
                         {/* Bubble */}
                         <div
                           style={{
-                            padding: '9px 13px',
-                            borderRadius: msg.is_mine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                            background: isDeletedMessage ? 'transparent' : msg.is_mine ? 'var(--ink)' : 'var(--paper-deep)',
+                            padding: '10px 14px',
+                            borderRadius: msg.is_mine ? '20px 20px 6px 20px' : '20px 20px 20px 6px',
+                            background: isDeletedMessage ? 'transparent' : msg.is_mine ? 'var(--ink)' : 'rgba(238,231,216,0.92)',
                             color: isDeletedMessage ? 'var(--ink-faint)' : msg.is_mine ? 'var(--paper)' : 'var(--ink)',
                             border: isDeletedMessage ? '0.5px dashed var(--rule-soft)' : 'none',
                             fontSize: 14,
                             lineHeight: 1.5,
                             fontStyle: isDeletedMessage ? 'italic' : 'normal',
-                            boxShadow: 'none',
+                            boxShadow: isDeletedMessage ? 'none' : msg.is_mine ? '0 10px 22px rgba(26,24,21,0.12)' : '0 8px 18px rgba(26,24,21,0.06)',
                           }}
                         >
                           <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{isDeletedMessage ? 'Message deleted' : msg.content}</div>
@@ -1586,58 +2169,58 @@ export function MessagesPage() {
           {selectedId && (
             <div
               style={{
-                padding: isMobile ? '10px 14px 6px' : '10px 16px 6px',
-                borderTop: '0.5px solid var(--rule-soft)',
-                display: 'flex',
-                gap: 8,
-                overflowX: 'auto',
+                padding: isMobile ? '8px 14px' : '9px clamp(14px, 4vw, 46px)',
+                borderTop: '0.5px solid rgba(26,24,21,0.07)',
                 scrollbarWidth: 'none',
-                background: 'linear-gradient(180deg, rgba(250,246,238,0.98), rgba(244,239,230,0.96))',
+                background: 'rgba(255,252,246,0.78)',
               }}
             >
-              {QUICK_ACTIONS.map(({ label, message }) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => void sendMessage(message)}
-                  style={{
-                    padding: '7px 12px',
-                    borderRadius: 999,
-                    border: '0.5px solid var(--rule)',
-                    background: 'rgba(255,255,255,0.9)',
-                    fontSize: 12.5,
-                    color: 'var(--ink)',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    fontFamily: "'IBM Plex Sans', sans-serif",
-                    transition: 'all 0.1s',
-                    flexShrink: 0,
-                    boxShadow: '0 6px 18px rgba(26,24,21,0.05)',
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,1)' }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.9)' }}
-                >
-                  {label}
-                </button>
-              ))}
+              <div style={{ ...(isMobile ? MOBILE_MESSAGE_LANE_STYLE : MESSAGE_LANE_STYLE), display: 'flex', gap: isMobile ? 6 : 7, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 1 }}>
+                {QUICK_ACTIONS.map(({ label, message }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => void sendMessage(message)}
+                    style={{
+                      padding: isMobile ? '7px 12px' : '6px 12px',
+                      borderRadius: 999,
+                      border: '0.5px solid rgba(26,24,21,0.1)',
+                      background: 'rgba(255,255,255,0.9)',
+                      fontSize: isMobile ? 11.5 : 12,
+                      color: 'var(--ink-soft)',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      fontFamily: "'IBM Plex Sans', sans-serif",
+                      transition: 'all 0.12s ease',
+                      flexShrink: 0,
+                      boxShadow: '0 5px 14px rgba(26,24,21,0.04)',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper)' }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.9)' }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
           {/* Composer */}
           <div
             style={{
-              padding: isMobile ? '8px 14px calc(14px + env(safe-area-inset-bottom))' : '10px 16px 16px',
-              borderTop: 'none',
-              background: 'linear-gradient(180deg, rgba(244,239,230,0.96), rgba(244,239,230,1))',
+              padding: isMobile ? '10px 14px calc(12px + env(safe-area-inset-bottom))' : '12px clamp(14px, 4vw, 46px) 14px',
+              borderTop: '0.5px solid rgba(26,24,21,0.07)',
+              background: 'rgba(255,252,246,0.96)',
               display: selectedId ? 'block' : 'none',
             }}
           >
-            {lastMineLabel && (
-              <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 8, fontFamily: "'IBM Plex Mono'" }}>
-                {lastMineLabel}
-              </div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+            <div style={isMobile ? MOBILE_MESSAGE_LANE_STYLE : MESSAGE_LANE_STYLE}>
+              {lastMineLabel && (
+                <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 6, paddingRight: 4, fontFamily: "'IBM Plex Mono'" }}>
+                  {lastMineLabel}
+                </div>
+              )}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: isMobile ? 8 : 10 }}>
               <div style={{ flex: 1, position: 'relative' }}>
                 <textarea
                   value={composer}
@@ -1647,36 +2230,35 @@ export function MessagesPage() {
                     e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder={selectedId ? (isMobile ? 'Type a message...' : 'Type a message... (Enter to send, Shift+Enter for newline)') : 'Select a conversation first'}
+                  placeholder={selectedId ? (isMobile ? 'Type a message…' : 'Type a message… (Enter to send, Shift+Enter for newline)') : 'Select a conversation first'}
                   disabled={!selectedId || sendLoading}
                   rows={1}
                   style={{
                     width: '100%',
-                    minHeight: 48,
+                    minHeight: isMobile ? 46 : 44,
                     maxHeight: 120,
                     resize: 'none',
-                    borderRadius: 24,
-                    border: '0.5px solid var(--rule)',
-                    background: 'rgba(255,255,255,0.96)',
-                    padding: '12px 48px 12px 16px',
-                    fontSize: 14,
+                    borderRadius: isMobile ? 22 : 22,
+                    border: '0.5px solid rgba(26,24,21,0.1)',
+                    background: isMobile ? 'rgba(255,255,255,0.94)' : 'rgba(238,231,216,0.7)',
+                    padding: isMobile ? '12px 42px 12px 15px' : '11px 42px 11px 16px',
+                    fontSize: isMobile ? 13.5 : 14,
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     color: 'var(--ink)',
                     outline: 'none',
                     lineHeight: 1.5,
                     overflowY: 'auto',
                     boxSizing: 'border-box',
-                    boxShadow: '0 10px 26px rgba(26,24,21,0.06)',
                   }}
                   onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--signal)' }}
                   onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--rule)' }}
                 />
                 {/* Emoji keyboard button */}
-                <div style={{ position: 'absolute', right: 10, bottom: 10 }}>
+                <div style={{ position: 'absolute', right: isMobile ? 10 : 8, bottom: isMobile ? 9 : 9 }}>
                   <button
                     type="button"
                     onClick={() => setEmojiPickerOpen((p) => !p)}
-                    style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(244,239,230,0.95)', border: '0.5px solid var(--rule-soft)', fontSize: 15, cursor: 'pointer', padding: 0, color: 'var(--ink-muted)', lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ width: isMobile ? 28 : 'auto', height: isMobile ? 28 : 'auto', borderRadius: 999, background: isMobile ? 'rgba(244,239,230,0.95)' : 'none', border: isMobile ? '0.5px solid rgba(26,24,21,0.08)' : 'none', fontSize: isMobile ? 15 : 16, cursor: 'pointer', padding: isMobile ? 0 : 2, color: isMobile ? 'var(--ink-muted)' : 'var(--ink-faint)', lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     😊
                   </button>
@@ -1696,10 +2278,11 @@ export function MessagesPage() {
                 size="sm"
                 disabled={!selectedId || !composer.trim() || sendLoading}
                 onClick={() => void sendMessage()}
-                style={{ flexShrink: 0, height: 48, borderRadius: 18, padding: isMobile ? '0 18px' : '0 22px', boxShadow: '0 12px 24px rgba(216,68,43,0.18)' }}
+                  style={{ flexShrink: 0, height: isMobile ? 46 : 44, minWidth: isMobile ? 76 : 84, borderRadius: isMobile ? 22 : 22, padding: isMobile ? '0 18px' : '0 20px', fontSize: isMobile ? 13.5 : undefined, boxShadow: '0 10px 24px rgba(216,68,43,0.16)' }}
               >
                 Send
               </KBtn>
+            </div>
             </div>
           </div>
         </div>

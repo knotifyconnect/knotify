@@ -841,39 +841,8 @@ function OwnProfileView() {
     apiPatch('/api/users/me', { profileLayout: next }).catch(() => {})
   }
 
-  const profileActions = [
-    {
-      key: 'customize',
-      label: customizing ? 'Done' : 'Customize',
-      variant: customizing ? 'signal' as const : 'ghost' as const,
-      onClick: () => setCustomizing((c) => !c),
-      disabled: false,
-    },
-    {
-      key: 'settings',
-      label: 'Settings',
-      variant: 'ghost' as const,
-      onClick: () => navigate('/settings'),
-      disabled: false,
-    },
-    {
-      key: 'public',
-      label: 'View as public',
-      variant: 'ghost' as const,
-      onClick: () => navigate(`/profile/${me.id}`),
-      disabled: false,
-    },
-    {
-      key: 'edit',
-      label: editMode ? (saving ? 'Saving...' : 'Save profile') : 'Edit profile',
-      variant: editMode ? 'signal' as const : 'ink' as const,
-      onClick: () => { if (editMode) void onSave(); else setEditMode(true) },
-      disabled: saving,
-    },
-  ]
-
   return (
-    <div style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: isMobile ? 18 : 22 }}>
+    <div className="k-profile-root" style={{ maxWidth: 1040, margin: '0 auto', display: 'grid', gap: 22 }}>
 
       {/* ─── Banner + identity (interconnected: avatar overlaps the cover) ─── */}
       <div>
@@ -918,20 +887,13 @@ function OwnProfileView() {
                 Edit
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, auto)', gap: 8, width: isMobile ? '100%' : 'auto', paddingBottom: isMobile ? 0 : 4 }}>
-              {profileActions.map((action) => (
-                <KBtn
-                  key={action.key}
-                  variant={action.variant}
-                  size="sm"
-                  onClick={action.onClick}
-                  disabled={action.disabled}
-                  fullWidth={isMobile}
-                  style={{ minHeight: 40, justifyContent: 'center' }}
-                >
-                  {action.label}
-                </KBtn>
-              ))}
+            <div className="k-profile-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingBottom: 4 }}>
+              <KBtn variant={customizing ? 'signal' : 'ghost'} size="sm" onClick={() => setCustomizing((c) => !c)}>{customizing ? 'Done' : 'Customize'}</KBtn>
+              <KBtn variant="ghost" size="sm" onClick={() => navigate('/settings')}>Settings</KBtn>
+              <KBtn variant="ghost" size="sm" onClick={() => navigate(`/profile/${me.id}`)}>View as public</KBtn>
+              <KBtn variant={editMode ? 'signal' : 'ink'} size="sm" onClick={() => editMode ? void onSave() : setEditMode(true)} disabled={saving}>
+                {editMode ? (saving ? 'Saving…' : 'Save profile') : 'Edit profile'}
+              </KBtn>
             </div>
           </div>
 
@@ -968,7 +930,7 @@ function OwnProfileView() {
                   key={label}
                   type="button"
                   onClick={onClick}
-                  style={{ background: 'none', border: 'none', padding: 0, cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'baseline', justifyContent: 'flex-start', gap: 5, fontFamily: "'IBM Plex Sans', sans-serif" }}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: onClick ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'baseline', justifyContent: isMobile ? 'flex-start' : 'initial', gap: 5, fontFamily: "'IBM Plex Sans', sans-serif" }}
                 >
                   <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>{value}</span>
                   <span style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{label}</span>
