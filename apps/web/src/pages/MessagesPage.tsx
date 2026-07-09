@@ -7,6 +7,7 @@ import { KAvatar, KBtn, KCard, KnotifyMark } from '../lib/knotify'
 import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
 import { useEscapeClose } from '../hooks/useEscapeClose'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 type UserPreview = {
   id: string
@@ -350,6 +351,11 @@ const MESSAGE_LANE_STYLE: React.CSSProperties = {
   margin: '0 auto',
 }
 
+const MOBILE_MESSAGE_LANE_STYLE: React.CSSProperties = {
+  width: '100%',
+  margin: 0,
+}
+
 type CafeOption = {
   id: string
   name: string
@@ -433,6 +439,7 @@ const MSG_MENU_ITEM: React.CSSProperties = {
 }
 
 export function MessagesPage() {
+  const isMobile = useIsMobile()
   const [conversations, setConversations] = useState<ConversationSummary[]>(() => getApiCacheSnapshot<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)?.conversations ?? [])
   const [connections, setConnections] = useState<Connection[]>(() => getApiCacheSnapshot<{ connections: Connection[] }>(CONNECTIONS_PATH)?.connections ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -1692,8 +1699,8 @@ export function MessagesPage() {
               background: 'rgba(255,252,246,0.96)',
               display: 'flex',
               alignItems: 'center',
-              gap: 12,
-              minHeight: 72,
+              gap: isMobile ? 10 : 12,
+              minHeight: isMobile ? 64 : 72,
             }}
           >
             {selectedConv?.peer ? (
@@ -1703,17 +1710,17 @@ export function MessagesPage() {
                   type="button"
                   onClick={() => setSelectedId(null)}
                   className="md:hidden"
-                  style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'transparent', color: 'var(--ink)', cursor: 'pointer', fontSize: 18, lineHeight: 1, flexShrink: 0 }}
+                  style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: 'transparent', color: 'var(--ink)', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}
                   aria-label="Back to chats"
                 >
                   ←
                 </button>
-                <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={42} />
+                <KAvatar name={selectedConv.peer.full_name} src={selectedConv.peer.avatar_url} size={isMobile ? 34 : 42} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {selectedConv.peer.full_name}
                   </div>
-                  <div style={{ marginTop: 2, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ marginTop: 2, fontSize: isMobile ? 11 : 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     @{selectedConv.peer.username} · in your knot
                   </div>
                 </div>
@@ -1723,12 +1730,14 @@ export function MessagesPage() {
                   onClick={() => setCoffeeOpen(true)}
                   style={{
                     flexShrink: 0,
-                    padding: '8px 14px',
+                    padding: isMobile ? '0 12px' : '8px 14px',
+                    width: isMobile ? 40 : 'auto',
+                    height: isMobile ? 40 : 'auto',
                     borderRadius: 999,
                     border: '0.5px solid var(--signal)',
                     background: 'var(--signal)',
                     color: '#fff',
-                    fontSize: 12,
+                    fontSize: isMobile ? 14 : 12,
                     fontWeight: 600,
                     cursor: 'pointer',
                     fontFamily: "'IBM Plex Sans', sans-serif",
@@ -1736,8 +1745,8 @@ export function MessagesPage() {
                     boxShadow: '0 9px 20px rgba(216,68,43,0.18)',
                   }}
                 >
-                  <span className="hidden sm:inline">☕ Plan coffee</span>
-                  <span className="sm:hidden">☕</span>
+                    <span className="hidden sm:inline">☕ Plan coffee</span>
+                  <span className="sm:hidden" style={{ lineHeight: 1 }}>☕</span>
                 </button>
                 {/* Live coffee status — only when a meeting actually exists */}
                 {selectedMeeting && (
@@ -1870,10 +1879,10 @@ export function MessagesPage() {
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '22px clamp(14px, 4vw, 46px)',
+              padding: isMobile ? '16px 14px 18px' : '22px clamp(14px, 4vw, 46px)',
               display: 'flex',
               flexDirection: 'column',
-              gap: 6,
+              gap: isMobile ? 10 : 6,
               background: 'linear-gradient(180deg, rgba(250,247,240,0.98) 0%, rgba(244,239,230,0.74) 100%)',
             }}
           >
@@ -1996,7 +2005,7 @@ export function MessagesPage() {
                   ? { bottom: 'calc(100% + 6px)' }
                   : { top: 'calc(100% + 6px)' }
                 return (
-                  <div key={msg.id} style={MESSAGE_LANE_STYLE}>
+                  <div key={msg.id} style={isMobile ? MOBILE_MESSAGE_LANE_STYLE : MESSAGE_LANE_STYLE}>
                     {showDay && (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '12px 0' }}>
                         <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', background: 'rgba(255,252,246,0.86)', border: '0.5px solid var(--rule-soft)', borderRadius: 999, padding: '4px 11px', fontFamily: "'IBM Plex Sans'" }}>
@@ -2157,24 +2166,24 @@ export function MessagesPage() {
           {selectedId && (
             <div
               style={{
-                padding: '9px clamp(14px, 4vw, 46px)',
+                padding: isMobile ? '8px 14px' : '9px clamp(14px, 4vw, 46px)',
                 borderTop: '0.5px solid rgba(26,24,21,0.07)',
                 scrollbarWidth: 'none',
                 background: 'rgba(255,252,246,0.78)',
               }}
             >
-              <div style={{ ...MESSAGE_LANE_STYLE, display: 'flex', gap: 7, overflowX: 'auto', scrollbarWidth: 'none' }}>
+              <div style={{ ...(isMobile ? MOBILE_MESSAGE_LANE_STYLE : MESSAGE_LANE_STYLE), display: 'flex', gap: isMobile ? 6 : 7, overflowX: 'auto', scrollbarWidth: 'none' }}>
                 {QUICK_ACTIONS.map(({ label, message }) => (
                   <button
                     key={label}
                     type="button"
                     onClick={() => void sendMessage(message)}
                     style={{
-                      padding: '6px 12px',
+                      padding: isMobile ? '7px 11px' : '6px 12px',
                       borderRadius: 999,
                       border: '0.5px solid rgba(26,24,21,0.1)',
                       background: 'rgba(255,252,246,0.82)',
-                      fontSize: 12,
+                      fontSize: isMobile ? 11.5 : 12,
                       color: 'var(--ink-muted)',
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',
@@ -2196,19 +2205,19 @@ export function MessagesPage() {
           {/* Composer */}
           <div
             style={{
-              padding: '12px clamp(14px, 4vw, 46px) 14px',
+              padding: isMobile ? '10px 14px 12px' : '12px clamp(14px, 4vw, 46px) 14px',
               borderTop: '0.5px solid rgba(26,24,21,0.07)',
               background: 'rgba(255,252,246,0.96)',
               display: selectedId ? 'block' : 'none',
             }}
           >
-            <div style={MESSAGE_LANE_STYLE}>
+            <div style={isMobile ? MOBILE_MESSAGE_LANE_STYLE : MESSAGE_LANE_STYLE}>
               {lastMineLabel && (
-                <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 6, fontFamily: "'IBM Plex Mono'" }}>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: isMobile ? 5 : 6, fontFamily: "'IBM Plex Mono'" }}>
                   {lastMineLabel}
                 </div>
               )}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: isMobile ? 8 : 10 }}>
               <div style={{ flex: 1, position: 'relative' }}>
                 <textarea
                   value={composer}
@@ -2218,19 +2227,19 @@ export function MessagesPage() {
                     e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder={selectedId ? 'Type a message… (Enter to send, Shift+Enter for newline)' : 'Select a conversation first'}
+                  placeholder={selectedId ? (isMobile ? 'Type a message…' : 'Type a message… (Enter to send, Shift+Enter for newline)') : 'Select a conversation first'}
                   disabled={!selectedId || sendLoading}
                   rows={1}
                   style={{
                     width: '100%',
-                    minHeight: 44,
+                    minHeight: isMobile ? 42 : 44,
                     maxHeight: 120,
                     resize: 'none',
-                    borderRadius: 22,
+                    borderRadius: isMobile ? 20 : 22,
                     border: '0.5px solid rgba(26,24,21,0.1)',
                     background: 'rgba(238,231,216,0.7)',
-                    padding: '11px 42px 11px 16px',
-                    fontSize: 14,
+                    padding: isMobile ? '10px 38px 10px 14px' : '11px 42px 11px 16px',
+                    fontSize: isMobile ? 13.5 : 14,
                     fontFamily: "'IBM Plex Sans', sans-serif",
                     color: 'var(--ink)',
                     outline: 'none',
@@ -2242,11 +2251,11 @@ export function MessagesPage() {
                   onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--rule)' }}
                 />
                 {/* Emoji keyboard button */}
-                <div style={{ position: 'absolute', right: 8, bottom: 9 }}>
+                <div style={{ position: 'absolute', right: 8, bottom: isMobile ? 8 : 9 }}>
                   <button
                     type="button"
                     onClick={() => setEmojiPickerOpen((p) => !p)}
-                    style={{ background: 'none', border: 'none', fontSize: 16, cursor: 'pointer', padding: 2, color: 'var(--ink-faint)', lineHeight: 1 }}
+                    style={{ background: 'none', border: 'none', fontSize: isMobile ? 15 : 16, cursor: 'pointer', padding: 2, color: 'var(--ink-faint)', lineHeight: 1 }}
                   >
                     😊
                   </button>
@@ -2266,7 +2275,7 @@ export function MessagesPage() {
                 size="sm"
                 disabled={!selectedId || !composer.trim() || sendLoading}
                 onClick={() => void sendMessage()}
-                  style={{ flexShrink: 0, height: 44, borderRadius: 22, padding: '0 20px' }}
+                  style={{ flexShrink: 0, height: isMobile ? 42 : 44, minWidth: isMobile ? 70 : 84, borderRadius: isMobile ? 20 : 22, padding: isMobile ? '0 16px' : '0 20px', fontSize: isMobile ? 13 : undefined }}
               >
                 Send
               </KBtn>
