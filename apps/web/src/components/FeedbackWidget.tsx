@@ -24,7 +24,12 @@ function isEditableEscapeTarget(target: EventTarget | null) {
 export function FeedbackWidget() {
   const isMobile = useIsMobile()
   const location = useLocation()
-  const hideFloatingButton = isMobile && (location.pathname === '/messages' || location.pathname === '/map')
+  const hideFloatingButton = isMobile && (
+    location.pathname === '/messages' ||
+    location.pathname === '/map' ||
+    location.pathname === '/profile' ||
+    location.pathname.startsWith('/profile/')
+  )
   const [open, setOpen] = useState(false)
   const [type, setType] = useState<FeedbackType>('bug')
   const [message, setMessage] = useState('')

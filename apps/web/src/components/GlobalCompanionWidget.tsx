@@ -16,6 +16,11 @@ export function GlobalCompanionWidget() {
   const navigate = useNavigate()
   const location = useLocation()
   const isMobile = useIsMobile()
+  const hideFloatingButton = isMobile && (
+    location.pathname === '/messages' ||
+    location.pathname === '/profile' ||
+    location.pathname.startsWith('/profile/')
+  )
   const storageKey = isMobile ? STORAGE_KEY_MOBILE : STORAGE_KEY_DESKTOP
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState(() => {
@@ -64,7 +69,7 @@ export function GlobalCompanionWidget() {
 
   return createPortal(
     <>
-      {!open && (
+      {!open && !hideFloatingButton && (
         <button
           type="button"
           aria-label="Open Knotify Companion"
