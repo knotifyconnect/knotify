@@ -245,7 +245,6 @@ export function KnotMobileGraph({
   expandedRootId = null,
   expandedRootName = null,
   onCollapse,
-  onResetGraph,
   resetToken = 0,
 }: {
   me: MeNode
@@ -257,7 +256,6 @@ export function KnotMobileGraph({
   expandedRootId?: string | null
   expandedRootName?: string | null
   onCollapse?: () => void
-  onResetGraph?: () => void
   resetToken?: number
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
@@ -289,12 +287,12 @@ export function KnotMobileGraph({
   const expandedMode = second.length > 0
   // A direct node is dimmed in expanded mode unless it's the root we expanded from
   const isDimmed = (n: KnotGraphNode) => expandedMode && n.degree !== 'second' && n.id !== expandedRootId
-  // Keep normal-sized knots on one fully visible ring. Larger networks can
-  // intentionally use the outer ring and remain available through pan/zoom.
-  const firstRingCapacity = 14
+  // The denser inner orbit keeps the default knot lively; genuinely large
+  // networks move to the outer orbit and remain available through pan/zoom.
+  const firstRingCapacity = 10
   const r1Nodes = direct.slice(0, firstRingCapacity)
   const r2Nodes = direct.slice(firstRingCapacity)
-  const r1Pos = ring(r1Nodes.length, 145, CX, CY)
+  const r1Pos = ring(r1Nodes.length, 132, CX, CY)
   const r2Pos = ring(r2Nodes.length, 208, CX, CY)
 
   const directPositioned = [
@@ -549,18 +547,6 @@ export function KnotMobileGraph({
     if (pointersRef.current.size < 2) pinchRef.current = null
     if (panRef.current && !panRef.current.moved) onClearSelection()
     panRef.current = null
-  }
-
-  function resetGraph() {
-    panRef.current = null
-    nodeDragRef.current = null
-    pinchRef.current = null
-    pointersRef.current.clear()
-    suppressNodeClickRef.current = false
-    setDragPositions({})
-    fitViewport(positioned, { maxScale: 1 })
-    onClearSelection()
-    onResetGraph?.()
   }
 
   return (

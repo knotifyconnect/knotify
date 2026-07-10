@@ -1356,6 +1356,7 @@ function KnotStage({
             /* ── Mobile: SVG graph + node overlay card ── */
             <>
               <KnotMobileGraph
+                key={graphResetToken}
                 me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
                 nodes={nodes}
                 selectedNodeId={selectedNode?.id ?? null}
@@ -1370,7 +1371,6 @@ function KnotStage({
                 expandedRootId={expandedRootUserId ? `person:${expandedRootUserId}` : null}
                 expandedRootName={expandedRootUserId ? expandedRootName : null}
                 onCollapse={onCollapseExpanded}
-                onResetGraph={onResetGraphState}
                 resetToken={graphResetToken}
               />
               <MobileNodeOverlay
