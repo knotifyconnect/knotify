@@ -1503,24 +1503,13 @@ export function MessagesPage() {
                   Warm intros, thoughtful asks, coffee plans.
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedId(null)
-                  searchInputRef.current?.focus()
-                }}
-                aria-label="New chat"
-                style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'var(--ink)', color: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 21, lineHeight: 1, flexShrink: 0, boxShadow: '0 10px 22px rgba(26,24,21,0.18)' }}
-              >
-                +
-              </button>
             </div>
             <div style={{ position: 'relative' }}>
               <input
                 ref={searchInputRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search threads or people"
+                placeholder="Search threads or start a new chat"
                 style={{
                   width: '100%',
                   padding: '11px 42px 11px 15px',
