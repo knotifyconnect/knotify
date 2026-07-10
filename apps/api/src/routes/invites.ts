@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
 import { resolveInviteCode } from '../lib/access.js'
 import { sendFriendInviteEmail } from '../lib/email.js'
+import { recomputeCredibility } from '../lib/credibility.js'
 
 export const invitesRouter = Router()
 
@@ -282,9 +283,7 @@ invitesRouter.post('/claim', requireAuth, async (req, res) => {
       { user_id: me, quest_key: WELCOME_BONUS_KEY, points_awarded: WELCOME_BONUS_POINTS },
       { onConflict: 'user_id,quest_key', ignoreDuplicates: true }
     )
-  const myQuests = (await supabase.from('user_quests').select('points_awarded').eq('user_id', me)).data ?? []
-  const myScore = myQuests.reduce((s: number, r: any) => s + (r.points_awarded ?? 0), 0)
-  await supabase.from('users').update({ credibility_score: myScore }).eq('id', me)
+  await recomputeCredibility(me)
 
   // Network-first: the two already know each other, so pre-seed a pending knot.
   const existingConn = await supabase
