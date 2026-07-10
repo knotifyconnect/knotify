@@ -355,7 +355,7 @@ export function AppSidebar() {
         </button>
       </aside>
 
-      {/* Mobile floating notifications bell (top-right) */}
+      {/* Mobile notifications sit directly above the shared feedback action. */}
       <div className="md:hidden">
         <NotificationsBell variant="floating" messageUnread={messageUnreadCount} referralUnread={referralUnreadCount} />
       </div>

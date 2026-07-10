@@ -24,8 +24,6 @@ function isEditableEscapeTarget(target: EventTarget | null) {
 export function FeedbackWidget() {
   const isMobile = useIsMobile()
   const location = useLocation()
-  const isKnotPage = location.pathname === '/map'
-  const isMessagesPage = location.pathname === '/messages'
   const [open, setOpen] = useState(false)
   const [type, setType] = useState<FeedbackType>('bug')
   const [message, setMessage] = useState('')
@@ -71,10 +69,8 @@ export function FeedbackWidget() {
   if (typeof document === 'undefined') return null
 
   const buttonPos: React.CSSProperties = isMobile
-    ? { right: 14, bottom: isMessagesPage ? 'max(204px, calc(182px + env(safe-area-inset-bottom)))' : 'max(92px, calc(70px + env(safe-area-inset-bottom)))' }
-    : isKnotPage
-      ? { right: 18, top: 12 }
-      : { right: 24, bottom: 24 }
+    ? { right: 'var(--mobile-floating-action-right)', bottom: 'var(--mobile-feedback-bottom)' }
+    : { right: 24, bottom: 24 }
 
   const fab = (
     <button
