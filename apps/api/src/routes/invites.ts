@@ -19,9 +19,11 @@ const WELCOME_BONUS_KEY = 'joined_via_invite'
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
 function randomCode(length = 7) {
+  // Cryptographically secure: member invite codes grant access in invite-only
+  // mode, so they must not be predictable.
   let out = ''
   for (let i = 0; i < length; i++) {
-    out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+    out += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)]
   }
   return out
 }

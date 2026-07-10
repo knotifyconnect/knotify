@@ -44,6 +44,18 @@ if (deploymentConfig.nodeEnv === 'production') {
   app.set('trust proxy', 1)
 }
 
+// Baseline security headers. Conservative set that is safe for a JSON API and
+// the SPA it serves (no strict CSP here, which would need per-page tuning).
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  if (deploymentConfig.nodeEnv === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
+  next()
+})
+
 app.use(cors({
   origin(origin, callback) {
     callback(
@@ -97,10 +109,8 @@ app.get('/health/db', async (_req, res) => {
     }
     res.json({ ok: true, db: 'supabase' })
   } catch (error) {
-    res.status(500).json({
-      ok: false,
-      error: error instanceof Error ? error.message : 'DB health check failed',
-    })
+    console.error('[health/db] check failed:', error)
+    res.status(500).json({ ok: false, error: 'DB health check failed' })
   }
 })
 

@@ -1,7 +1,12 @@
 import { supabase } from '../lib.js'
 
-// The two admin accounts always bypass the gate, in any mode.
-export const ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
+// The admin accounts always bypass the gate, in any mode. Configurable via the
+// ADMIN_EMAILS env var (comma-separated); falls back to the founding accounts
+// so existing deployments keep working if the var is unset.
+const DEFAULT_ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
+export const ADMIN_EMAILS = process.env.ADMIN_EMAILS
+  ? process.env.ADMIN_EMAILS.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
+  : DEFAULT_ADMIN_EMAILS
 
 export type AccessMode = 'open' | 'invite_only'
 
