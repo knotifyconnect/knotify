@@ -13,10 +13,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { Bell, MessageSquare, Briefcase, Check, X } from 'lucide-react'
+import { Bell, MessageSquare, Briefcase, Check, X, Inbox, ClipboardList, UserRoundPlus, Plus, MessageCircle } from 'lucide-react'
 import { apiGetCached, apiPatch } from '../lib/api'
 import { KAvatar } from '../lib/knotify'
 import { runWhenIdle } from '../lib/schedule'
+import { AskDrawer, type Ask } from './asks/AskDrawer'
+import { CreateAskModal } from './asks/CreateAskModal'
 
 type Peer = { id: string; full_name: string; username: string; avatar_url: string | null }
 type RawConn = {
@@ -27,6 +29,7 @@ type RawConn = {
   user: Peer | null
 }
 type Request = { id: string; peer: Peer }
+type BellTab = 'for-you' | 'your-asks' | 'requests'
 
 const T = {
   paper: '#F4EFE6', paperSoft: '#FAF6EE', ink: '#1A1815', inkMuted: '#6B6358',
@@ -38,6 +41,13 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [requests, setRequests] = useState<Request[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [feedAsks, setFeedAsks] = useState<Ask[]>([])
+  const [myAsks, setMyAsks] = useState<Ask[]>([])
+  const [askUnread, setAskUnread] = useState(0)
+  const [activeTab, setActiveTab] = useState<BellTab>('for-you')
+  const [selectedAsk, setSelectedAsk] = useState<Ask | null>(null)
+  const [creatingAsk, setCreatingAsk] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const [pos, setPos] = useState<React.CSSProperties | null>(null)
@@ -45,11 +55,19 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   const load = useCallback(async () => {
     if (document.hidden) return
     try {
-      const [me, conns] = await Promise.all([
+      const [me, conns, feed] = await Promise.all([
         apiGetCached<{ user: { id: string } }>('/api/users/me', { ttlMs: 30_000 }),
         apiGetCached<{ connections: RawConn[] }>('/api/connections', { ttlMs: 10_000 }),
+        apiGetCached<{ asks: Ask[]; unseen?: number }>('/api/asks/feed?limit=12', { ttlMs: 30_000 }),
       ])
       const myId = me.user?.id
+      setCurrentUserId(myId ?? null)
+      setFeedAsks(feed.asks ?? [])
+      setAskUnread(feed.unseen ?? 0)
+      if (myId) {
+        const mine = await apiGetCached<{ asks: Ask[] }>(`/api/asks/by-user/${myId}`, { ttlMs: 15_000 })
+        setMyAsks(mine.asks ?? [])
+      }
       const pending = (conns.connections ?? [])
         .filter((c) => c.status === 'pending' && c.addressee_id === myId && c.user)
         .map((c) => ({ id: c.id, peer: c.user! }))
@@ -68,7 +86,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
     }
   }, [load])
 
-  const total = requests.length + messageUnread + referralUnread
+  const total = requests.length + askUnread + messageUnread + referralUnread
   function toggle() {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect()
@@ -119,6 +137,8 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
 
   return (
     <>
+      {creatingAsk && <CreateAskModal onClose={() => setCreatingAsk(false)} onCreated={() => void load()} />}
+      {selectedAsk && <AskDrawer ask={selectedAsk} currentUserId={currentUserId} onClose={() => setSelectedAsk(null)} onChanged={() => void load()} />}
       {variant === 'floating' ? (
         <div style={{ position: 'fixed', bottom: 'var(--mobile-notifications-bottom)', right: 'var(--mobile-floating-action-right)', zIndex: 9991 }}>{bellButton}</div>
       ) : (
@@ -140,13 +160,48 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
               <button type="button" onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkFaint, display: 'flex', padding: 2 }}><X size={16} /></button>
             </div>
 
-            {total === 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, padding: '0 8px 8px', borderBottom: `0.5px solid ${T.ruleSoft}` }}>
+              {([
+                { id: 'for-you' as const, label: 'For you', icon: Inbox, count: askUnread },
+                { id: 'your-asks' as const, label: 'Your asks', icon: ClipboardList, count: myAsks.filter((ask) => ask.status === 'open').length },
+                { id: 'requests' as const, label: 'Requests', icon: UserRoundPlus, count: requests.length },
+              ]).map(({ id, label, icon: Icon, count }) => {
+                const active = activeTab === id
+                return <button key={id} type="button" onClick={() => setActiveTab(id)} style={{ border: `0.5px solid ${active ? 'rgba(216,68,43,0.30)' : 'transparent'}`, background: active ? 'rgba(216,68,43,0.08)' : 'transparent', borderRadius: 10, padding: '7px 3px', color: active ? T.signal : T.inkMuted, cursor: 'pointer', fontFamily: T.text, display: 'grid', placeItems: 'center', gap: 3 }}><Icon size={14} /><span style={{ fontSize: 10.5, fontWeight: active ? 700 : 600 }}>{label}{count ? ` · ${count}` : ''}</span></button>
+              })}
+            </div>
+
+            {activeTab === 'for-you' && feedAsks.length === 0 && messageUnread === 0 && referralUnread === 0 && (
               <div style={{ padding: '20px 12px 24px', textAlign: 'center', color: T.inkMuted, fontSize: 13.5 }}>
                 You're all caught up.
               </div>
             )}
 
-            {requests.length > 0 && (
+            {activeTab === 'for-you' && feedAsks.length > 0 && (
+              <div style={{ padding: '8px 8px 4px' }}>
+                <div style={{ fontSize: 11, color: T.inkFaint, fontWeight: 700, padding: '4px 4px 7px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Asks for you</div>
+                {feedAsks.slice(0, 4).map((ask) => (
+                  <button key={ask.id} type="button" onClick={() => { setOpen(false); setSelectedAsk(ask) }} style={{ ...rowStyle, padding: '9px 6px' }}>
+                    <span style={iconWrap(T.verd)}><MessageCircle size={15} /></span>
+                    <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 12.5, fontWeight: 650, color: T.ink }}>{ask.author?.full_name ?? 'Someone'} needs help</span><span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: T.inkMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ask.content}</span></span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'your-asks' && (
+              <div style={{ padding: '8px' }}>
+                <button type="button" onClick={() => setCreatingAsk(true)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 12px', borderRadius: 10, border: 'none', background: T.ink, color: T.paper, cursor: 'pointer', fontFamily: T.text, fontSize: 12.5, fontWeight: 700 }}><Plus size={15} /> Send an ask</button>
+                {myAsks.length === 0 ? <div style={{ padding: '18px 8px 14px', textAlign: 'center', fontSize: 12.5, color: T.inkMuted }}>Your asks and their replies will live here.</div> : myAsks.slice(0, 5).map((ask) => (
+                  <button key={ask.id} type="button" onClick={() => { setOpen(false); setSelectedAsk(ask) }} style={{ ...rowStyle, padding: '11px 6px', borderBottom: `0.5px solid ${T.ruleSoft}` }}>
+                    <span style={iconWrap(ask.status === 'resolved' ? T.verd : T.signal)}><ClipboardList size={15} /></span>
+                    <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 12.5, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ask.content}</span><span style={{ display: 'block', marginTop: 2, fontSize: 11, color: T.inkFaint }}>{ask.status === 'resolved' ? 'Resolved' : 'Open'} · {ask.reply_count ?? 0} replies</span></span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'requests' && requests.length > 0 && (
               <div style={{ padding: '4px 4px 8px' }}>
                 <div style={{ fontSize: 11, color: T.inkFaint, fontWeight: 600, padding: '4px 8px' }}>Connection requests</div>
                 {requests.map((r) => (
@@ -165,7 +220,9 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
               </div>
             )}
 
-            {(messageUnread > 0 || referralUnread > 0) && (
+            {activeTab === 'requests' && requests.length === 0 && <div style={{ padding: '20px 12px 24px', textAlign: 'center', color: T.inkMuted, fontSize: 13 }}>No connection requests right now.</div>}
+
+            {activeTab === 'for-you' && (messageUnread > 0 || referralUnread > 0) && (
               <div style={{ borderTop: requests.length > 0 ? `0.5px solid ${T.ruleSoft}` : 'none', padding: '6px 4px' }}>
                 {messageUnread > 0 && (
                   <button type="button" onClick={() => { setOpen(false); navigate('/messages') }} style={rowStyle}>

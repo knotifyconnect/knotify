@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { X } from 'lucide-react'
 import { KnotifyMark } from '../lib/knotify'
 import type { PeerLite, Suggestion } from './CompanionHero'
@@ -14,13 +14,7 @@ const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(mi
 
 export function GlobalCompanionWidget() {
   const navigate = useNavigate()
-  const location = useLocation()
   const isMobile = useIsMobile()
-  const hideFloatingButton = isMobile && (
-    location.pathname === '/messages' ||
-    location.pathname === '/profile' ||
-    location.pathname.startsWith('/profile/')
-  )
   const storageKey = isMobile ? STORAGE_KEY_MOBILE : STORAGE_KEY_DESKTOP
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState(() => {
@@ -52,10 +46,6 @@ export function GlobalCompanionWidget() {
     try { localStorage.setItem(storageKey, JSON.stringify(pos)) } catch { /* ignore */ }
   }, [pos, storageKey])
 
-  useEffect(() => {
-    setOpen(false)
-  }, [location.pathname])
-
   function onSuggestion(s: Suggestion) {
     if (s.action === 'open_profile' && s.peerId) navigate(`/profile/${s.peerId}`)
     if (s.action === 'open_message' && s.peerId) navigate(`/messages?to=${s.peerId}${s.draft ? `&draft=${encodeURIComponent(s.draft)}` : ''}`)
@@ -69,7 +59,7 @@ export function GlobalCompanionWidget() {
 
   return createPortal(
     <>
-      {!open && !hideFloatingButton && (
+      {!open && (
         <button
           type="button"
           aria-label="Open Knotify Companion"
@@ -114,7 +104,7 @@ export function GlobalCompanionWidget() {
       )}
 
       {open && (
-        <div style={{ position: 'fixed', right: isMobile ? 10 : 12, bottom: isMobile ? 'max(74px, calc(62px + env(safe-area-inset-bottom)))' : 'max(92px, calc(78px + env(safe-area-inset-bottom)))', zIndex: 10002, width: isMobile ? 'min(100vw - 20px, 430px)' : 'min(430px, calc(100vw - 24px))' }}>
+        <div style={{ position: 'fixed', ...(isMobile ? { right: 10, bottom: 'max(74px, calc(62px + env(safe-area-inset-bottom)))', width: 'min(100vw - 20px, 430px)' } : { left: clamp(pos.x, 12, window.innerWidth - 442), top: clamp(pos.y - 10, 12, window.innerHeight - 560), width: 'min(430px, calc(100vw - 24px))' }), zIndex: 10002 }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <button type="button" onClick={() => setOpen(false)} aria-label="Minimize Companion" style={{ width: 34, height: 34, borderRadius: 999, border: '0.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'grid', placeItems: 'center', boxShadow: '0 8px 22px rgba(26,24,21,0.12)' }}>
               <X size={16} />
