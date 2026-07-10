@@ -4,6 +4,7 @@
  * Endpoints:
  *   GET  /api/asks/by-user/:userId        — list a user's asks (open first, then resolved)
  *   POST /api/asks                         — create a new ask (auth user)
+ *   PATCH /api/asks/:id                     — edit own ask text
  *   POST /api/asks/:id/resolve             — mark own ask as resolved
  *   POST /api/asks/:id/reopen              — un-resolve own ask
  *   DELETE /api/asks/:id                   — delete own ask
@@ -25,6 +26,9 @@ const createAskSchema = z.object({
   content: z.string().min(1).max(280),
   audienceType: z.enum(['everyone', 'interest', 'persona']).default('everyone'),
   audienceValue: z.string().max(80).nullable().optional(),
+})
+const updateAskSchema = z.object({
+  content: z.string().min(1).max(280),
 })
 const replySchema = z.object({
   body: z.string().min(1).max(800),
@@ -243,6 +247,27 @@ asksRouter.post('/seen', requireAuth, async (req, res) => {
     if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
     await supabase.from('users').update({ asks_seen_at: new Date().toISOString() }).eq('id', req.appUserId)
     return res.json({ ok: true })
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+  }
+})
+
+// ── Edit own ask ─────────────────────────────────────────────────────────────
+asksRouter.patch('/:id', requireAuth, async (req, res) => {
+  try {
+    if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
+    const parsed = updateAskSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+
+    const update = await supabase
+      .from('user_asks')
+      .update({ content: parsed.data.content.trim() })
+      .eq('id', req.params.id)
+      .eq('user_id', req.appUserId)
+      .select('*')
+      .maybeSingle()
+    if (update.error || !update.data) return res.status(404).json({ error: 'Ask not found or not yours' })
+    return res.json({ ask: update.data })
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
   }

@@ -416,6 +416,7 @@ export function KnotMobileGraph({
   // while positions, pan, and zoom stay exactly where the user left them.
   const normalizedQuery = query.trim().toLowerCase()
   const hasQuery = normalizedQuery.length > 0
+  const hasSearchMatches = hasQuery && positioned.some((item) => item.n.matchesQuery)
 
   function clientToGraphPoint(clientX: number, clientY: number) {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -628,7 +629,7 @@ export function KnotMobileGraph({
             { width: r * 2, height: r * 2 },
           )
           const sel = n.id === selectedNodeId
-          const searchMuted = hasQuery && !n.matchesQuery
+          const searchMuted = hasSearchMatches && !n.matchesQuery
           return (
             <path
               key={`ln-${n.id}`}
@@ -639,7 +640,7 @@ export function KnotMobileGraph({
               strokeWidth={sel ? 1.6 : isSecond ? 1.2 : 0.8}
               strokeDasharray={isSecond ? '5 4' : undefined}
               strokeLinecap="round"
-              opacity={searchMuted ? 0.04 : isDimmed(n) ? 0.18 : 1}
+              opacity={searchMuted ? 0.38 : isDimmed(n) ? 0.18 : 1}
             />
           )
         })}
@@ -653,7 +654,7 @@ export function KnotMobileGraph({
         {positioned.map(({ n, x, y, r }) => {
           const sel = n.id === selectedNodeId
           const searchHit = hasQuery && n.matchesQuery
-          const searchMuted = hasQuery && !n.matchesQuery
+          const searchMuted = hasSearchMatches && !n.matchesQuery
           const hc = n.healthState ? HEALTH[n.healthState] : null
           const hasImg = !!n.avatarUrl && !imgFail.has(n.id)
           const clipId = `c-${n.id}`
@@ -676,7 +677,7 @@ export function KnotMobileGraph({
                 if (suppressNodeClickRef.current) return
                 sel ? onClearSelection() : onSelectNode(n)
               }}
-              style={{ cursor: 'pointer', touchAction: 'none', transformOrigin: `${x}px ${y}px`, opacity: searchMuted ? 0.06 : isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
+              style={{ cursor: 'pointer', touchAction: 'none', transformOrigin: `${x}px ${y}px`, opacity: searchMuted ? 0.52 : isDimmed(n) ? 0.28 : 1, transition: 'opacity 0.2s' }}
             >
               {/* Outer selection / search-match / expanded-root / health ring */}
               {sel && <circle cx={0} cy={0} r={r + 5} fill="rgba(216,68,43,0.12)" stroke="#D8442B" strokeWidth={1.5} />}

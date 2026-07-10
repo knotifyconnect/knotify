@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Globe, Hash, Briefcase, Send } from 'lucide-react'
-import { apiGet, apiPost, apiDelete } from '../../lib/api'
+import { X, Globe, Hash, Briefcase, Send, Pencil, Share2, Trash2 } from 'lucide-react'
+import { apiGet, apiPost, apiDelete, apiPatch } from '../../lib/api'
 import { KAvatar } from '../../lib/knotify'
 import { T } from '../../lib/desk'
 import { PERSONAS } from '../../lib/taxonomy'
@@ -50,6 +50,11 @@ export function AskDrawer({
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState(ask.status)
+  const [editing, setEditing] = useState(false)
+  const [content, setContent] = useState(ask.content)
+  const [draftContent, setDraftContent] = useState(ask.content)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const mine = currentUserId === ask.user_id
   const chip = audienceChip(ask)
@@ -93,6 +98,36 @@ export function AskDrawer({
       await apiPost(`/api/asks/${ask.id}/${next === 'resolved' ? 'resolve' : 'reopen'}`, {})
       onChanged?.()
     } catch { setStatus(status) }
+  }
+
+  async function saveEdit() {
+    const content = draftContent.trim()
+    if (!content || content === ask.content) { setEditing(false); return }
+    setSaving(true)
+    try {
+      await apiPatch(`/api/asks/${ask.id}`, { content })
+      setContent(content)
+      onChanged?.()
+      setEditing(false)
+    } finally { setSaving(false) }
+  }
+
+  async function shareAsk() {
+    const share = { title: 'A knotify ask', text: content, url: `${window.location.origin}/asks` }
+    try {
+      if (navigator.share) await navigator.share(share)
+      else await navigator.clipboard.writeText(`${share.text}\n${share.url}`)
+    } catch { /* cancellation and unavailable clipboard are non-fatal */ }
+  }
+
+  async function deleteAsk() {
+    if (!window.confirm('Delete this ask and its replies?')) return
+    setDeleting(true)
+    try {
+      await apiDelete(`/api/asks/${ask.id}`)
+      onChanged?.()
+      onClose()
+    } finally { setDeleting(false) }
   }
 
   return createPortal(
@@ -141,7 +176,11 @@ export function AskDrawer({
 
         {/* Ask body */}
         <div style={{ padding: '16px 20px', borderBottom: `0.5px solid ${T.ruleSoft}` }}>
-          <p style={{ fontSize: 15, color: T.ink, lineHeight: 1.6, margin: 0 }}>{ask.content}</p>
+          {editing ? (
+            <textarea value={draftContent} onChange={(e) => setDraftContent(e.target.value.slice(0, 280))} rows={3} style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: `1px solid ${T.rule}`, background: T.paperSoft, color: T.ink, fontFamily: T.text, fontSize: 14, lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box' }} />
+          ) : (
+            <p style={{ fontSize: 15, color: T.ink, lineHeight: 1.6, margin: 0 }}>{content}</p>
+          )}
           {status === 'resolved' && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8, fontSize: 11, fontWeight: 700, color: T.verd, background: T.verdSoft, padding: '3px 10px', borderRadius: 999 }}>● Resolved</span>
           )}
@@ -182,13 +221,22 @@ export function AskDrawer({
         {/* Footer */}
         <div style={{ flexShrink: 0, borderTop: `1px solid ${T.ruleSoft}`, padding: '14px 20px', background: T.paper }}>
           {mine && (
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 12, display: 'flex', flexWrap: 'wrap', gap: 7 }}>
               <button
                 type="button"
                 onClick={toggleResolved}
                 style={{ padding: '6px 14px', borderRadius: 999, border: `0.5px solid ${status === 'resolved' ? T.verd : T.rule}`, background: status === 'resolved' ? T.verdSoft : 'transparent', color: status === 'resolved' ? T.verd : T.inkMuted, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: T.text }}
               >
                 {status === 'resolved' ? '↩ Reopen ask' : '✓ Mark as resolved'}
+              </button>
+              <button type="button" onClick={() => editing ? void saveEdit() : setEditing(true)} disabled={saving} style={{ padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${T.rule}`, background: 'transparent', color: T.inkMuted, fontSize: 12, cursor: 'pointer', fontFamily: T.text, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                <Pencil size={12} /> {editing ? (saving ? 'Saving…' : 'Save') : 'Edit'}
+              </button>
+              <button type="button" onClick={() => void shareAsk()} style={{ padding: '6px 12px', borderRadius: 999, border: `0.5px solid ${T.rule}`, background: 'transparent', color: T.inkMuted, fontSize: 12, cursor: 'pointer', fontFamily: T.text, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                <Share2 size={12} /> Share
+              </button>
+              <button type="button" onClick={() => void deleteAsk()} disabled={deleting} style={{ padding: '6px 12px', borderRadius: 999, border: '0.5px solid rgba(216,68,43,0.28)', background: 'transparent', color: T.signal, fontSize: 12, cursor: 'pointer', fontFamily: T.text, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                <Trash2 size={12} /> {deleting ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           )}

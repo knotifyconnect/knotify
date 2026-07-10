@@ -1431,7 +1431,7 @@ export function KnotForceGraph({
         <div
           style={{
             position: 'absolute',
-            right: 18,
+            right: 84,
             bottom: 18,
             zIndex: 12,
             display: 'flex',
