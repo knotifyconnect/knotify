@@ -57,12 +57,12 @@ function CompanionBump({ onOpen }: { onOpen: () => void }) {
       style={{
         position: 'fixed',
         bottom: TAB_BAR_HEIGHT,
-        left: '50%',
-        transform: `translate(-50%, ${-lift}px)`,
+        left: 14,
+        transform: `translateY(${-lift}px)`,
         transition: lift === 0 ? 'transform 0.2s cubic-bezier(0.2,0.8,0.2,1)' : 'none',
         zIndex: 9992,
-        width: 140,
-        height: 42,
+        width: 88,
+        height: 32,
         padding: 0,
         border: 'none',
         background: 'transparent',
@@ -70,11 +70,11 @@ function CompanionBump({ onOpen }: { onOpen: () => void }) {
         touchAction: 'none',
       }}
     >
-      <svg width="140" height="42" viewBox="0 0 140 42" style={{ display: 'block', filter: 'drop-shadow(0 -4px 14px rgba(26,24,21,0.18))' }}>
-        <path d="M0,42 C22,42 32,2 70,2 C108,2 118,42 140,42 Z" fill="var(--ink)" />
+      <svg width="88" height="32" viewBox="0 0 88 32" style={{ display: 'block', filter: 'drop-shadow(0 -3px 10px rgba(26,24,21,0.18))' }}>
+        <path d="M0,32 C14,32 20,2 44,2 C68,2 74,32 88,32 Z" fill="var(--ink)" />
       </svg>
-      <span style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex' }}>
-        <KnotifyMark size={20} color="var(--paper)" />
+      <span style={{ position: 'absolute', top: 5, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex' }}>
+        <KnotifyMark size={15} color="var(--paper)" />
       </span>
     </button>
   )
