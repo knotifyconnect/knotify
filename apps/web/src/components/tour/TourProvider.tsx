@@ -10,8 +10,10 @@ type TourContextValue = {
   activeIndex: number
   activeStep: TourStep | null
   totalSteps: number
+  canGoBack: boolean
   start: () => void
   next: () => void
+  back: () => void
   skip: () => void
 }
 
@@ -29,17 +31,26 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const [isRunning, setIsRunning] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const finishedRef = useRef(false)
+  // The one page this render is already mid-flight toward, set immediately
+  // before an explicit navigate() call (start/back). The safety-net effect
+  // below exempts this path for one tick so it doesn't finish() the tour
+  // before the route change has actually landed.
+  const pendingNavRef = useRef<string | null>(null)
 
   // Explicit kickoff only: the very first step's page is loaded once, as a
   // direct result of the user clicking "start"/"show me around". Every step
-  // after that either stays on the same page or is a 'navigate' step the
-  // tour waits on — the tour itself never hops pages mid-run.
+  // after that either stays on the same page, is a 'navigate' step the tour
+  // waits on, or an explicit Back click — the tour itself never hops pages
+  // on its own mid-run.
   const start = useCallback(() => {
     finishedRef.current = false
     setActiveIndex(0)
     setIsRunning(true)
     const first = TOUR_STEPS[0]
-    if (first && first.kind === 'spotlight') navigate(first.path)
+    if (first && first.kind === 'spotlight') {
+      pendingNavRef.current = first.path
+      navigate(first.path)
+    }
   }, [navigate])
 
   const finish = useCallback(() => {
@@ -64,16 +75,32 @@ export function TourProvider({ children }: { children: ReactNode }) {
     advance()
   }, [advance])
 
+  // Steps back over any 'navigate' step (there's nothing to show while
+  // "waiting for a click" once you're going backward) to land on the
+  // previous real spotlight step, navigating there if it's on another page.
+  const back = useCallback(() => {
+    setActiveIndex((current) => {
+      let i = current - 1
+      while (i >= 0 && TOUR_STEPS[i].kind === 'navigate') i--
+      if (i < 0) return current
+      const step = TOUR_STEPS[i]
+      if (step.kind === 'spotlight') {
+        pendingNavRef.current = step.path
+        navigate(step.path)
+      }
+      return i
+    })
+  }, [navigate])
+
   const skip = useCallback(() => {
     finish()
   }, [finish])
 
   // Auto-advance past a 'navigate' step once the user has actually clicked
   // through to the target page themselves. Also a safety net: if the user
-  // wanders off-script mid-spotlight-step (clicks something else entirely),
-  // end the tour instead of leaving a spotlight pointing at a page that's no
-  // longer there. Index 0 is exempt — it's mid-flight from start()'s own
-  // kickoff navigate, which hasn't landed yet on the first render.
+  // wanders off-script mid-spotlight-step (clicks something else entirely,
+  // not a route change we ourselves just requested via start()/back()), end
+  // the tour instead of leaving a spotlight pointing at a page that's gone.
   useEffect(() => {
     if (!isRunning) return
     const step = TOUR_STEPS[activeIndex]
@@ -84,8 +111,12 @@ export function TourProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    if (activeIndex === 0) return
-    if (location.pathname !== step.path) finish()
+    if (location.pathname === step.path) {
+      pendingNavRef.current = null
+      return
+    }
+    if (pendingNavRef.current === step.path) return
+    finish()
   }, [location.pathname, isRunning, activeIndex, advance, finish])
 
   const value = useMemo<TourContextValue>(
@@ -94,11 +125,13 @@ export function TourProvider({ children }: { children: ReactNode }) {
       activeIndex,
       activeStep: isRunning ? TOUR_STEPS[activeIndex] ?? null : null,
       totalSteps: TOUR_STEPS.length,
+      canGoBack: activeIndex > 0,
       start,
       next,
+      back,
       skip,
     }),
-    [isRunning, activeIndex, start, next, skip]
+    [isRunning, activeIndex, start, next, back, skip]
   )
 
   return <TourContext.Provider value={value}>{children}</TourContext.Provider>

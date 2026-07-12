@@ -7,10 +7,13 @@ import { TOUR_DEMOS } from './demos'
 type Rect = { top: number; left: number; width: number; height: number }
 
 const PAD = 8
-// Real async data + lazy route chunks can legitimately take a few seconds,
-// especially right after a 'navigate' step's route change — don't give up
-// before real content has had a chance to load.
-const FIND_TIMEOUT_MS = 6000
+// Steps with an illustration fall back to it quickly — no point making the
+// user stare at an unclear/empty spotlight when we already have something
+// better to show. Steps with no illustration get more time, since the only
+// alternative there is skipping past real content that's just loading slowly.
+const DEMO_TIMEOUT_MS = 1500
+const NO_DEMO_TIMEOUT_MS = 6000
+const POSITION_TRANSITION = 'top 0.22s cubic-bezier(0.2,0.8,0.2,1), left 0.22s cubic-bezier(0.2,0.8,0.2,1)'
 
 // Multiple elements can share a data-tour id (e.g. the desktop sidebar and
 // the mobile tab bar both tag their "Messages" link) — only one is visible
@@ -27,12 +30,19 @@ function findTargetRect(selector: string): Rect | null {
   return null
 }
 
+function rectsEqual(a: Rect | null, b: Rect | null) {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height
+}
+
 export function TourOverlay() {
-  const { isRunning, activeStep, activeIndex, totalSteps, next, skip } = useTour()
+  const { isRunning, activeStep, activeIndex, totalSteps, canGoBack, next, back, skip } = useTour()
   const navigate = useNavigate()
   const [rect, setRect] = useState<Rect | null>(null)
   const [timedOut, setTimedOut] = useState(false)
   const autoSkippedRef = useRef(false)
+  const rectRef = useRef<Rect | null>(null)
 
   useEffect(() => {
     setTimedOut(false)
@@ -40,48 +50,40 @@ export function TourOverlay() {
 
     if (!isRunning || !activeStep) {
       setRect(null)
+      rectRef.current = null
       return
     }
 
     let cancelled = false
-    let observer: MutationObserver | null = null
+    let rafId: number | null = null
     let timeoutId: ReturnType<typeof setTimeout> | null = null
+    const hasDemo = Boolean(TOUR_DEMOS[activeStep.id])
+    const timeoutMs = hasDemo ? DEMO_TIMEOUT_MS : NO_DEMO_TIMEOUT_MS
 
-    function update() {
+    // Poll every frame instead of only on resize/scroll/DOM-mutation: a lot
+    // of target cards animate in with framer-motion (opacity/y offset), so a
+    // rect captured the instant the element mounts is its pre-animation
+    // position — a one-off resize/mutation listener misses that settling
+    // motion entirely, which read as the spotlight "lagging" behind.
+    function tick() {
+      if (cancelled) return
       const found = findTargetRect(activeStep!.target)
-      if (!cancelled) setRect(found)
-    }
-
-    function waitForTarget() {
-      const found = findTargetRect(activeStep!.target)
-      if (found) {
+      if (!rectsEqual(found, rectRef.current)) {
+        rectRef.current = found
         setRect(found)
-        return
       }
-      observer = new MutationObserver(() => {
-        const foundNow = findTargetRect(activeStep!.target)
-        if (foundNow) {
-          setRect(foundNow)
-          observer?.disconnect()
-        }
-      })
-      observer.observe(document.body, { childList: true, subtree: true })
-      timeoutId = setTimeout(() => {
-        observer?.disconnect()
-        if (!cancelled) setTimedOut(true)
-      }, FIND_TIMEOUT_MS)
+      rafId = requestAnimationFrame(tick)
     }
 
-    waitForTarget()
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
+    tick()
+    timeoutId = setTimeout(() => {
+      if (!cancelled && !rectRef.current) setTimedOut(true)
+    }, timeoutMs)
 
     return () => {
       cancelled = true
-      observer?.disconnect()
+      if (rafId !== null) cancelAnimationFrame(rafId)
       if (timeoutId) clearTimeout(timeoutId)
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
     }
   }, [isRunning, activeStep])
 
@@ -112,12 +114,27 @@ export function TourOverlay() {
   const lineTo = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
 
   return (
+    // No click-to-dismiss anywhere on the backdrop: this whole layer is
+    // pointer-events:none so clicks pass straight through to the real page
+    // underneath (critical for 'navigate' steps — the user has to be able
+    // to actually click the spotlighted sidebar link). Only the tooltip
+    // card itself opts back into pointer-events for its own buttons.
     <div style={{ position: 'fixed', inset: 0, zIndex: 9998, pointerEvents: 'none' }}>
-      <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }} onClick={skip}>
+      <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
         <defs>
           <mask id="tour-mask">
             <rect x="0" y="0" width="100%" height="100%" fill="white" />
-            {rect && <rect x={rect.left} y={rect.top} width={rect.width} height={rect.height} rx={12} fill="black" />}
+            {rect && (
+              <rect
+                x={rect.left}
+                y={rect.top}
+                width={rect.width}
+                height={rect.height}
+                rx={12}
+                fill="black"
+                style={{ transition: POSITION_TRANSITION }}
+              />
+            )}
           </mask>
           <marker id="tour-arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
             <path d="M0,0 L8,4 L0,8 Z" fill={T.signal} />
@@ -135,6 +152,7 @@ export function TourOverlay() {
             strokeDasharray="4 4"
             markerEnd="url(#tour-arrowhead)"
             opacity={0.75}
+            style={{ transition: 'x1 0.22s, y1 0.22s, x2 0.22s, y2 0.22s' }}
           />
         )}
         {showSpotlight && rect && (
@@ -147,6 +165,7 @@ export function TourOverlay() {
             fill="none"
             stroke={T.signal}
             strokeWidth={2}
+            style={{ transition: POSITION_TRANSITION }}
           >
             <animate attributeName="stroke-opacity" values="1;0.45;1" dur="1.8s" repeatCount="indefinite" />
           </rect>
@@ -169,6 +188,7 @@ export function TourOverlay() {
             borderRadius: 999,
             pointerEvents: 'none',
             whiteSpace: 'nowrap',
+            transition: POSITION_TRANSITION,
           }}
         >
           {activeStep.title}
@@ -191,10 +211,24 @@ export function TourOverlay() {
           boxShadow: '0 12px 32px rgba(26,24,21,0.22)',
           pointerEvents: 'auto',
           fontFamily: T.text,
+          transition: POSITION_TRANSITION,
         }}
       >
-        <div style={{ fontSize: 11.5, color: T.inkFaint, marginBottom: 6 }}>
-          Step {activeIndex + 1} of {totalSteps}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+          <div style={{ fontSize: 11.5, color: T.inkFaint }}>
+            Step {activeIndex + 1} of {totalSteps}
+          </div>
+          <button
+            onClick={skip}
+            aria-label="Close tour"
+            title="Close tour"
+            style={{
+              background: 'none', border: 0, cursor: 'pointer', padding: 2, lineHeight: 1,
+              color: T.inkFaint, fontSize: 15, fontWeight: 600, marginTop: -4, marginRight: -4,
+            }}
+          >
+            ✕
+          </button>
         </div>
         <div style={{ fontFamily: T.display, fontSize: 19, fontWeight: 500, color: T.ink, marginBottom: 8, letterSpacing: '-0.01em' }}>
           {activeStep.title}
@@ -213,37 +247,51 @@ export function TourOverlay() {
             onClick={skip}
             style={{ background: 'none', border: 0, fontSize: 12.5, color: T.inkMuted, cursor: 'pointer', padding: '6px 4px' }}
           >
-            Skip tour
+            Skip for now
           </button>
-          {isNavigate && !stuck ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: T.inkMuted, fontStyle: 'italic', fontFamily: T.display }}>
-              <span style={{ width: 6, height: 6, borderRadius: 999, background: T.signal, display: 'inline-block' }} />
-              Waiting for you to click…
-            </div>
-          ) : isNavigate && stuck ? (
-            <button
-              onClick={() => navigate(activeStep.toPath)}
-              style={{ background: T.ink, color: T.paperSoft, border: 0, borderRadius: 999, padding: '9px 18px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
-            >
-              Open it for me
-            </button>
-          ) : (
-            <button
-              onClick={next}
-              style={{
-                background: T.ink,
-                color: T.paperSoft,
-                border: 0,
-                borderRadius: 999,
-                padding: '9px 18px',
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
-              {activeIndex + 1 === totalSteps ? 'Done' : 'Next'}
-            </button>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {canGoBack && (
+              <button
+                onClick={back}
+                aria-label="Previous step"
+                style={{
+                  background: 'none', border: `0.5px solid ${T.rule}`, borderRadius: 999, width: 34, height: 34,
+                  color: T.inkMuted, cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                ←
+              </button>
+            )}
+            {isNavigate && !stuck ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: T.inkMuted, fontStyle: 'italic', fontFamily: T.display }}>
+                <span style={{ width: 6, height: 6, borderRadius: 999, background: T.signal, display: 'inline-block' }} />
+                Waiting for you to click…
+              </div>
+            ) : isNavigate && stuck ? (
+              <button
+                onClick={() => navigate(activeStep.toPath)}
+                style={{ background: T.ink, color: T.paperSoft, border: 0, borderRadius: 999, padding: '9px 18px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+              >
+                Open it for me
+              </button>
+            ) : (
+              <button
+                onClick={next}
+                style={{
+                  background: T.ink,
+                  color: T.paperSoft,
+                  border: 0,
+                  borderRadius: 999,
+                  padding: '9px 18px',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                {activeIndex + 1 === totalSteps ? 'Done' : 'Next'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
