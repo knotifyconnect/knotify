@@ -14,68 +14,39 @@ const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(mi
 // this counts as "didn't drag" so the button still opens. Without this,
 // mobile taps were frequently misread as micro-drags and silently did nothing.
 const DRAG_THRESHOLD_PX = 8
-// How far up a real drag has to travel before it counts as "pull up to open".
-const PULL_OPEN_THRESHOLD_PX = 16
-const TAB_BAR_HEIGHT = 'calc(64px + env(safe-area-inset-bottom))'
 
-// A gentle bell-curve bump sitting centered on top of the mobile tab bar —
-// previously a floating circle in the bottom-right corner, which sat right
-// on top of the feedback bug-report button (same corner, nearly identical
-// offsets) and the two intersected. Centering it on the bar as its own
-// silhouette removes the collision entirely rather than just nudging pixels
-// around, and reads as "part of the bar" instead of a stray floating chip.
-function CompanionBump({ onOpen }: { onOpen: () => void }) {
-  const [lift, setLift] = useState(0)
-  const dragRef = useRef<{ startY: number; maxLift: number } | null>(null)
-
+// A compact tab docked to the left edge of the screen, vertically centered —
+// deliberately off the bottom tab bar entirely (an earlier version sat on
+// top of the bar and collided with the feedback bug-report button in the
+// same corner) and away from any other fixed UI, so there's nothing left for
+// it to compete with. Fixed position, plain tap, no drag on mobile.
+function CompanionEdgeTab({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
       aria-label="Open Knotify Companion"
-      onPointerDown={(e) => {
-        dragRef.current = { startY: e.clientY, maxLift: 0 }
-        e.currentTarget.setPointerCapture(e.pointerId)
-      }}
-      onPointerMove={(e) => {
-        const drag = dragRef.current
-        if (!drag) return
-        const pulledUp = clamp(drag.startY - e.clientY, 0, 30)
-        drag.maxLift = Math.max(drag.maxLift, pulledUp)
-        setLift(pulledUp)
-      }}
-      onPointerUp={() => {
-        const drag = dragRef.current
-        dragRef.current = null
-        setLift(0)
-        if (drag && drag.maxLift < DRAG_THRESHOLD_PX) {
-          onOpen() // plain tap
-        } else if (drag && drag.maxLift >= PULL_OPEN_THRESHOLD_PX) {
-          onOpen() // pulled up far enough
-        }
-      }}
-      onPointerCancel={() => { dragRef.current = null; setLift(0) }}
+      onClick={onOpen}
       style={{
         position: 'fixed',
-        bottom: TAB_BAR_HEIGHT,
-        left: 14,
-        transform: `translateY(${-lift}px)`,
-        transition: lift === 0 ? 'transform 0.2s cubic-bezier(0.2,0.8,0.2,1)' : 'none',
+        left: 0,
+        top: '50%',
+        transform: 'translateY(-50%)',
         zIndex: 9992,
-        width: 88,
-        height: 32,
+        width: 34,
+        height: 44,
         padding: 0,
-        border: 'none',
-        background: 'transparent',
+        border: '1px solid var(--rule)',
+        borderLeft: 'none',
+        borderRadius: '0 14px 14px 0',
+        background: 'var(--ink)',
+        color: 'var(--paper)',
+        boxShadow: '2px 4px 14px rgba(26,24,21,0.18)',
+        display: 'grid',
+        placeItems: 'center',
         cursor: 'pointer',
-        touchAction: 'none',
       }}
     >
-      <svg width="88" height="32" viewBox="0 0 88 32" style={{ display: 'block', filter: 'drop-shadow(0 -3px 10px rgba(26,24,21,0.18))' }}>
-        <path d="M0,32 C14,32 20,2 44,2 C68,2 74,32 88,32 Z" fill="var(--ink)" />
-      </svg>
-      <span style={{ position: 'absolute', top: 5, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex' }}>
-        <KnotifyMark size={15} color="var(--paper)" />
-      </span>
+      <KnotifyMark size={17} color="var(--paper)" />
     </button>
   )
 }
@@ -132,7 +103,7 @@ export function GlobalCompanionWidget() {
 
   return createPortal(
     <>
-      {!open && isMobile && <CompanionBump onOpen={() => setOpen(true)} />}
+      {!open && isMobile && <CompanionEdgeTab onOpen={() => setOpen(true)} />}
 
       {!open && !isMobile && (
         <button
@@ -185,7 +156,7 @@ export function GlobalCompanionWidget() {
       )}
 
       {open && (
-        <div style={{ position: 'fixed', ...(isMobile ? { right: 10, bottom: 'max(74px, calc(62px + env(safe-area-inset-bottom)))', width: 'min(100vw - 20px, 430px)' } : { left: clamp(pos.x, 12, window.innerWidth - 442), top: clamp(pos.y - 10, 12, window.innerHeight - 560), width: 'min(430px, calc(100vw - 24px))' }), zIndex: 10002 }}>
+        <div style={{ position: 'fixed', ...(isMobile ? { left: 10, bottom: 'max(74px, calc(62px + env(safe-area-inset-bottom)))', width: 'min(100vw - 20px, 430px)' } : { left: clamp(pos.x, 12, window.innerWidth - 442), top: clamp(pos.y - 10, 12, window.innerHeight - 560), width: 'min(430px, calc(100vw - 24px))' }), zIndex: 10002 }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <button type="button" onClick={() => setOpen(false)} aria-label="Minimize Companion" style={{ width: 34, height: 34, borderRadius: 999, border: '0.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'grid', placeItems: 'center', boxShadow: '0 8px 22px rgba(26,24,21,0.12)' }}>
               <X size={16} />
