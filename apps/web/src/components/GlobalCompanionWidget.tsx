@@ -14,6 +14,71 @@ const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(mi
 // this counts as "didn't drag" so the button still opens. Without this,
 // mobile taps were frequently misread as micro-drags and silently did nothing.
 const DRAG_THRESHOLD_PX = 8
+// How far up a real drag has to travel before it counts as "pull up to open".
+const PULL_OPEN_THRESHOLD_PX = 16
+const TAB_BAR_HEIGHT = 'calc(64px + env(safe-area-inset-bottom))'
+
+// A gentle bell-curve bump sitting centered on top of the mobile tab bar —
+// previously a floating circle in the bottom-right corner, which sat right
+// on top of the feedback bug-report button (same corner, nearly identical
+// offsets) and the two intersected. Centering it on the bar as its own
+// silhouette removes the collision entirely rather than just nudging pixels
+// around, and reads as "part of the bar" instead of a stray floating chip.
+function CompanionBump({ onOpen }: { onOpen: () => void }) {
+  const [lift, setLift] = useState(0)
+  const dragRef = useRef<{ startY: number; maxLift: number } | null>(null)
+
+  return (
+    <button
+      type="button"
+      aria-label="Open Knotify Companion"
+      onPointerDown={(e) => {
+        dragRef.current = { startY: e.clientY, maxLift: 0 }
+        e.currentTarget.setPointerCapture(e.pointerId)
+      }}
+      onPointerMove={(e) => {
+        const drag = dragRef.current
+        if (!drag) return
+        const pulledUp = clamp(drag.startY - e.clientY, 0, 30)
+        drag.maxLift = Math.max(drag.maxLift, pulledUp)
+        setLift(pulledUp)
+      }}
+      onPointerUp={() => {
+        const drag = dragRef.current
+        dragRef.current = null
+        setLift(0)
+        if (drag && drag.maxLift < DRAG_THRESHOLD_PX) {
+          onOpen() // plain tap
+        } else if (drag && drag.maxLift >= PULL_OPEN_THRESHOLD_PX) {
+          onOpen() // pulled up far enough
+        }
+      }}
+      onPointerCancel={() => { dragRef.current = null; setLift(0) }}
+      style={{
+        position: 'fixed',
+        bottom: TAB_BAR_HEIGHT,
+        left: '50%',
+        transform: `translate(-50%, ${-lift}px)`,
+        transition: lift === 0 ? 'transform 0.2s cubic-bezier(0.2,0.8,0.2,1)' : 'none',
+        zIndex: 9992,
+        width: 140,
+        height: 42,
+        padding: 0,
+        border: 'none',
+        background: 'transparent',
+        cursor: 'pointer',
+        touchAction: 'none',
+      }}
+    >
+      <svg width="140" height="42" viewBox="0 0 140 42" style={{ display: 'block', filter: 'drop-shadow(0 -4px 14px rgba(26,24,21,0.18))' }}>
+        <path d="M0,42 C22,42 32,2 70,2 C108,2 118,42 140,42 Z" fill="var(--ink)" />
+      </svg>
+      <span style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex' }}>
+        <KnotifyMark size={20} color="var(--paper)" />
+      </span>
+    </button>
+  )
+}
 
 export function GlobalCompanionWidget() {
   const navigate = useNavigate()
@@ -67,31 +132,7 @@ export function GlobalCompanionWidget() {
 
   return createPortal(
     <>
-      {!open && isMobile && (
-        <button
-          type="button"
-          aria-label="Open Knotify Companion"
-          onClick={() => setOpen(true)}
-          style={{
-            position: 'fixed',
-            right: 14,
-            bottom: 'max(84px, calc(72px + env(safe-area-inset-bottom)))',
-            zIndex: 9992,
-            width: 48,
-            height: 48,
-            borderRadius: 999,
-            border: '1px solid var(--rule)',
-            background: 'var(--ink)',
-            color: 'var(--paper)',
-            boxShadow: '0 8px 20px rgba(26,24,21,0.18)',
-            display: 'grid',
-            placeItems: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          <KnotifyMark size={22} color="var(--paper)" />
-        </button>
-      )}
+      {!open && isMobile && <CompanionBump onOpen={() => setOpen(true)} />}
 
       {!open && !isMobile && (
         <button
