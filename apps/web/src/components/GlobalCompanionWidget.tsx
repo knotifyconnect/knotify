@@ -9,32 +9,39 @@ import { useIsMobile } from '../hooks/useIsMobile'
 const CompanionHero = lazy(() => import('./CompanionHero').then((m) => ({ default: m.CompanionHero })))
 
 const STORAGE_KEY_DESKTOP = 'knotify_companion_pos_desktop_v2'
-const STORAGE_KEY_MOBILE = 'knotify_companion_pos_mobile_v2'
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+// A touch naturally jitters a few pixels even on a plain tap — anything under
+// this counts as "didn't drag" so the button still opens. Without this,
+// mobile taps were frequently misread as micro-drags and silently did nothing.
+const DRAG_THRESHOLD_PX = 8
 
 export function GlobalCompanionWidget() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
-  const storageKey = isMobile ? STORAGE_KEY_MOBILE : STORAGE_KEY_DESKTOP
   const [open, setOpen] = useState(false)
+  // Draggable positioning is a desktop-only convenience (repositioning to
+  // avoid overlapping content with a mouse is easy and low-risk). On mobile
+  // it was the actual cause of the flakiness: touch drag-to-reposition and
+  // tap-to-open share the same pointer events, so a real tap easily got
+  // misread as a micro-drag and silently failed to open anything. Mobile now
+  // gets one fixed, reliable spot, no dragging, above the bottom tab bar.
   const [pos, setPos] = useState(() => {
     if (typeof window === 'undefined') return { x: 18, y: 180 }
     try {
-      const saved = JSON.parse(localStorage.getItem(window.innerWidth <= 767 ? STORAGE_KEY_MOBILE : STORAGE_KEY_DESKTOP) || 'null') as { x: number; y: number } | null
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_DESKTOP) || 'null') as { x: number; y: number } | null
       if (saved) return saved
     } catch { /* ignore */ }
-    return window.innerWidth <= 767
-      ? { x: 16, y: window.innerHeight - 138 }
-      : { x: window.innerWidth - 74, y: window.innerHeight - 214 }
+    return { x: window.innerWidth - 74, y: window.innerHeight - 214 }
   })
   const dragRef = useRef<{ dx: number; dy: number; moved: boolean } | null>(null)
   const peers = useMemo(() => new Map<string, PeerLite>(), [])
 
   useEffect(() => {
+    if (isMobile) return
     const keepInView = () => {
       setPos((p) => ({
-        x: clamp(p.x, isMobile ? 10 : 12, window.innerWidth - (isMobile ? 52 : 58)),
-        y: clamp(p.y, isMobile ? 88 : 74, window.innerHeight - (isMobile ? 82 : 154)),
+        x: clamp(p.x, 12, window.innerWidth - 58),
+        y: clamp(p.y, 74, window.innerHeight - 154),
       }))
     }
     keepInView()
@@ -43,8 +50,9 @@ export function GlobalCompanionWidget() {
   }, [isMobile])
 
   useEffect(() => {
-    try { localStorage.setItem(storageKey, JSON.stringify(pos)) } catch { /* ignore */ }
-  }, [pos, storageKey])
+    if (isMobile) return
+    try { localStorage.setItem(STORAGE_KEY_DESKTOP, JSON.stringify(pos)) } catch { /* ignore */ }
+  }, [pos, isMobile])
 
   function onSuggestion(s: Suggestion) {
     if (s.action === 'open_profile' && s.peerId) navigate(`/profile/${s.peerId}`)
@@ -59,7 +67,33 @@ export function GlobalCompanionWidget() {
 
   return createPortal(
     <>
-      {!open && (
+      {!open && isMobile && (
+        <button
+          type="button"
+          aria-label="Open Knotify Companion"
+          onClick={() => setOpen(true)}
+          style={{
+            position: 'fixed',
+            right: 14,
+            bottom: 'max(84px, calc(72px + env(safe-area-inset-bottom)))',
+            zIndex: 9992,
+            width: 48,
+            height: 48,
+            borderRadius: 999,
+            border: '1px solid var(--rule)',
+            background: 'var(--ink)',
+            color: 'var(--paper)',
+            boxShadow: '0 8px 20px rgba(26,24,21,0.18)',
+            display: 'grid',
+            placeItems: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <KnotifyMark size={22} color="var(--paper)" />
+        </button>
+      )}
+
+      {!open && !isMobile && (
         <button
           type="button"
           aria-label="Open Knotify Companion"
@@ -70,10 +104,16 @@ export function GlobalCompanionWidget() {
           onPointerMove={(e) => {
             const drag = dragRef.current
             if (!drag) return
-            drag.moved = true
+            const nextX = e.clientX - drag.dx
+            const nextY = e.clientY - drag.dy
+            if (!drag.moved) {
+              const traveled = Math.hypot(nextX - pos.x, nextY - pos.y)
+              if (traveled < DRAG_THRESHOLD_PX) return
+              drag.moved = true
+            }
             setPos({
-              x: clamp(e.clientX - drag.dx, isMobile ? 10 : 12, window.innerWidth - (isMobile ? 52 : 58)),
-              y: clamp(e.clientY - drag.dy, isMobile ? 88 : 74, window.innerHeight - (isMobile ? 82 : 154)),
+              x: clamp(nextX, 12, window.innerWidth - 58),
+              y: clamp(nextY, 74, window.innerHeight - 154),
             })
           }}
           onPointerUp={() => {
@@ -86,20 +126,20 @@ export function GlobalCompanionWidget() {
             left: pos.x,
             top: pos.y,
             zIndex: 9992,
-            width: isMobile ? 40 : 48,
-            height: isMobile ? 40 : 48,
+            width: 48,
+            height: 48,
             borderRadius: 999,
             border: '1px solid var(--rule)',
             background: 'var(--ink)',
             color: 'var(--paper)',
-            boxShadow: isMobile ? '0 8px 20px rgba(26,24,21,0.18)' : '0 12px 30px rgba(26,24,21,0.22)',
+            boxShadow: '0 12px 30px rgba(26,24,21,0.22)',
             display: 'grid',
             placeItems: 'center',
             cursor: 'grab',
             touchAction: 'none',
           }}
         >
-          <KnotifyMark size={isMobile ? 20 : 24} color="var(--paper)" />
+          <KnotifyMark size={24} color="var(--paper)" />
         </button>
       )}
 
