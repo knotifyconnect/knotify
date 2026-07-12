@@ -6,7 +6,7 @@
  *  - Users: toggle is_hr / is_admin
  */
 import { useEffect, useState, type ReactNode, type CSSProperties } from 'react'
-import { Coffee, ShieldCheck, Users as UsersIcon, ClipboardList } from 'lucide-react'
+import { Coffee, ShieldCheck, Users as UsersIcon, ClipboardList, Lightbulb } from 'lucide-react'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
 import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
 
@@ -58,7 +58,18 @@ type AdminUser = {
   created_at: string
 }
 
-type Tab = 'requests' | 'cafes' | 'users' | 'waitlist'
+type Tab = 'requests' | 'cafes' | 'cafeSuggestions' | 'users' | 'waitlist'
+
+type PendingCafe = {
+  id: string
+  suggested_by: string | null
+  name: string
+  address: string
+  notes: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: string
+  suggester: { id: string; full_name: string; username: string } | null
+}
 
 type BetaSignup = {
   id: string
@@ -180,6 +191,7 @@ export function AdminPage() {
         {([
           { id: 'requests', label: 'Role requests', icon: <ShieldCheck size={13} /> },
           { id: 'cafes', label: 'Cafés', icon: <Coffee size={13} /> },
+          { id: 'cafeSuggestions', label: 'Café suggestions', icon: <Lightbulb size={13} /> },
           { id: 'users', label: 'Users', icon: <UsersIcon size={13} /> },
           { id: 'waitlist', label: 'Waitlist', icon: <ClipboardList size={13} /> },
         ] as Array<{ id: Tab; label: string; icon: ReactNode }>).map((t) => (
@@ -211,6 +223,7 @@ export function AdminPage() {
 
       {tab === 'requests' && <RoleRequestsTab onError={setError} />}
       {tab === 'cafes' && <CafesTab onError={setError} />}
+      {tab === 'cafeSuggestions' && <CafeSuggestionsTab onError={setError} />}
       {tab === 'users' && <UsersTab onError={setError} />}
       {tab === 'waitlist' && <WaitlistTab onError={setError} />}
     </div>
@@ -558,6 +571,97 @@ function CafesTab({ onError }: { onError: (m: string | null) => void }) {
           onCancel={() => setEditing(null)}
           onSave={save}
         />
+      )}
+    </div>
+  )
+}
+
+// ─── Café suggestions tab ───────────────────────────────────────────────────
+function CafeSuggestionsTab({ onError }: { onError: (m: string | null) => void }) {
+  const [pending, setPending] = useState<PendingCafe[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    try {
+      const r = await apiGet<{ pending: PendingCafe[] }>('/api/admin/pending-cafes')
+      setPending(r.pending ?? [])
+      onError(null)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Failed to load suggestions')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void load() }, [])
+
+  async function review(id: string, status: 'approved' | 'rejected') {
+    setBusyId(id)
+    try {
+      await apiPatch(`/api/admin/pending-cafes/${id}`, { status })
+      setPending((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)))
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  if (loading) return <div style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '20px 0' }}>Loading…</div>
+
+  const awaiting = pending.filter((p) => p.status === 'pending')
+  const reviewed = pending.filter((p) => p.status !== 'pending')
+
+  if (!pending.length) {
+    return <div style={{ fontSize: 13.5, color: 'var(--ink-muted)', padding: '20px 0' }}>No café suggestions yet.</div>
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 10 }}>
+          {awaiting.length} awaiting review
+        </div>
+        {awaiting.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>Nothing pending.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {awaiting.map((p) => (
+              <KCard key={p.id} style={{ padding: '14px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{p.address}</div>
+                    {p.notes && <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4, fontStyle: 'italic' }}>"{p.notes}"</div>}
+                    <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6 }}>
+                      Suggested by {p.suggester?.full_name ?? 'a member'} · {new Date(p.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <KBtn variant="verd" size="sm" disabled={busyId === p.id} onClick={() => void review(p.id, 'approved')}>Approve</KBtn>
+                    <KBtn variant="ghost" size="sm" disabled={busyId === p.id} onClick={() => void review(p.id, 'rejected')}>Reject</KBtn>
+                  </div>
+                </div>
+              </KCard>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {reviewed.length > 0 && (
+        <div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 10 }}>Reviewed</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {reviewed.map((p) => (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--ink)' }}>{p.name} · {p.address}</div>
+                <KPill color={p.status === 'approved' ? 'verd' : 'signal'}>{p.status}</KPill>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )

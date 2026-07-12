@@ -242,6 +242,82 @@ adminRouter.delete('/cafes/:id', async (req, res) => {
   return res.json({ ok: true })
 })
 
+// ── Café suggestions (member-submitted, awaiting review) ──────────────────
+adminRouter.get('/pending-cafes', async (req, res) => {
+  const status = req.query.status as string | undefined
+  let query = supabase.from('pending_cafes').select('*').order('created_at', { ascending: false })
+  if (status && ['pending', 'approved', 'rejected'].includes(status)) {
+    query = query.eq('status', status)
+  }
+  const result = await query
+  if (result.error) return res.status(500).json({ error: result.error.message })
+
+  const rows = result.data ?? []
+  const suggesterIds = [...new Set(rows.map((r) => r.suggested_by).filter(Boolean))]
+  const suggesters = suggesterIds.length
+    ? await supabase.from('users').select('id, full_name, username').in('id', suggesterIds)
+    : { data: [], error: null }
+  if (suggesters.error) return res.status(500).json({ error: suggesters.error.message })
+
+  const byId = new Map((suggesters.data ?? []).map((u) => [u.id, u]))
+  return res.json({
+    pending: rows.map((r) => ({ ...r, suggester: byId.get(r.suggested_by) ?? null })),
+  })
+})
+
+const pendingCafeStatusSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected']),
+})
+
+adminRouter.patch('/pending-cafes/:id', async (req, res) => {
+  const parsed = pendingCafeStatusSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+
+  const upd = await supabase
+    .from('pending_cafes')
+    .update({ status: parsed.data.status })
+    .eq('id', req.params.id)
+    .eq('status', 'pending')
+    .select('*')
+    .maybeSingle()
+  if (upd.error) return res.status(500).json({ error: upd.error.message })
+  if (!upd.data) return res.status(404).json({ error: 'Suggestion not found or already reviewed' })
+
+  // Approving drops the suggestion into the real cafés table as an inactive
+  // draft — an admin still has to fill in venue type, hours, photo, etc. via
+  // the existing café editor before it goes live, rather than auto-publishing
+  // unvetted member input straight from a name + address.
+  if (parsed.data.status === 'approved') {
+    const slugBase = String(upd.data.name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'cafe'
+    let slug = slugBase
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const exists = await supabase.from('cafes').select('id').eq('slug', slug).maybeSingle()
+      if (exists.error) return res.status(500).json({ error: exists.error.message })
+      if (!exists.data) break
+      slug = `${slugBase}-${attempt + 2}`
+    }
+
+    const insert = await supabase
+      .from('cafes')
+      .insert({
+        slug,
+        name: upd.data.name,
+        address: upd.data.address,
+        city: 'Munich',
+        venue_type: 'cafe',
+        description: upd.data.notes ?? null,
+        is_active: false,
+        created_by: req.appUserId,
+      })
+      .select('id')
+      .single()
+    if (insert.error) return res.status(500).json({ error: insert.error.message })
+    return res.json({ pending: upd.data, cafeId: insert.data.id })
+  }
+
+  return res.json({ pending: upd.data })
+})
+
 // ── User management (basic) ───────────────────────────────────────────────
 adminRouter.get('/users', async (_req, res) => {
   const result = await supabase

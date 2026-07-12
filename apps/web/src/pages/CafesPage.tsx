@@ -2,6 +2,7 @@
  * Cafés · IRL — active admin-managed places and real coffee invitations.
  */
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { CalendarClock, Coffee, Copy, MapPin, Search, Users } from 'lucide-react'
 import { KBtn, KCard, KPill } from '@/lib/knotify'
 import { apiGetCached, apiPost, getApiCacheSnapshot } from '@/lib/api'
@@ -50,6 +51,7 @@ function defaultMeetingTime() {
 }
 
 export function CafesPage() {
+  const navigate = useNavigate()
   const [cafes, setCafes] = useState<Cafe[]>(() => getApiCacheSnapshot<{ cafes: Cafe[] }>(CAFES_PATH)?.cafes ?? [])
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(() => !getApiCacheSnapshot<{ cafes: Cafe[] }>(CAFES_PATH))
@@ -163,8 +165,8 @@ export function CafesPage() {
           {visibleCafes.length === 0 ? (
             <KCard style={{ padding: 28, textAlign: 'center', color: T.inkMuted }}>No places match “{search}”.</KCard>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: 14 }}>
-              {visibleCafes.map((cafe) => <CafeCard key={cafe.id} cafe={cafe} onInvite={() => openInvite(cafe)} />)}
+            <div data-tour="cafe-directory" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: 14 }}>
+              {visibleCafes.map((cafe) => <CafeCard key={cafe.id} cafe={cafe} onInvite={() => openInvite(cafe)} onOpen={() => navigate(`/cafes/${cafe.slug}`)} />)}
             </div>
           )}
         </DeskPage>
@@ -223,21 +225,21 @@ export function CafesPage() {
   )
 }
 
-function CafeCard({ cafe, onInvite }: { cafe: Cafe; onInvite: () => void }) {
+function CafeCard({ cafe, onInvite, onOpen }: { cafe: Cafe; onInvite: () => void; onOpen: () => void }) {
   const [copied, setCopied] = useState(false)
   const codeVisible = cafe.is_partnered && cafe.deal_code_enabled && Boolean(cafe.deal_code?.trim())
   const typeLabel = cafe.venue_type === 'cafe' ? 'Café' : cafe.venue_type === 'restaurant' ? 'Restaurant' : 'Bar'
 
   return (
     <KCard style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 320 }}>
-      <div style={{ height: 132, background: cafe.photo_url ? `center/cover url(${cafe.photo_url})` : `linear-gradient(135deg, ${cafe.is_partnered ? T.signal : T.inkMuted}, ${cafe.is_partnered ? T.signalDeep : T.ink})`, position: 'relative' }}>
+      <div onClick={onOpen} style={{ height: 132, cursor: 'pointer', background: cafe.photo_url ? `center/cover url(${cafe.photo_url})` : `linear-gradient(135deg, ${cafe.is_partnered ? T.signal : T.inkMuted}, ${cafe.is_partnered ? T.signalDeep : T.ink})`, position: 'relative' }}>
         <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: 6 }}><Chip color={cafe.is_partnered ? 'signal' : 'paper'}>{cafe.is_partnered ? 'Partner' : typeLabel}</Chip>{cafe.is_partnered && <Chip color="paper">{typeLabel}</Chip>}</div>
       </div>
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <div style={{ fontFamily: T.display, fontSize: 22, fontWeight: 500 }}>{cafe.name}</div>
+        <div onClick={onOpen} style={{ fontFamily: T.display, fontSize: 22, fontWeight: 500, cursor: 'pointer' }}>{cafe.name}</div>
         <div style={{ marginTop: 4, color: T.inkMuted, fontSize: 12.5 }}>{[cafe.area, cafe.address, cafe.hours_text].filter(Boolean).join(' · ')}</div>
         {cafe.description && <p style={{ margin: '10px 0 0', color: T.inkMuted, fontSize: 13, lineHeight: 1.5 }}>{cafe.description}</p>}
-        {cafe.is_partnered && (cafe.deal_title || cafe.deal_details || cafe.perk_text) && <div style={{ marginTop: 12, padding: 11, borderRadius: 10, background: T.ochreSoft }}>
+        {cafe.is_partnered && (cafe.deal_title || cafe.deal_details || cafe.perk_text) && <div data-tour="cafe-partner-deals" style={{ marginTop: 12, padding: 11, borderRadius: 10, background: T.ochreSoft }}>
           <div style={{ color: T.ochre, fontSize: 12.5, fontWeight: 700 }}>{cafe.deal_title || cafe.perk_text || 'Partner deal'}</div>
           {cafe.deal_details && <div style={{ marginTop: 3, color: T.inkMuted, fontSize: 12, lineHeight: 1.4 }}>{cafe.deal_details}</div>}
           {codeVisible && <button onClick={async () => { await navigator.clipboard.writeText(cafe.deal_code!); setCopied(true); setTimeout(() => setCopied(false), 1500) }} style={{ marginTop: 8, border: `0.5px solid ${T.ochre}`, background: T.paper, color: T.ochre, borderRadius: 8, padding: '6px 9px', fontFamily: 'monospace', fontWeight: 700, cursor: 'pointer' }}><Copy size={12} style={{ marginRight: 5, verticalAlign: 'text-bottom' }} />{copied ? 'Copied' : cafe.deal_code}</button>}
