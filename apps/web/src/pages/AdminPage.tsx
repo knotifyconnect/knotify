@@ -2,13 +2,17 @@
  * knotify · Admin
  * Knotify-team-only console.
  *  - Role requests: approve/reject HR or company-owner requests
- *  - Cafés: CRUD partner cafés
  *  - Users: toggle is_hr / is_admin
+ *
+ * Café management moved to the separate admin.knotify.pro app (apps/admin) —
+ * see apps/admin/src/AdminPanels.tsx CafesAdmin/CafeSuggestionsAdmin. This
+ * embedded /admin route is for team members signed in as regular users;
+ * café listings shouldn't be manageable from inside the consumer app.
  */
 import { useEffect, useState, type ReactNode, type CSSProperties } from 'react'
-import { Coffee, ShieldCheck, Users as UsersIcon, ClipboardList, Lightbulb } from 'lucide-react'
+import { ShieldCheck, Users as UsersIcon, ClipboardList } from 'lucide-react'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
-import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api'
+import { apiGet, apiPatch, apiPost } from '../lib/api'
 
 type RoleRequest = {
   id: string
@@ -24,30 +28,6 @@ type RoleRequest = {
   user: { id: string; full_name: string; username: string; email: string; avatar_url: string | null } | null
 }
 
-type Cafe = {
-  id: string
-  slug: string
-  name: string
-  venue_type: 'cafe' | 'restaurant' | 'bar'
-  address: string | null
-  city: string
-  area: string | null
-  description: string | null
-  perk_text: string | null
-  photo_url: string | null
-  hours_text: string | null
-  lat: number | null
-  lng: number | null
-  is_partnered: boolean
-  is_active: boolean
-  deal_title: string | null
-  deal_details: string | null
-  deal_code: string | null
-  deal_code_enabled: boolean
-  featured_priority: number
-  archived_at: string | null
-}
-
 type AdminUser = {
   id: string
   email: string
@@ -58,18 +38,7 @@ type AdminUser = {
   created_at: string
 }
 
-type Tab = 'requests' | 'cafes' | 'cafeSuggestions' | 'users' | 'waitlist'
-
-type PendingCafe = {
-  id: string
-  suggested_by: string | null
-  name: string
-  address: string
-  notes: string | null
-  status: 'pending' | 'approved' | 'rejected'
-  created_at: string
-  suggester: { id: string; full_name: string; username: string } | null
-}
+type Tab = 'requests' | 'users' | 'waitlist'
 
 type BetaSignup = {
   id: string
@@ -81,29 +50,6 @@ type BetaSignup = {
   beta_risk_consent: boolean
   status: 'pending' | 'approved' | 'rejected'
   created_at: string
-}
-
-const EMPTY_CAFE: Omit<Cafe, 'id'> = {
-  slug: '',
-  name: '',
-  venue_type: 'cafe',
-  address: '',
-  city: 'Munich',
-  area: '',
-  description: '',
-  perk_text: '',
-  photo_url: '',
-  hours_text: '',
-  lat: null,
-  lng: null,
-  is_partnered: false,
-  is_active: true,
-  deal_title: '',
-  deal_details: '',
-  deal_code: '',
-  deal_code_enabled: false,
-  featured_priority: 0,
-  archived_at: null,
 }
 
 export function AdminPage() {
@@ -190,8 +136,6 @@ export function AdminPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, borderBottom: '0.5px solid var(--rule-soft)' }}>
         {([
           { id: 'requests', label: 'Role requests', icon: <ShieldCheck size={13} /> },
-          { id: 'cafes', label: 'Cafés', icon: <Coffee size={13} /> },
-          { id: 'cafeSuggestions', label: 'Café suggestions', icon: <Lightbulb size={13} /> },
           { id: 'users', label: 'Users', icon: <UsersIcon size={13} /> },
           { id: 'waitlist', label: 'Waitlist', icon: <ClipboardList size={13} /> },
         ] as Array<{ id: Tab; label: string; icon: ReactNode }>).map((t) => (
@@ -222,8 +166,6 @@ export function AdminPage() {
       </div>
 
       {tab === 'requests' && <RoleRequestsTab onError={setError} />}
-      {tab === 'cafes' && <CafesTab onError={setError} />}
-      {tab === 'cafeSuggestions' && <CafeSuggestionsTab onError={setError} />}
       {tab === 'users' && <UsersTab onError={setError} />}
       {tab === 'waitlist' && <WaitlistTab onError={setError} />}
     </div>
@@ -442,345 +384,6 @@ function RoleRequestsTab({ onError }: { onError: (m: string | null) => void }) {
 function roleLabel(r: 'hr' | 'company_owner') {
   if (r === 'hr') return 'HR access'
   return 'Company owner'
-}
-
-// ─── Cafés tab ───────────────────────────────────────────────────────────────
-function CafesTab({ onError }: { onError: (m: string | null) => void }) {
-  const [cafes, setCafes] = useState<Cafe[]>([])
-  const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState<Cafe | (Omit<Cafe, 'id'> & { id?: string }) | null>(null)
-  const [saving, setSaving] = useState(false)
-
-  async function load() {
-    setLoading(true)
-    try {
-      const r = await apiGet<{ cafes: Cafe[] }>('/api/admin/cafes')
-      setCafes(r.cafes ?? [])
-      onError(null)
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed loading cafés')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { void load() }, [])
-
-  async function save() {
-    if (!editing) return
-    setSaving(true)
-    try {
-      const payload: Record<string, unknown> = {
-        slug: editing.slug,
-        name: editing.name,
-        venueType: editing.venue_type,
-        address: editing.address,
-        city: editing.city,
-        area: editing.area,
-        description: editing.description,
-        perkText: editing.perk_text,
-        photoUrl: editing.photo_url || null,
-        hoursText: editing.hours_text,
-        lat: editing.lat,
-        lng: editing.lng,
-        isPartnered: editing.is_partnered,
-        isActive: editing.is_active,
-        dealTitle: editing.deal_title,
-        dealDetails: editing.deal_details,
-        dealCode: editing.deal_code,
-        dealCodeEnabled: editing.deal_code_enabled,
-        featuredPriority: editing.featured_priority,
-        isArchived: Boolean(editing.archived_at),
-      }
-      if ('id' in editing && editing.id) {
-        await apiPatch(`/api/admin/cafes/${editing.id}`, payload)
-      } else {
-        await apiPost('/api/admin/cafes', payload)
-      }
-      setEditing(null)
-      await load()
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed saving')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function archive(id: string) {
-    if (!confirm('Archive this listing? It will disappear from the member Cafés page.')) return
-    try {
-      await apiDelete(`/api/admin/cafes/${id}`)
-      await load()
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed archiving')
-    }
-  }
-
-  async function restore(cafe: Cafe) {
-    try {
-      await apiPatch(`/api/admin/cafes/${cafe.id}`, { isArchived: false, isActive: true })
-      await load()
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed restoring')
-    }
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <KBtn variant="signal" size="sm" onClick={() => setEditing({ ...EMPTY_CAFE })}>
-          + Add café
-        </KBtn>
-      </div>
-
-      <KCard style={{ padding: '18px 20px' }}>
-        {loading ? (
-          <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: "'Fraunces'" }}>Loading…</p>
-        ) : cafes.length === 0 ? (
-          <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', fontStyle: 'italic' }}>No cafés yet.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {cafes.map((c) => (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 9, background: 'var(--signal-soft)', color: 'var(--signal)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Coffee size={16} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
-                    {c.name} {c.is_partnered && <KPill color="signal">partner</KPill>} {c.archived_at ? <KPill color="default">archived</KPill> : !c.is_active && <KPill color="default">hidden</KPill>}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
-                    {c.venue_type} · /{c.slug} · {[c.area, c.city, c.address].filter(Boolean).join(' · ')}{c.featured_priority ? ` · priority ${c.featured_priority}` : ''}
-                  </div>
-                </div>
-                <KBtn variant="ghost" size="sm" onClick={() => setEditing(c)}>Edit</KBtn>
-                {c.archived_at
-                  ? <KBtn variant="ghost" size="sm" onClick={() => restore(c)}>Restore</KBtn>
-                  : <KBtn variant="ghost" size="sm" onClick={() => archive(c.id)}>Archive</KBtn>}
-              </div>
-            ))}
-          </div>
-        )}
-      </KCard>
-
-      {editing && (
-        <CafeEditor
-          cafe={editing}
-          saving={saving}
-          onChange={setEditing}
-          onCancel={() => setEditing(null)}
-          onSave={save}
-        />
-      )}
-    </div>
-  )
-}
-
-// ─── Café suggestions tab ───────────────────────────────────────────────────
-function CafeSuggestionsTab({ onError }: { onError: (m: string | null) => void }) {
-  const [pending, setPending] = useState<PendingCafe[]>([])
-  const [loading, setLoading] = useState(true)
-  const [busyId, setBusyId] = useState<string | null>(null)
-
-  async function load() {
-    setLoading(true)
-    try {
-      const r = await apiGet<{ pending: PendingCafe[] }>('/api/admin/pending-cafes')
-      setPending(r.pending ?? [])
-      onError(null)
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed to load suggestions')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { void load() }, [])
-
-  async function review(id: string, status: 'approved' | 'rejected') {
-    setBusyId(id)
-    try {
-      await apiPatch(`/api/admin/pending-cafes/${id}`, { status })
-      setPending((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)))
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Update failed')
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  if (loading) return <div style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '20px 0' }}>Loading…</div>
-
-  const awaiting = pending.filter((p) => p.status === 'pending')
-  const reviewed = pending.filter((p) => p.status !== 'pending')
-
-  if (!pending.length) {
-    return <div style={{ fontSize: 13.5, color: 'var(--ink-muted)', padding: '20px 0' }}>No café suggestions yet.</div>
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 10 }}>
-          {awaiting.length} awaiting review
-        </div>
-        {awaiting.length === 0 ? (
-          <div style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>Nothing pending.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {awaiting.map((p) => (
-              <KCard key={p.id} style={{ padding: '14px 16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{p.name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{p.address}</div>
-                    {p.notes && <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4, fontStyle: 'italic' }}>"{p.notes}"</div>}
-                    <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6 }}>
-                      Suggested by {p.suggester?.full_name ?? 'a member'} · {new Date(p.created_at).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <KBtn variant="verd" size="sm" disabled={busyId === p.id} onClick={() => void review(p.id, 'approved')}>Approve</KBtn>
-                    <KBtn variant="ghost" size="sm" disabled={busyId === p.id} onClick={() => void review(p.id, 'rejected')}>Reject</KBtn>
-                  </div>
-                </div>
-              </KCard>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {reviewed.length > 0 && (
-        <div>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 10 }}>Reviewed</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {reviewed.map((p) => (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--ink)' }}>{p.name} · {p.address}</div>
-                <KPill color={p.status === 'approved' ? 'verd' : 'signal'}>{p.status}</KPill>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function CafeEditor({
-  cafe,
-  saving,
-  onChange,
-  onCancel,
-  onSave,
-}: {
-  cafe: Cafe | (Omit<Cafe, 'id'> & { id?: string })
-  saving: boolean
-  onChange: (c: typeof cafe) => void
-  onCancel: () => void
-  onSave: () => void
-}) {
-  const isNew = !('id' in cafe) || !cafe.id
-  return (
-    <div onClick={onCancel} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(26,24,21,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(3px)' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 580, background: 'var(--paper)', borderRadius: 18, padding: 22, maxHeight: '90vh', overflowY: 'auto' }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 400, marginBottom: 16, letterSpacing: '-0.02em' }}>
-          {isNew ? 'New café' : 'Edit café'}
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <Field label="Name" value={cafe.name} onChange={(v) => onChange({ ...cafe, name: v })} />
-          <Field label="Slug" value={cafe.slug} onChange={(v) => onChange({ ...cafe, slug: v.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} />
-          <div>
-            <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Type</label>
-            <select value={cafe.venue_type} onChange={(e) => onChange({ ...cafe, venue_type: e.target.value as Cafe['venue_type'] })} style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)' }}>
-              <option value="cafe">Café</option>
-              <option value="restaurant">Restaurant</option>
-              <option value="bar">Bar</option>
-            </select>
-          </div>
-          <Field label="Area" value={cafe.area ?? ''} onChange={(v) => onChange({ ...cafe, area: v })} placeholder="e.g. Maxvorstadt" />
-          <Field label="City" value={cafe.city} onChange={(v) => onChange({ ...cafe, city: v })} />
-          <Field label="Hours" value={cafe.hours_text ?? ''} onChange={(v) => onChange({ ...cafe, hours_text: v })} />
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Address" value={cafe.address ?? ''} onChange={(v) => onChange({ ...cafe, address: v })} />
-          </div>
-          <div style={{ gridColumn: 'span 2' }}>
-            <TextArea label="Description" value={cafe.description ?? ''} onChange={(v) => onChange({ ...cafe, description: v })} placeholder="What members should know about this place" />
-          </div>
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Photo URL (optional)" value={cafe.photo_url ?? ''} onChange={(v) => onChange({ ...cafe, photo_url: v })} placeholder="https://…" />
-          </div>
-          <Field label="Lat" value={cafe.lat?.toString() ?? ''} onChange={(v) => onChange({ ...cafe, lat: v ? Number(v) : null })} />
-          <Field label="Lng" value={cafe.lng?.toString() ?? ''} onChange={(v) => onChange({ ...cafe, lng: v ? Number(v) : null })} />
-          <Field label="Featured priority" value={String(cafe.featured_priority)} onChange={(v) => onChange({ ...cafe, featured_priority: Math.max(0, Number(v) || 0) })} placeholder="0" />
-        </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, color: 'var(--ink-muted)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={cafe.is_partnered} onChange={(e) => onChange({ ...cafe, is_partnered: e.target.checked, deal_code_enabled: e.target.checked ? cafe.deal_code_enabled : false })} />
-          Partnered listing
-        </label>
-        {cafe.is_partnered && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5" style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--signal-soft)' }}>
-            <Field label="Deal title" value={cafe.deal_title ?? ''} onChange={(v) => onChange({ ...cafe, deal_title: v })} placeholder="Member deal" />
-            <Field label="Legacy perk label" value={cafe.perk_text ?? ''} onChange={(v) => onChange({ ...cafe, perk_text: v })} placeholder="Short badge text" />
-            <div style={{ gridColumn: 'span 2' }}>
-              <TextArea label="Deal details" value={cafe.deal_details ?? ''} onChange={(v) => onChange({ ...cafe, deal_details: v })} placeholder="Terms and redemption details" />
-            </div>
-            <Field label="Deal code" value={cafe.deal_code ?? ''} onChange={(v) => onChange({ ...cafe, deal_code: v })} placeholder="KNOTIFY10" />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'end', minHeight: 38, fontSize: 13, color: 'var(--ink-muted)', cursor: cafe.deal_code?.trim() ? 'pointer' : 'not-allowed' }}>
-              <input type="checkbox" checked={cafe.deal_code_enabled} disabled={!cafe.deal_code?.trim()} onChange={(e) => onChange({ ...cafe, deal_code_enabled: e.target.checked })} />
-              Show code to members
-            </label>
-          </div>
-        )}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, color: 'var(--ink-muted)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={cafe.is_active} onChange={(e) => onChange({ ...cafe, is_active: e.target.checked })} />
-          Active (visible to members)
-        </label>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <KBtn variant="ghost" size="sm" onClick={onCancel} disabled={saving}>Cancel</KBtn>
-          <KBtn variant="signal" size="sm" onClick={onSave} disabled={saving || !cafe.name || !cafe.slug}>
-            {saving ? 'Saving…' : 'Save café'}
-          </KBtn>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function TextArea({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return (
-    <div>
-      <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>{label}</label>
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, fontFamily: "'IBM Plex Sans', sans-serif", color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', resize: 'vertical' }} />
-    </div>
-  )
-}
-
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return (
-    <div>
-      <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>
-        {label}
-      </label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={{
-          width: '100%',
-          padding: '8px 11px',
-          borderRadius: 9,
-          border: '0.5px solid var(--rule)',
-          background: 'var(--paper-soft)',
-          fontSize: 13.5,
-          fontFamily: "'IBM Plex Sans', sans-serif",
-          color: 'var(--ink)',
-          outline: 'none',
-          boxSizing: 'border-box',
-        }}
-      />
-    </div>
-  )
 }
 
 // ─── Users tab ──────────────────────────────────────────────────────────────

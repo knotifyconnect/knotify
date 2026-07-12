@@ -63,6 +63,15 @@ export const api = {
   updateQuest: (id: string, body: unknown) => request(`/api/admin-panel/quests/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteQuest: (id: string) => request(`/api/admin-panel/quests/${id}`, { method: 'DELETE' }),
 
+  // Cafés
+  cafes: () => request('/api/admin-panel/cafes'),
+  createCafe: (body: unknown) => request('/api/admin-panel/cafes', { method: 'POST', body: JSON.stringify(body) }),
+  updateCafe: (id: string, body: unknown) => request(`/api/admin-panel/cafes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteCafe: (id: string) => request(`/api/admin-panel/cafes/${id}`, { method: 'DELETE' }),
+  pendingCafes: (status?: string) => request(`/api/admin-panel/pending-cafes${status ? `?status=${status}` : ''}`),
+  updatePendingCafe: (id: string, status: 'approved' | 'rejected' | 'pending') =>
+    request(`/api/admin-panel/pending-cafes/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+
   // Settings
   settings: () => request('/api/admin-panel/settings'),
   updateSetting: (key: string, value: unknown) =>
