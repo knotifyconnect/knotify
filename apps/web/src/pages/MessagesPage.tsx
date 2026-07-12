@@ -1484,6 +1484,7 @@ export function MessagesPage() {
       >
         {/* ── Conversation list ─────────────────────────────────────────── */}
         <div
+          data-tour="message-list"
           className={selectedId ? 'hidden md:flex' : 'flex'}
           style={{ flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid rgba(26,24,21,0.08)', background: 'linear-gradient(180deg, rgba(255,252,246,0.96) 0%, rgba(244,239,230,0.82) 100%)' }}
         >

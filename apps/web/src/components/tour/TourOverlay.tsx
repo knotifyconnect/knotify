@@ -7,12 +7,19 @@ type Rect = { top: number; left: number; width: number; height: number }
 const PAD = 8
 const FIND_TIMEOUT_MS = 2000
 
+// Multiple elements can share a data-tour id (e.g. the desktop sidebar and
+// the mobile tab bar both tag their "Messages" link) — only one is visible
+// at a time, so pick the first with a real rect instead of just the first
+// DOM match.
 function findTargetRect(selector: string): Rect | null {
-  const el = document.querySelector(selector)
-  if (!el) return null
-  const r = el.getBoundingClientRect()
-  if (r.width === 0 && r.height === 0) return null
-  return { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 }
+  const candidates = document.querySelectorAll(selector)
+  for (const el of candidates) {
+    const r = el.getBoundingClientRect()
+    if (r.width > 0 || r.height > 0) {
+      return { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 }
+    }
+  }
+  return null
 }
 
 export function TourOverlay() {
@@ -30,8 +37,8 @@ export function TourOverlay() {
     let timeoutId: ReturnType<typeof setTimeout> | null = null
 
     function update() {
-      const next = findTargetRect(activeStep!.target)
-      if (!cancelled) setRect(next)
+      const found = findTargetRect(activeStep!.target)
+      if (!cancelled) setRect(found)
     }
 
     function waitForTarget() {
@@ -66,8 +73,15 @@ export function TourOverlay() {
 
   if (!isRunning || !activeStep) return null
 
+  const isNavigate = activeStep.kind === 'navigate'
   const tooltipTop = rect ? Math.min(rect.top + rect.height + 14, window.innerHeight - 220) : window.innerHeight / 2 - 90
   const tooltipLeft = rect ? Math.max(16, Math.min(rect.left, window.innerWidth - 336)) : Math.max(16, window.innerWidth / 2 - 160)
+  const tooltipWidth = 320
+
+  // Straight connecting line from the tooltip's top edge to the target's
+  // center — makes it unambiguous which on-screen box the tooltip describes.
+  const lineFrom = rect ? { x: tooltipLeft + tooltipWidth / 2, y: tooltipTop } : null
+  const lineTo = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9998, pointerEvents: 'none' }}>
@@ -77,8 +91,24 @@ export function TourOverlay() {
             <rect x="0" y="0" width="100%" height="100%" fill="white" />
             {rect && <rect x={rect.left} y={rect.top} width={rect.width} height={rect.height} rx={12} fill="black" />}
           </mask>
+          <marker id="tour-arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" fill={T.signal} />
+          </marker>
         </defs>
         <rect x="0" y="0" width="100%" height="100%" fill="rgba(26,24,21,0.55)" mask="url(#tour-mask)" />
+        {rect && lineFrom && lineTo && (
+          <line
+            x1={lineFrom.x}
+            y1={lineFrom.y}
+            x2={lineTo.x}
+            y2={lineTo.y}
+            stroke={T.signal}
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+            markerEnd="url(#tour-arrowhead)"
+            opacity={0.75}
+          />
+        )}
         {rect && (
           <rect
             x={rect.left}
@@ -89,9 +119,33 @@ export function TourOverlay() {
             fill="none"
             stroke={T.signal}
             strokeWidth={2}
-          />
+          >
+            <animate attributeName="stroke-opacity" values="1;0.45;1" dur="1.8s" repeatCount="indefinite" />
+          </rect>
         )}
       </svg>
+
+      {rect && (
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            top: Math.max(4, rect.top - 26),
+            left: rect.left,
+            background: T.ink,
+            color: T.paperSoft,
+            fontFamily: T.text,
+            fontSize: 11.5,
+            fontWeight: 600,
+            padding: '3px 9px',
+            borderRadius: 999,
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {activeStep.title}
+        </div>
+      )}
 
       <div
         role="dialog"
@@ -100,7 +154,7 @@ export function TourOverlay() {
           position: 'absolute',
           top: tooltipTop,
           left: tooltipLeft,
-          width: 320,
+          width: tooltipWidth,
           maxWidth: 'calc(100vw - 32px)',
           background: T.paperSoft,
           border: `0.5px solid ${T.rule}`,
@@ -125,21 +179,28 @@ export function TourOverlay() {
           >
             Skip tour
           </button>
-          <button
-            onClick={next}
-            style={{
-              background: T.ink,
-              color: T.paperSoft,
-              border: 0,
-              borderRadius: 999,
-              padding: '9px 18px',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            {activeIndex + 1 === totalSteps ? 'Done' : 'Next'}
-          </button>
+          {isNavigate ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: T.inkMuted, fontStyle: 'italic', fontFamily: T.display }}>
+              <span style={{ width: 6, height: 6, borderRadius: 999, background: T.signal, display: 'inline-block' }} />
+              Waiting for you to click…
+            </div>
+          ) : (
+            <button
+              onClick={next}
+              style={{
+                background: T.ink,
+                color: T.paperSoft,
+                border: 0,
+                borderRadius: 999,
+                padding: '9px 18px',
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              {activeIndex + 1 === totalSteps ? 'Done' : 'Next'}
+            </button>
+          )}
         </div>
       </div>
     </div>

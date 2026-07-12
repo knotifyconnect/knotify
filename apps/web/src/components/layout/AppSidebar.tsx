@@ -48,6 +48,12 @@ type NavItem = {
   newBadge?: boolean
 }
 
+const NAV_TOUR_TARGET: Record<string, string> = {
+  '/home': 'nav-home',
+  '/map': 'nav-map',
+  '/messages': 'nav-messages',
+}
+
 const BASE_ITEMS: NavItem[] = [
   { title: 'Home',         href: '/home',     icon: <Home              size={15} /> },
   { title: 'Your Knot',    href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
@@ -167,6 +173,7 @@ export function AppSidebar() {
             >
               {({ isActive }) => (
                 <div
+                  data-tour={NAV_TOUR_TARGET[item.href]}
                   style={{
                     padding: '10px 12px',
                     borderRadius: 10,
@@ -399,6 +406,7 @@ export function AppSidebar() {
           >
             {({ isActive }) => (
               <div
+                data-tour={NAV_TOUR_TARGET[item.href]}
                 style={{
                   display: 'flex',
                   flexDirection: 'column',

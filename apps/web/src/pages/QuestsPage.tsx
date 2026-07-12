@@ -304,23 +304,25 @@ export function QuestsPage() {
         <ChapterSection quests={chapters} claiming={claiming} claim={claim} expanded={expanded} setExpanded={setExpanded} justClaimed={justClaimed} askSignature={setSignQuest} />
       )}
 
-      {CATEGORY_ORDER.map((cat) => {
-        const quests = byCategory.get(cat) ?? []
-        if (quests.length === 0) return null
-        return (
-          <CategorySection
-            key={cat}
-            category={cat}
-            quests={quests}
-            claiming={claiming}
-            claim={claim}
-            expanded={expanded}
-            setExpanded={setExpanded}
-            justClaimed={justClaimed}
-            askSignature={setSignQuest}
-          />
-        )
-      })}
+      <div data-tour="quest-categories">
+        {CATEGORY_ORDER.map((cat) => {
+          const quests = byCategory.get(cat) ?? []
+          if (quests.length === 0) return null
+          return (
+            <CategorySection
+              key={cat}
+              category={cat}
+              quests={quests}
+              claiming={claiming}
+              claim={claim}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              justClaimed={justClaimed}
+              askSignature={setSignQuest}
+            />
+          )
+        })}
+      </div>
 
       <CityFog />
 

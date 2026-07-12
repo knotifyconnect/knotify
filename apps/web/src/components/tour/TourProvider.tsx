@@ -3,11 +3,12 @@ import type { ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { apiGetCached, apiPatch } from '../../lib/api'
 import { TOUR_STEPS } from './steps'
+import type { TourStep } from './steps'
 
 type TourContextValue = {
   isRunning: boolean
   activeIndex: number
-  activeStep: (typeof TOUR_STEPS)[number] | null
+  activeStep: TourStep | null
   totalSteps: number
   start: () => void
   next: () => void
@@ -24,16 +25,21 @@ function persistTourCompleted() {
 
 export function TourProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [isRunning, setIsRunning] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const finishedRef = useRef(false)
 
+  // Explicit kickoff only: the very first step's page is loaded once, as a
+  // direct result of the user clicking "start"/"show me around". Every step
+  // after that either stays on the same page or is a 'navigate' step the
+  // tour waits on — the tour itself never hops pages mid-run.
   const start = useCallback(() => {
     finishedRef.current = false
     setActiveIndex(0)
     setIsRunning(true)
     const first = TOUR_STEPS[0]
-    if (first) navigate(first.path)
+    if (first && first.kind === 'spotlight') navigate(first.path)
   }, [navigate])
 
   const finish = useCallback(() => {
@@ -43,22 +49,44 @@ export function TourProvider({ children }: { children: ReactNode }) {
     persistTourCompleted()
   }, [])
 
-  const next = useCallback(() => {
+  const advance = useCallback(() => {
     setActiveIndex((current) => {
       const nextIndex = current + 1
-      const nextStep = TOUR_STEPS[nextIndex]
-      if (!nextStep) {
+      if (!TOUR_STEPS[nextIndex]) {
         finish()
         return current
       }
-      navigate(nextStep.path)
       return nextIndex
     })
-  }, [navigate, finish])
+  }, [finish])
+
+  const next = useCallback(() => {
+    advance()
+  }, [advance])
 
   const skip = useCallback(() => {
     finish()
   }, [finish])
+
+  // Auto-advance past a 'navigate' step once the user has actually clicked
+  // through to the target page themselves. Also a safety net: if the user
+  // wanders off-script mid-spotlight-step (clicks something else entirely),
+  // end the tour instead of leaving a spotlight pointing at a page that's no
+  // longer there. Index 0 is exempt — it's mid-flight from start()'s own
+  // kickoff navigate, which hasn't landed yet on the first render.
+  useEffect(() => {
+    if (!isRunning) return
+    const step = TOUR_STEPS[activeIndex]
+    if (!step) return
+
+    if (step.kind === 'navigate') {
+      if (location.pathname === step.toPath) advance()
+      return
+    }
+
+    if (activeIndex === 0) return
+    if (location.pathname !== step.path) finish()
+  }, [location.pathname, isRunning, activeIndex, advance, finish])
 
   const value = useMemo<TourContextValue>(
     () => ({

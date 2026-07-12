@@ -1281,7 +1281,7 @@ function KnotStage({
     >
       <div data-tour="knot-graph" className="k-knot-stage your-knot-stage">
         <div className="k-knot-bg">
-          <div className="k-knot-search-box">
+          <div data-tour="knot-search" className="k-knot-search-box">
             <span style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', whiteSpace: 'nowrap' }}>
               Find
             </span>
@@ -1431,10 +1431,10 @@ function KnotStage({
                   onClearSelection={onBoardClear}
                 />
               </Suspense>
-              <div className="k-knot-stats-bar">
+              <div data-tour="knot-stats" className="k-knot-stats-bar">
                 {connected.length} connected{knotColdCount > 0 ? ` · ${knotColdCount} going cold` : ''} · {visiblePeerEdges.length} inner ties · {expandedSecondDegreeNodes.length} expanded · {incoming.length} decisions · {sent.length} waiting
               </div>
-              <div className="k-knot-legend-box">
+              <div data-tour="knot-legend" className="k-knot-legend-box">
                 <WebLegendRow />
               </div>
               {(selectedConnection || selectedSecondDegreeUser) && (
