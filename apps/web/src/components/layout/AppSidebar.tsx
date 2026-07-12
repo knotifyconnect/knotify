@@ -52,6 +52,8 @@ const NAV_TOUR_TARGET: Record<string, string> = {
   '/home': 'nav-home',
   '/map': 'nav-map',
   '/messages': 'nav-messages',
+  '/jobs': 'nav-jobs',
+  '/cafes': 'nav-cafes',
 }
 
 const BASE_ITEMS: NavItem[] = [

@@ -147,9 +147,100 @@ export function KnotGraphDemo() {
   )
 }
 
+export function JobsFeedDemo() {
+  const rows = [
+    { title: 'Frontend Engineer', company: 'Personio', tag: 'Match' },
+    { title: 'Growth Marketing', company: 'Celonis', tag: 'New' },
+  ]
+  return (
+    <div>
+      <PreviewChip />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {rows.map((r, i) => (
+          <motion.div
+            key={r.title}
+            {...fadeUpItem(i)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}` }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink }}>{r.title}</div>
+              <div style={{ fontSize: 11, color: T.inkMuted }}>{r.company}</div>
+            </div>
+            <span style={{ fontSize: 10.5, fontWeight: 600, color: T.verd, background: T.verdSoft, padding: '3px 8px', borderRadius: 999 }}>{r.tag}</span>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function ReferralInboxDemo() {
+  return (
+    <div>
+      <PreviewChip />
+      <motion.div
+        {...fadeUpItem(0)}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}` }}
+      >
+        <AvatarDot color={T.ochre} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink }}>Tom R. wants a referral</div>
+          <div style={{ fontSize: 11, color: T.inkMuted }}>for Product Designer at Flixbus</div>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+export function CafeDirectoryDemo() {
+  const cafes = [
+    { name: 'Cafe Reitschule', area: 'Glockenbach' },
+    { name: 'Man Versus Machine', area: 'Schwabing' },
+  ]
+  return (
+    <div>
+      <PreviewChip />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {cafes.map((c, i) => (
+          <motion.div
+            key={c.name}
+            {...fadeUpItem(i)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}` }}
+          >
+            <div style={{ width: 26, height: 26, borderRadius: 8, background: T.inkMuted, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink }}>{c.name}</div>
+              <div style={{ fontSize: 11, color: T.inkMuted }}>{c.area}</div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function CafePartnerDealDemo() {
+  return (
+    <div>
+      <PreviewChip />
+      <motion.div
+        {...fadeUpItem(0)}
+        style={{ padding: 11, borderRadius: 10, background: T.ochreSoft }}
+      >
+        <div style={{ color: T.ochre, fontSize: 12.5, fontWeight: 700 }}>15% off your first coffee</div>
+        <div style={{ marginTop: 3, color: T.inkMuted, fontSize: 12, lineHeight: 1.4 }}>Show your knotify profile at the counter.</div>
+      </motion.div>
+    </div>
+  )
+}
+
 export const TOUR_DEMOS: Record<string, () => React.ReactNode> = {
   'today-moves-queue': TodayMovesDemo,
   'coffees-booked': CoffeesBookedDemo,
   'side-quests': SideQuestsDemo,
   'knot-graph': KnotGraphDemo,
+  'jobs-feed': JobsFeedDemo,
+  'referral-inbox': ReferralInboxDemo,
+  'cafe-directory': CafeDirectoryDemo,
+  'cafe-partner-deals': CafePartnerDealDemo,
 }
