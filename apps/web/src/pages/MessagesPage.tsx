@@ -2202,6 +2202,7 @@ export function MessagesPage() {
 
           {/* Composer */}
           <div
+            data-tour="message-compose"
             style={{
               padding: isMobile ? '5px 14px calc(7px + env(safe-area-inset-bottom))' : '12px clamp(14px, 4vw, 46px) 14px',
               borderTop: '0.5px solid rgba(26,24,21,0.07)',

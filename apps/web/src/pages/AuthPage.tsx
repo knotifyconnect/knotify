@@ -36,6 +36,9 @@ export function AuthPage() {
   // The invite code can arrive in the URL or have been stashed on a prior visit.
   // Not upper-cased: verified email-invite tokens are case-sensitive.
   const inviteCode = (searchParams.get('invite') || readPendingInvite() || '').trim()
+  // Approval emails link here with ?email=... so an already-approved waitlist
+  // signup skips straight to the form instead of the waitlist screen.
+  const approvedEmailParam = (searchParams.get('email') || '').trim()
 
   const [accessMode, setAccessMode] = useState<'open' | 'invite_only' | null>(null)
   const [inviteValid, setInviteValid] = useState(false)
@@ -50,14 +53,17 @@ export function AuthPage() {
   const [waitlistError, setWaitlistError] = useState('')
 
   useEffect(() => {
-    const q = inviteCode ? `?invite=${encodeURIComponent(inviteCode)}` : ''
+    const params = new URLSearchParams()
+    if (inviteCode) params.set('invite', inviteCode)
+    if (approvedEmailParam) params.set('email', approvedEmailParam)
+    const q = params.toString() ? `?${params.toString()}` : ''
     fetch(`${API_BASE}/api/access/context${q}`)
       .then(r => r.json())
       .then((d: { mode: 'open' | 'invite_only'; invite: { valid: boolean; inviterName: string | null; lockedEmail: string | null } | null }) => {
         setAccessMode(d.mode)
         setInviteValid(Boolean(d.invite?.valid))
         setInviterName(d.invite?.inviterName ?? null)
-        // Verified email invites pin the signup to the invited address.
+        // Verified email invites (and approved waitlist emails) pin signup to that address.
         if (d.invite?.valid && d.invite.lockedEmail) {
           setLockedEmail(d.invite.lockedEmail)
           setEmail(d.invite.lockedEmail)
@@ -66,7 +72,7 @@ export function AuthPage() {
         }
       })
       .catch(() => setAccessMode('open'))
-  }, [inviteCode])
+  }, [inviteCode, approvedEmailParam])
 
   async function joinWaitlist(e: FormEvent) {
     e.preventDefault()

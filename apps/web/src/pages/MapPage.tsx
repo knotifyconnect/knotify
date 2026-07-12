@@ -1279,7 +1279,7 @@ function KnotStage({
         borderRadius: 0,
       }}
     >
-      <div className="k-knot-stage your-knot-stage">
+      <div data-tour="knot-graph" className="k-knot-stage your-knot-stage">
         <div className="k-knot-bg">
           <div className="k-knot-search-box">
             <span style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', whiteSpace: 'nowrap' }}>

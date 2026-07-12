@@ -90,7 +90,7 @@ export async function resolveInviteCode(code: string | null | undefined): Promis
 }
 
 /** Is this email approved on the waitlist? */
-async function isApprovedEmail(email: string): Promise<boolean> {
+export async function isApprovedEmail(email: string): Promise<boolean> {
   if (!email) return false
   const { count } = await supabase
     .from('beta_signups')

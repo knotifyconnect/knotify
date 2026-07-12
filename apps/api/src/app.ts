@@ -34,7 +34,7 @@ import { feedbackRouter } from './routes/feedback.js'
 import { intelligenceHealthRouter } from './routes/intelligenceHealth.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { supabase } from './lib.js'
-import { getAccessConfig, resolveInviteCode } from './lib/access.js'
+import { getAccessConfig, resolveInviteCode, isApprovedEmail } from './lib/access.js'
 import {
   deploymentConfig,
   isRequestOriginAllowed,
@@ -83,7 +83,7 @@ app.get('/api/access/context', async (req, res) => {
   const raw = String(req.query.invite ?? '').trim()
 
   let invite:
-    | { valid: boolean; kind: 'team' | 'member' | 'email' | null; inviterName: string | null; lockedEmail: string | null }
+    | { valid: boolean; kind: 'team' | 'member' | 'email' | 'waitlist' | null; inviterName: string | null; lockedEmail: string | null }
     | null = null
 
   if (raw) {
@@ -91,6 +91,18 @@ app.get('/api/access/context', async (req, res) => {
     invite = resolved
       ? { valid: true, kind: resolved.kind, inviterName: resolved.inviterName, lockedEmail: resolved.email }
       : { valid: false, kind: null, inviterName: null, lockedEmail: null }
+  }
+
+  // No invite code, but the visitor arrived via an approval email link
+  // (?email=...): let them straight into the signup form instead of the
+  // waitlist screen. The actual account-creation gate re-checks this
+  // server-side (evaluateNewUserAccess), so trusting the query param here
+  // only affects which UI renders, not who can actually sign up.
+  if ((!invite || !invite.valid) && mode === 'invite_only') {
+    const email = String(req.query.email ?? '').trim().toLowerCase()
+    if (email && (await isApprovedEmail(email))) {
+      invite = { valid: true, kind: 'waitlist', inviterName: null, lockedEmail: email }
+    }
   }
 
   return res.json({ mode, invite })

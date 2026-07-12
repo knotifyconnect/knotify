@@ -572,7 +572,7 @@ export function RelationshipHomePage() {
   // ── Companion — a separate chat card, not fused into the queue below ────────
   // ── "Today's moves" — the unified queue ────────────────────────────────────
   const maintenanceNode = (stats.total > 0 || moves.length > 0) ? (
-    <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
+    <div data-tour="today-moves-queue" style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
       <HealthStrip stats={stats} onOpenMap={() => navigate('/map')} />
       <DeskSectionLabel right={
         moves.length > 0 ? <span style={{ color: coldCount > 0 ? T.signal : coolingCount > 0 ? T.ochre : T.verd, textTransform: 'none', letterSpacing: 0, fontWeight: 700 }}>

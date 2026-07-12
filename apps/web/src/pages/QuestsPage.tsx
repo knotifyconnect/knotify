@@ -386,6 +386,7 @@ function RankPassport({ data }: { data: QuestsResponse }) {
 
   return (
     <motion.div
+      data-tour="quest-tier-display"
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring.settle}
