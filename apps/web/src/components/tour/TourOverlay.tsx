@@ -1,11 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { T } from '../../lib/desk'
 import { useTour } from './TourProvider'
+import { TOUR_DEMOS } from './demos'
 
 type Rect = { top: number; left: number; width: number; height: number }
 
 const PAD = 8
-const FIND_TIMEOUT_MS = 2000
+// Real async data + lazy route chunks can legitimately take a few seconds,
+// especially right after a 'navigate' step's route change — don't give up
+// before real content has had a chance to load.
+const FIND_TIMEOUT_MS = 6000
 
 // Multiple elements can share a data-tour id (e.g. the desktop sidebar and
 // the mobile tab bar both tag their "Messages" link) — only one is visible
@@ -24,9 +29,15 @@ function findTargetRect(selector: string): Rect | null {
 
 export function TourOverlay() {
   const { isRunning, activeStep, activeIndex, totalSteps, next, skip } = useTour()
+  const navigate = useNavigate()
   const [rect, setRect] = useState<Rect | null>(null)
+  const [timedOut, setTimedOut] = useState(false)
+  const autoSkippedRef = useRef(false)
 
   useEffect(() => {
+    setTimedOut(false)
+    autoSkippedRef.current = false
+
     if (!isRunning || !activeStep) {
       setRect(null)
       return
@@ -55,7 +66,10 @@ export function TourOverlay() {
         }
       })
       observer.observe(document.body, { childList: true, subtree: true })
-      timeoutId = setTimeout(() => observer?.disconnect(), FIND_TIMEOUT_MS)
+      timeoutId = setTimeout(() => {
+        observer?.disconnect()
+        if (!cancelled) setTimedOut(true)
+      }, FIND_TIMEOUT_MS)
     }
 
     waitForTarget()
@@ -71,9 +85,23 @@ export function TourOverlay() {
     }
   }, [isRunning, activeStep])
 
+  const demo = activeStep && TOUR_DEMOS[activeStep.id]
+  const stuck = timedOut && !rect
+
+  // A step with no illustration and nothing real to point at can't teach
+  // anything — skip it rather than leave a dangling, arrow-less dialog.
+  useEffect(() => {
+    if (stuck && !demo && activeStep?.kind === 'spotlight' && !autoSkippedRef.current) {
+      autoSkippedRef.current = true
+      next()
+    }
+  }, [stuck, demo, activeStep, next])
+
   if (!isRunning || !activeStep) return null
+  if (stuck && !demo && activeStep.kind === 'spotlight') return null
 
   const isNavigate = activeStep.kind === 'navigate'
+  const showSpotlight = Boolean(rect)
   const tooltipTop = rect ? Math.min(rect.top + rect.height + 14, window.innerHeight - 220) : window.innerHeight / 2 - 90
   const tooltipLeft = rect ? Math.max(16, Math.min(rect.left, window.innerWidth - 336)) : Math.max(16, window.innerWidth / 2 - 160)
   const tooltipWidth = 320
@@ -96,7 +124,7 @@ export function TourOverlay() {
           </marker>
         </defs>
         <rect x="0" y="0" width="100%" height="100%" fill="rgba(26,24,21,0.55)" mask="url(#tour-mask)" />
-        {rect && lineFrom && lineTo && (
+        {showSpotlight && lineFrom && lineTo && (
           <line
             x1={lineFrom.x}
             y1={lineFrom.y}
@@ -109,7 +137,7 @@ export function TourOverlay() {
             opacity={0.75}
           />
         )}
-        {rect && (
+        {showSpotlight && rect && (
           <rect
             x={rect.left}
             y={rect.top}
@@ -125,7 +153,7 @@ export function TourOverlay() {
         )}
       </svg>
 
-      {rect && (
+      {showSpotlight && rect && (
         <div
           aria-hidden
           style={{
@@ -171,7 +199,15 @@ export function TourOverlay() {
         <div style={{ fontFamily: T.display, fontSize: 19, fontWeight: 500, color: T.ink, marginBottom: 8, letterSpacing: '-0.01em' }}>
           {activeStep.title}
         </div>
-        <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.55, margin: '0 0 16px' }}>{activeStep.body}</p>
+        <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.55, margin: '0 0 12px' }}>{activeStep.body}</p>
+        {stuck && demo && (
+          <div style={{ marginBottom: 12 }}>
+            <p style={{ fontSize: 12, color: T.inkFaint, fontStyle: 'italic', margin: '0 0 8px' }}>
+              You don't have any data here yet — here's what it looks like once you're connected.
+            </p>
+            {demo()}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <button
             onClick={skip}
@@ -179,11 +215,18 @@ export function TourOverlay() {
           >
             Skip tour
           </button>
-          {isNavigate ? (
+          {isNavigate && !stuck ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: T.inkMuted, fontStyle: 'italic', fontFamily: T.display }}>
               <span style={{ width: 6, height: 6, borderRadius: 999, background: T.signal, display: 'inline-block' }} />
               Waiting for you to click…
             </div>
+          ) : isNavigate && stuck ? (
+            <button
+              onClick={() => navigate(activeStep.toPath)}
+              style={{ background: T.ink, color: T.paperSoft, border: 0, borderRadius: 999, padding: '9px 18px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+            >
+              Open it for me
+            </button>
           ) : (
             <button
               onClick={next}
