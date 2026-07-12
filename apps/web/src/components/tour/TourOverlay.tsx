@@ -3,17 +3,22 @@ import { useNavigate } from 'react-router-dom'
 import { T } from '../../lib/desk'
 import { useTour } from './TourProvider'
 import { TOUR_DEMOS } from './demos'
+import { TOUR_STEPS } from './steps'
 
 type Rect = { top: number; left: number; width: number; height: number }
 
 const PAD = 8
-// Steps with an illustration fall back to it quickly — no point making the
-// user stare at an unclear/empty spotlight when we already have something
-// better to show. Steps with no illustration get more time, since the only
-// alternative there is skipping past real content that's just loading slowly.
-const DEMO_TIMEOUT_MS = 1500
-const NO_DEMO_TIMEOUT_MS = 6000
-const POSITION_TRANSITION = 'top 0.22s cubic-bezier(0.2,0.8,0.2,1), left 0.22s cubic-bezier(0.2,0.8,0.2,1)'
+// Only the FIRST spotlight step on a freshly-loaded page (right after
+// start() or a 'navigate' step's route change) genuinely needs to wait on a
+// lazy route chunk + async data fetch. Every other step-to-step move stays
+// on a page that's already fully rendered, so searching should resolve in a
+// frame or two — treating those the same as a fresh page load was the "still
+// feels slow" complaint, and also let already-mounted elements (the Map
+// search box, stats bar, legend, the Messages list) get mistaken for
+// missing/empty just because the check gave up too early right after a page
+// transition while they were still finishing their first render.
+const JUST_ARRIVED_TIMEOUT_MS = 3000
+const SAME_PAGE_TIMEOUT_MS = 350
 
 // Multiple elements can share a data-tour id (e.g. the desktop sidebar and
 // the mobile tab bar both tag their "Messages" link) — only one is visible
@@ -57,8 +62,9 @@ export function TourOverlay() {
     let cancelled = false
     let rafId: number | null = null
     let timeoutId: ReturnType<typeof setTimeout> | null = null
-    const hasDemo = Boolean(TOUR_DEMOS[activeStep.id])
-    const timeoutMs = hasDemo ? DEMO_TIMEOUT_MS : NO_DEMO_TIMEOUT_MS
+    const prevStep = TOUR_STEPS[activeIndex - 1]
+    const justArrivedOnPage = activeIndex === 0 || prevStep?.kind === 'navigate'
+    const timeoutMs = justArrivedOnPage ? JUST_ARRIVED_TIMEOUT_MS : SAME_PAGE_TIMEOUT_MS
 
     // Poll every frame instead of only on resize/scroll/DOM-mutation: a lot
     // of target cards animate in with framer-motion (opacity/y offset), so a
@@ -85,7 +91,7 @@ export function TourOverlay() {
       if (rafId !== null) cancelAnimationFrame(rafId)
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [isRunning, activeStep])
+  }, [isRunning, activeStep, activeIndex])
 
   const demo = activeStep && TOUR_DEMOS[activeStep.id]
   const stuck = timedOut && !rect
@@ -125,15 +131,7 @@ export function TourOverlay() {
           <mask id="tour-mask">
             <rect x="0" y="0" width="100%" height="100%" fill="white" />
             {rect && (
-              <rect
-                x={rect.left}
-                y={rect.top}
-                width={rect.width}
-                height={rect.height}
-                rx={12}
-                fill="black"
-                style={{ transition: POSITION_TRANSITION }}
-              />
+              <rect x={rect.left} y={rect.top} width={rect.width} height={rect.height} rx={12} fill="black" />
             )}
           </mask>
           <marker id="tour-arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
@@ -152,7 +150,6 @@ export function TourOverlay() {
             strokeDasharray="4 4"
             markerEnd="url(#tour-arrowhead)"
             opacity={0.75}
-            style={{ transition: 'x1 0.22s, y1 0.22s, x2 0.22s, y2 0.22s' }}
           />
         )}
         {showSpotlight && rect && (
@@ -165,7 +162,6 @@ export function TourOverlay() {
             fill="none"
             stroke={T.signal}
             strokeWidth={2}
-            style={{ transition: POSITION_TRANSITION }}
           >
             <animate attributeName="stroke-opacity" values="1;0.45;1" dur="1.8s" repeatCount="indefinite" />
           </rect>
@@ -188,7 +184,6 @@ export function TourOverlay() {
             borderRadius: 999,
             pointerEvents: 'none',
             whiteSpace: 'nowrap',
-            transition: POSITION_TRANSITION,
           }}
         >
           {activeStep.title}
@@ -211,7 +206,6 @@ export function TourOverlay() {
           boxShadow: '0 12px 32px rgba(26,24,21,0.22)',
           pointerEvents: 'auto',
           fontFamily: T.text,
-          transition: POSITION_TRANSITION,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
