@@ -28,14 +28,24 @@ type Cafe = {
   id: string
   slug: string
   name: string
+  venue_type: 'cafe' | 'restaurant' | 'bar'
   address: string | null
   city: string
+  area: string | null
+  description: string | null
   perk_text: string | null
   photo_url: string | null
   hours_text: string | null
   lat: number | null
   lng: number | null
+  is_partnered: boolean
   is_active: boolean
+  deal_title: string | null
+  deal_details: string | null
+  deal_code: string | null
+  deal_code_enabled: boolean
+  featured_priority: number
+  archived_at: string | null
 }
 
 type AdminUser = {
@@ -65,14 +75,24 @@ type BetaSignup = {
 const EMPTY_CAFE: Omit<Cafe, 'id'> = {
   slug: '',
   name: '',
+  venue_type: 'cafe',
   address: '',
   city: 'Munich',
+  area: '',
+  description: '',
   perk_text: '',
   photo_url: '',
   hours_text: '',
   lat: null,
   lng: null,
+  is_partnered: false,
   is_active: true,
+  deal_title: '',
+  deal_details: '',
+  deal_code: '',
+  deal_code_enabled: false,
+  featured_priority: 0,
+  archived_at: null,
 }
 
 export function AdminPage() {
@@ -440,14 +460,24 @@ function CafesTab({ onError }: { onError: (m: string | null) => void }) {
       const payload: Record<string, unknown> = {
         slug: editing.slug,
         name: editing.name,
+        venueType: editing.venue_type,
         address: editing.address,
         city: editing.city,
+        area: editing.area,
+        description: editing.description,
         perkText: editing.perk_text,
         photoUrl: editing.photo_url || null,
         hoursText: editing.hours_text,
         lat: editing.lat,
         lng: editing.lng,
+        isPartnered: editing.is_partnered,
         isActive: editing.is_active,
+        dealTitle: editing.deal_title,
+        dealDetails: editing.deal_details,
+        dealCode: editing.deal_code,
+        dealCodeEnabled: editing.deal_code_enabled,
+        featuredPriority: editing.featured_priority,
+        isArchived: Boolean(editing.archived_at),
       }
       if ('id' in editing && editing.id) {
         await apiPatch(`/api/admin/cafes/${editing.id}`, payload)
@@ -463,13 +493,22 @@ function CafesTab({ onError }: { onError: (m: string | null) => void }) {
     }
   }
 
-  async function remove(id: string) {
-    if (!confirm('Delete this café? This cannot be undone.')) return
+  async function archive(id: string) {
+    if (!confirm('Archive this listing? It will disappear from the member Cafés page.')) return
     try {
       await apiDelete(`/api/admin/cafes/${id}`)
       await load()
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed deleting')
+      onError(err instanceof Error ? err.message : 'Failed archiving')
+    }
+  }
+
+  async function restore(cafe: Cafe) {
+    try {
+      await apiPatch(`/api/admin/cafes/${cafe.id}`, { isArchived: false, isActive: true })
+      await load()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Failed restoring')
     }
   }
 
@@ -495,14 +534,16 @@ function CafesTab({ onError }: { onError: (m: string | null) => void }) {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
-                    {c.name} {!c.is_active && <KPill color="default">inactive</KPill>}
+                    {c.name} {c.is_partnered && <KPill color="signal">partner</KPill>} {c.archived_at ? <KPill color="default">archived</KPill> : !c.is_active && <KPill color="default">hidden</KPill>}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
-                    /{c.slug} · {c.city}{c.address ? ` · ${c.address}` : ''}
+                    {c.venue_type} · /{c.slug} · {[c.area, c.city, c.address].filter(Boolean).join(' · ')}{c.featured_priority ? ` · priority ${c.featured_priority}` : ''}
                   </div>
                 </div>
                 <KBtn variant="ghost" size="sm" onClick={() => setEditing(c)}>Edit</KBtn>
-                <KBtn variant="ghost" size="sm" onClick={() => remove(c.id)}>Delete</KBtn>
+                {c.archived_at
+                  ? <KBtn variant="ghost" size="sm" onClick={() => restore(c)}>Restore</KBtn>
+                  : <KBtn variant="ghost" size="sm" onClick={() => archive(c.id)}>Archive</KBtn>}
               </div>
             ))}
           </div>
@@ -545,20 +586,48 @@ function CafeEditor({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <Field label="Name" value={cafe.name} onChange={(v) => onChange({ ...cafe, name: v })} />
           <Field label="Slug" value={cafe.slug} onChange={(v) => onChange({ ...cafe, slug: v.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} />
+          <div>
+            <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>Type</label>
+            <select value={cafe.venue_type} onChange={(e) => onChange({ ...cafe, venue_type: e.target.value as Cafe['venue_type'] })} style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, color: 'var(--ink)' }}>
+              <option value="cafe">Café</option>
+              <option value="restaurant">Restaurant</option>
+              <option value="bar">Bar</option>
+            </select>
+          </div>
+          <Field label="Area" value={cafe.area ?? ''} onChange={(v) => onChange({ ...cafe, area: v })} placeholder="e.g. Maxvorstadt" />
           <Field label="City" value={cafe.city} onChange={(v) => onChange({ ...cafe, city: v })} />
           <Field label="Hours" value={cafe.hours_text ?? ''} onChange={(v) => onChange({ ...cafe, hours_text: v })} />
           <div style={{ gridColumn: 'span 2' }}>
             <Field label="Address" value={cafe.address ?? ''} onChange={(v) => onChange({ ...cafe, address: v })} />
           </div>
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Perk text" value={cafe.perk_text ?? ''} onChange={(v) => onChange({ ...cafe, perk_text: v })} placeholder="e.g. Free filter coffee for members" />
+            <TextArea label="Description" value={cafe.description ?? ''} onChange={(v) => onChange({ ...cafe, description: v })} placeholder="What members should know about this place" />
           </div>
           <div style={{ gridColumn: 'span 2' }}>
             <Field label="Photo URL (optional)" value={cafe.photo_url ?? ''} onChange={(v) => onChange({ ...cafe, photo_url: v })} placeholder="https://…" />
           </div>
           <Field label="Lat" value={cafe.lat?.toString() ?? ''} onChange={(v) => onChange({ ...cafe, lat: v ? Number(v) : null })} />
           <Field label="Lng" value={cafe.lng?.toString() ?? ''} onChange={(v) => onChange({ ...cafe, lng: v ? Number(v) : null })} />
+          <Field label="Featured priority" value={String(cafe.featured_priority)} onChange={(v) => onChange({ ...cafe, featured_priority: Math.max(0, Number(v) || 0) })} placeholder="0" />
         </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, color: 'var(--ink-muted)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={cafe.is_partnered} onChange={(e) => onChange({ ...cafe, is_partnered: e.target.checked, deal_code_enabled: e.target.checked ? cafe.deal_code_enabled : false })} />
+          Partnered listing
+        </label>
+        {cafe.is_partnered && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5" style={{ marginTop: 12, padding: 14, borderRadius: 12, background: 'var(--signal-soft)' }}>
+            <Field label="Deal title" value={cafe.deal_title ?? ''} onChange={(v) => onChange({ ...cafe, deal_title: v })} placeholder="Member deal" />
+            <Field label="Legacy perk label" value={cafe.perk_text ?? ''} onChange={(v) => onChange({ ...cafe, perk_text: v })} placeholder="Short badge text" />
+            <div style={{ gridColumn: 'span 2' }}>
+              <TextArea label="Deal details" value={cafe.deal_details ?? ''} onChange={(v) => onChange({ ...cafe, deal_details: v })} placeholder="Terms and redemption details" />
+            </div>
+            <Field label="Deal code" value={cafe.deal_code ?? ''} onChange={(v) => onChange({ ...cafe, deal_code: v })} placeholder="KNOTIFY10" />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'end', minHeight: 38, fontSize: 13, color: 'var(--ink-muted)', cursor: cafe.deal_code?.trim() ? 'pointer' : 'not-allowed' }}>
+              <input type="checkbox" checked={cafe.deal_code_enabled} disabled={!cafe.deal_code?.trim()} onChange={(e) => onChange({ ...cafe, deal_code_enabled: e.target.checked })} />
+              Show code to members
+            </label>
+          </div>
+        )}
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, color: 'var(--ink-muted)', cursor: 'pointer' }}>
           <input type="checkbox" checked={cafe.is_active} onChange={(e) => onChange({ ...cafe, is_active: e.target.checked })} />
           Active (visible to members)
@@ -570,6 +639,15 @@ function CafeEditor({
           </KBtn>
         </div>
       </div>
+    </div>
+  )
+}
+
+function TextArea({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div>
+      <label style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>{label}</label>
+      <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ width: '100%', padding: '8px 11px', borderRadius: 9, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', fontSize: 13.5, fontFamily: "'IBM Plex Sans', sans-serif", color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', resize: 'vertical' }} />
     </div>
   )
 }

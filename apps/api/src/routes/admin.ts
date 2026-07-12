@@ -67,17 +67,37 @@ adminRouter.patch('/role-requests/:id', async (req, res) => {
 })
 
 // ── Café management ───────────────────────────────────────────────────────
-const cafeSchema = z.object({
+const cafeFields = z.object({
   slug: z.string().min(2).max(64).regex(/^[a-z0-9-]+$/, { message: 'lowercase letters, digits, hyphens only' }),
   name: z.string().min(2).max(120),
-  address: z.string().max(240).optional(),
+  venueType: z.enum(['cafe', 'restaurant', 'bar']).default('cafe'),
+  address: z.string().max(240).optional().nullable(),
   city: z.string().max(80).default('Munich'),
-  perkText: z.string().max(240).optional(),
+  area: z.string().max(120).optional().nullable(),
+  description: z.string().max(1200).optional().nullable(),
+  perkText: z.string().max(240).optional().nullable(),
   photoUrl: z.string().max(2048).optional().nullable(),
-  hoursText: z.string().max(120).optional(),
+  hoursText: z.string().max(120).optional().nullable(),
   lat: z.number().min(-90).max(90).optional().nullable(),
   lng: z.number().min(-180).max(180).optional().nullable(),
+  isPartnered: z.boolean().optional(),
   isActive: z.boolean().optional(),
+  dealTitle: z.string().max(160).optional().nullable(),
+  dealDetails: z.string().max(1000).optional().nullable(),
+  dealCode: z.string().max(120).optional().nullable(),
+  dealCodeEnabled: z.boolean().optional(),
+  featuredPriority: z.number().int().min(0).max(100000).optional(),
+  isArchived: z.boolean().optional(),
+})
+
+const cafeSchema = cafeFields.superRefine((value, ctx) => {
+  if (value.dealCodeEnabled && (!value.isPartnered || !value.dealCode?.trim())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dealCodeEnabled'],
+      message: 'Deal codes require a partnered listing and a non-empty code',
+    })
+  }
 })
 
 adminRouter.get('/cafes', async (_req, res) => {
@@ -98,14 +118,24 @@ adminRouter.post('/cafes', async (req, res) => {
     .insert({
       slug: parsed.data.slug,
       name: parsed.data.name,
+      venue_type: parsed.data.venueType,
       address: parsed.data.address ?? null,
       city: parsed.data.city,
+      area: parsed.data.area ?? null,
+      description: parsed.data.description ?? null,
       perk_text: parsed.data.perkText ?? null,
       photo_url: parsed.data.photoUrl ?? null,
       hours_text: parsed.data.hoursText ?? null,
       lat: parsed.data.lat ?? null,
       lng: parsed.data.lng ?? null,
+      is_partnered: parsed.data.isPartnered ?? false,
       is_active: parsed.data.isActive ?? true,
+      deal_title: parsed.data.dealTitle ?? null,
+      deal_details: parsed.data.dealDetails ?? null,
+      deal_code: parsed.data.dealCode ?? null,
+      deal_code_enabled: parsed.data.dealCodeEnabled ?? false,
+      featured_priority: parsed.data.featuredPriority ?? 0,
+      archived_at: parsed.data.isArchived ? new Date().toISOString() : null,
       created_by: req.appUserId,
     })
     .select('*')
@@ -115,20 +145,45 @@ adminRouter.post('/cafes', async (req, res) => {
 })
 
 adminRouter.patch('/cafes/:id', async (req, res) => {
-  const parsed = cafeSchema.partial().safeParse(req.body)
+  const parsed = cafeFields.partial().safeParse(req.body)
   if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+
+  const current = await supabase
+    .from('cafes')
+    .select('is_partnered, deal_code, deal_code_enabled')
+    .eq('id', req.params.id)
+    .maybeSingle()
+  if (current.error) return res.status(500).json({ error: current.error.message })
+  if (!current.data) return res.status(404).json({ error: 'Café not found' })
+
+  const nextPartnered = parsed.data.isPartnered ?? current.data.is_partnered
+  const nextDealCode = parsed.data.dealCode ?? current.data.deal_code
+  const nextCodeEnabled = parsed.data.dealCodeEnabled ?? current.data.deal_code_enabled
+  if (nextCodeEnabled && (!nextPartnered || !nextDealCode?.trim())) {
+    return res.status(422).json({ error: 'Deal codes require a partnered listing and a non-empty code' })
+  }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (parsed.data.slug !== undefined) patch.slug = parsed.data.slug
   if (parsed.data.name !== undefined) patch.name = parsed.data.name
+  if (parsed.data.venueType !== undefined) patch.venue_type = parsed.data.venueType
   if (parsed.data.address !== undefined) patch.address = parsed.data.address
   if (parsed.data.city !== undefined) patch.city = parsed.data.city
+  if (parsed.data.area !== undefined) patch.area = parsed.data.area
+  if (parsed.data.description !== undefined) patch.description = parsed.data.description
   if (parsed.data.perkText !== undefined) patch.perk_text = parsed.data.perkText
   if (parsed.data.photoUrl !== undefined) patch.photo_url = parsed.data.photoUrl
   if (parsed.data.hoursText !== undefined) patch.hours_text = parsed.data.hoursText
   if (parsed.data.lat !== undefined) patch.lat = parsed.data.lat
   if (parsed.data.lng !== undefined) patch.lng = parsed.data.lng
+  if (parsed.data.isPartnered !== undefined) patch.is_partnered = parsed.data.isPartnered
   if (parsed.data.isActive !== undefined) patch.is_active = parsed.data.isActive
+  if (parsed.data.dealTitle !== undefined) patch.deal_title = parsed.data.dealTitle
+  if (parsed.data.dealDetails !== undefined) patch.deal_details = parsed.data.dealDetails
+  if (parsed.data.dealCode !== undefined) patch.deal_code = parsed.data.dealCode
+  if (parsed.data.dealCodeEnabled !== undefined) patch.deal_code_enabled = parsed.data.dealCodeEnabled
+  if (parsed.data.featuredPriority !== undefined) patch.featured_priority = parsed.data.featuredPriority
+  if (parsed.data.isArchived !== undefined) patch.archived_at = parsed.data.isArchived ? new Date().toISOString() : null
 
   const upd = await supabase.from('cafes').update(patch).eq('id', req.params.id).select('*').maybeSingle()
   if (upd.error) return res.status(500).json({ error: upd.error.message })
@@ -137,8 +192,14 @@ adminRouter.patch('/cafes/:id', async (req, res) => {
 })
 
 adminRouter.delete('/cafes/:id', async (req, res) => {
-  const del = await supabase.from('cafes').delete().eq('id', req.params.id)
-  if (del.error) return res.status(500).json({ error: del.error.message })
+  const archived = await supabase
+    .from('cafes')
+    .update({ is_active: false, archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .select('id')
+    .maybeSingle()
+  if (archived.error) return res.status(500).json({ error: archived.error.message })
+  if (!archived.data) return res.status(404).json({ error: 'Café not found' })
   return res.json({ ok: true })
 })
 
