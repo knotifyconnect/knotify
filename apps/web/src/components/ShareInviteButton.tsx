@@ -16,8 +16,8 @@ function firstName(value?: string | null) {
 }
 
 function buildMessage(name: string) {
-  const who = name ? `${name} here — ` : ''
-  return `${who}I've been using knotify to actually meet people in Munich. Come connect —`
+  const who = name ? `${name} here: ` : ''
+  return `${who}I've been using knotify to actually meet people in Munich. Come connect:`
 }
 
 export function ShareInviteButton({
