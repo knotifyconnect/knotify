@@ -44,6 +44,11 @@ function setCanonical(href: string) {
  */
 export function useSeo({ title, description, path, image, noindex }: SeoConfig) {
   useEffect(() => {
+    // Remember what was there before this page took over, so navigating away
+    // (e.g. Sign in → the authenticated app, which never calls useSeo itself)
+    // doesn't leave the tab stuck on this page's title forever.
+    const previousTitle = document.title
+
     const url = `${SITE_URL}${path}`
     const ogImage = image ?? DEFAULT_OG_IMAGE
 
@@ -65,5 +70,9 @@ export function useSeo({ title, description, path, image, noindex }: SeoConfig) 
     setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', title)
     setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', description)
     setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', ogImage)
+
+    return () => {
+      document.title = previousTitle
+    }
   }, [title, description, path, image, noindex])
 }
