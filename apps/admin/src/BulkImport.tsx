@@ -135,14 +135,14 @@ function cafeRow(row: Record<string, unknown>, rowNumber: number): PreviewRow {
 function template(kind: Kind, csv: boolean) {
   const columns = kind === 'events' ? EVENT_COLUMNS : CAFE_COLUMNS
   const examples = kind === 'events'
-    ? ['TUM x Industry Night', 'Meet local founders and students.', 'Audimax', '2026-09-20', '', '', '', 'https://example.com/event', 'TUM', '', 'networking', '100', '0']
+    ? ['TUM x Industry Night', 'Meet local founders and students.', 'Audimax', '2026-09-20', '18:00', '', '', 'https://example.com/event', 'TUM', '', 'Business & Networking', '100', '0']
     : ['example-cafe', 'Example Cafe', 'cafe', 'Sample street 1', 'Munich', 'Maxvorstadt', '', '', 'https://example.com/image.jpg', '', '', '', 'false', 'true', '', '', '', 'false', '0']
   const worksheet = XLSX.utils.aoa_to_sheet([columns, examples])
   const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, worksheet, kind === 'events' ? 'Events' : 'Cafes')
   XLSX.writeFile(book, `knotify-${kind}-import-template.${csv ? 'csv' : 'xlsx'}`, { bookType: csv ? 'csv' : 'xlsx' })
 }
 
-export function BulkImport({ kind, onImport }: { kind: Kind; onImport: (rows: Array<{ row: number; data: Record<string, unknown> }>, mode: Mode) => Promise<{ results?: Array<{ row: number; status: string; error?: string }> }> }) {
+export function BulkImport({ kind, onImport }: { kind: Kind; onImport: (rows: Array<{ row: number; data: Record<string, unknown> }>, mode: Mode) => Promise<{ results?: Array<{ row: number; status: string; error?: string }>; timeTbaUnavailableRows?: number[] }> }) {
   const ref = useRef<HTMLInputElement>(null)
   const [rows, setRows] = useState<PreviewRow[]>([])
   const [mode, setMode] = useState<Mode>('create')
@@ -177,8 +177,13 @@ export function BulkImport({ kind, onImport }: { kind: Kind; onImport: (rows: Ar
       const results = response.results ?? []
       const created = results.filter(result => result.status === 'created').length
       const updated = results.filter(result => result.status === 'updated').length
-      const problems = results.filter(result => result.status === 'error' || result.status === 'skipped')
-      setMessage(`${created} created, ${updated} updated.${problems.length ? ` ${problems.map(result => `Row ${result.row}: ${result.error ?? result.status}`).join(' · ')}` : ''}`)
+      const tbaRows = response.timeTbaUnavailableRows ?? []
+      const problems = results.filter(result => (result.status === 'error' || result.status === 'skipped') && !tbaRows.includes(result.row))
+      const tbaNotice = tbaRows.length
+        ? ` ${tbaRows.length} row${tbaRows.length === 1 ? '' : 's'} with both time fields blank ${tbaRows.length === 1 ? 'was' : 'were'} not imported because this database has not enabled Time TBA. Apply migration 057 to import them without inventing a time.`
+        : ''
+      const problemNotice = problems.length ? ` ${problems.slice(0, 8).map(result => `Row ${result.row}: ${result.error ?? result.status}`).join(' · ')}${problems.length > 8 ? ` · and ${problems.length - 8} more` : ''}` : ''
+      setMessage(`${created} created, ${updated} updated.${tbaNotice}${problemNotice}`)
       setRows([])
     }
     catch (e: any) { setMessage(e.message ?? 'Import failed.') } finally { setBusy(false) }
@@ -186,7 +191,7 @@ export function BulkImport({ kind, onImport }: { kind: Kind; onImport: (rows: Ar
 
   return <section style={cardStyle}>
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-      <div><strong>Import {label}</strong><div style={{ fontSize: 12, color: '#6b5f55', marginTop: 3 }}>Preview required fields and errors before saving. Blank optional values stay unavailable.</div></div>
+      <div><strong>Import {label}</strong><div style={{ fontSize: 12, color: '#6b5f55', marginTop: 3 }}>{kind === 'events' ? 'Required: title and start_date. Start and end times are optional; leave both blank only when the time is genuinely unavailable (Time TBA).' : 'Preview required fields and errors before saving. Blank optional values stay unavailable.'}</div></div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><button type="button" style={buttonStyle} onClick={() => template(kind, false)}>Template .xlsx</button><button type="button" style={buttonStyle} onClick={() => template(kind, true)}>Template .csv</button><button type="button" style={buttonStyle} onClick={() => ref.current?.click()}>Choose file</button></div>
     </div>
     <input ref={ref} type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" style={{ display: 'none' }} onChange={e => { const file = e.target.files?.[0]; if (file) void choose(file) }} />
