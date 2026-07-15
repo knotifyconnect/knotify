@@ -703,22 +703,30 @@ export function RelationshipHomePage() {
 
   // ── Asks block: targeted "for you" feed + your own. Clickable → AskDrawer.
   // Reused in the desktop rail and the mobile main column (rail is desktop-only).
+  // Content is hard-truncated in JS (not just CSS ellipsis) so a long ask
+  // can never push the row wider than the rail, regardless of flex sizing.
   const myOpenAsks = myAsks.filter((a) => a.status === 'open')
-  const compactRow = (a: Ask, opts: { showAuthor: boolean }) => (
-    <button
-      key={a.id}
-      type="button"
-      onClick={() => setAskDetail(a)}
-      style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: '8px 10px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.text }}
-    >
-      <div style={{ width: 5, height: 5, borderRadius: 3, background: T.ochre, flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {opts.showAuthor && a.author && <span style={{ fontWeight: 600, color: T.ink }}>{a.author.full_name.split(' ')[0]} · </span>}
-        <span style={{ color: T.inkMuted }}>{a.content}</span>
-      </div>
-      <span style={{ fontSize: 10, color: T.inkFaint, flexShrink: 0 }}>{a.reply_count ? `${a.reply_count}↩` : ''}</span>
-    </button>
-  )
+  const ROW_TEXT_BUDGET = 46
+  const compactRow = (a: Ask, opts: { showAuthor: boolean }) => {
+    const authorPrefix = opts.showAuthor && a.author ? `${a.author.full_name.split(' ')[0]} · ` : ''
+    const contentBudget = Math.max(20, ROW_TEXT_BUDGET - authorPrefix.length)
+    const content = a.content.length > contentBudget ? `${a.content.slice(0, contentBudget).trimEnd()}…` : a.content
+    return (
+      <button
+        key={a.id}
+        type="button"
+        onClick={() => setAskDetail(a)}
+        style={{ textAlign: 'left', cursor: 'pointer', width: '100%', minWidth: 0, padding: '8px 10px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.text }}
+      >
+        <div style={{ width: 5, height: 5, borderRadius: 3, background: T.ochre, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {authorPrefix && <span style={{ fontWeight: 600, color: T.ink }}>{authorPrefix}</span>}
+          <span style={{ color: T.inkMuted }}>{content}</span>
+        </div>
+        <span style={{ fontSize: 10, color: T.inkFaint, flexShrink: 0 }}>{a.reply_count ? `${a.reply_count}↩` : ''}</span>
+      </button>
+    )
+  }
 
   const RAIL_FEED_LIMIT = 4
   const asksBlock = (
