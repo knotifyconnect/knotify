@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { ImagePlus } from 'lucide-react'
 import { apiGet, apiPost, apiPostForm } from '@/lib/api'
 import { trackEvent } from '@/lib/analytics'
+import { eventCtaLabel, fireEventCta } from '@/lib/events'
 import { T, DeskPage, DeskHeader, SectionLabel, Chip, RailCard, accentFor, gradientFor } from '@/lib/desk'
 
 type EventItem = {
@@ -16,6 +17,8 @@ type EventItem = {
   rsvp_count: number
   rsvped: boolean
   image_url?: string | null
+  url?: string | null
+  source?: string
 }
 
 function whenLabel(iso: string) {
@@ -89,7 +92,7 @@ export function EventsPage() {
   function RsvpButton({ e, dark = false }: { e: EventItem; dark?: boolean }) {
     return (
       <button
-        onClick={() => toggleRsvp(e.id)}
+        onClick={() => fireEventCta(e, toggleRsvp)}
         disabled={e.is_host}
         style={{
           padding: '8px 16px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: e.is_host ? 'default' : 'pointer', border: 'none',
@@ -97,7 +100,7 @@ export function EventsPage() {
           color: e.is_host && !dark ? T.inkFaint : '#fff', fontFamily: T.text, whiteSpace: 'nowrap',
         }}
       >
-        {e.is_host ? 'Your event' : e.rsvped ? 'Going' : 'RSVP'}
+        {eventCtaLabel(e, 'Your event')}
       </button>
     )
   }

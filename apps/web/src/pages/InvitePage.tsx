@@ -108,7 +108,7 @@ export function InvitePage() {
     <div style={{ maxWidth: 600, margin: '0 auto', paddingBottom: 40 }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 26, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>
+        <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(26px, 3.2vw, 34px)', fontWeight: 500, letterSpacing: '-0.02em', color: 'var(--ink)', marginBottom: 6 }}>
           Invite your network
         </h1>
         <p style={{ color: 'var(--ink-faint)', fontSize: 14, lineHeight: 1.5 }}>

@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, MapPin, Users, Lock, ChevronRight, Flame, ImagePlus, X, ExternalLink, Camera, Share2, ChevronLeft } from 'lucide-react'
+import { Plus, MapPin, Users, Lock, ChevronRight, Flame, ImagePlus, X, Camera, Share2, ChevronLeft } from 'lucide-react'
 import { apiGet, apiPost, apiPostForm } from '@/lib/api'
+import { eventCtaLabel, fireEventCta } from '@/lib/events'
 import { QuestIcon } from '@/lib/questIcons'
 import { KAvatar } from '@/lib/knotify'
 import { useNavigate } from 'react-router-dom'
@@ -361,12 +362,16 @@ function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onC
   const [rsvped, setRsvped] = useState(e.rsvped)
   const [count, setCount] = useState(e.rsvp_count)
 
-  function handleRsvp() {
+  function handleCta() {
     if (e.is_host) return
-    const next = !rsvped
-    setRsvped(next)
-    setCount(c => c + (next ? 1 : -1))
-    onRsvp(e.id)
+    // Peer events toggle going on/off; external events only ever move to "going"
+    // (clicking through to register is what counts as attendance intent).
+    const goingNext = e.url ? true : !rsvped
+    if (goingNext !== rsvped) {
+      setRsvped(goingNext)
+      setCount(c => c + (goingNext ? 1 : -1))
+    }
+    fireEventCta({ ...e, rsvped }, onRsvp)
   }
 
   return (
@@ -442,17 +447,16 @@ function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onC
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 10 }}>
-        <button onClick={handleRsvp} disabled={e.is_host}
+        <button onClick={handleCta} disabled={e.is_host}
           style={{ flex: 1, padding: '14px', borderRadius: 999, border: 'none', background: e.is_host ? T.rule : rsvped ? T.verd : T.signal, color: e.is_host ? T.inkFaint : '#fff', fontSize: 14, fontWeight: 700, cursor: e.is_host ? 'default' : 'pointer', fontFamily: T.text, transition: 'background 0.15s' }}>
-          {e.is_host ? 'You are hosting' : rsvped ? 'Going · tap to cancel' : 'RSVP · I will be there'}
+          {e.is_host ? 'You are hosting' : eventCtaLabel({ ...e, rsvped }, '')}
         </button>
-        {e.url && (
-          <a href={e.url} target="_blank" rel="noopener noreferrer"
-            style={{ padding: '14px 16px', borderRadius: 999, border: `0.5px solid ${T.rule}`, background: 'transparent', color: T.inkMuted, fontSize: 13, cursor: 'pointer', fontFamily: T.text, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none', whiteSpace: 'nowrap' }}>
-            <ExternalLink size={14} />Details
-          </a>
-        )}
       </div>
+      {!e.is_host && !e.url && rsvped && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: T.inkFaint, textAlign: 'center', fontFamily: T.text }}>
+          Tap again to cancel
+        </div>
+      )}
     </Overlay>
   )
 }
@@ -526,9 +530,9 @@ function EventsCarousel({ events, interests, onRsvp, onOpen, onSeeAll }: {
                 <div style={{ fontFamily: T.display, fontSize: 14, fontWeight: 500, color: T.ink, lineHeight: 1.2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{e.title}</div>
                 {e.location && <div style={{ fontSize: 11, color: T.inkFaint, display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}><MapPin size={10} />{e.location}</div>}
                 <div style={{ flex: 1 }} />
-                <button onClick={(ev) => { ev.stopPropagation(); onRsvp(e.id) }} disabled={e.is_host}
+                <button onClick={(ev) => { ev.stopPropagation(); fireEventCta(e, onRsvp) }} disabled={e.is_host}
                   style={{ marginTop: 6, padding: '7px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: e.is_host ? 'default' : 'pointer', border: 'none', background: e.is_host ? T.rule : e.rsvped ? T.verd : T.ink, color: e.is_host ? T.inkFaint : '#fff', alignSelf: 'flex-start', fontFamily: T.text }}>
-                  {e.is_host ? 'Hosting' : e.rsvped ? 'Going' : 'RSVP'}
+                  {eventCtaLabel(e, 'Hosting')}
                 </button>
               </div>
             </motion.div>

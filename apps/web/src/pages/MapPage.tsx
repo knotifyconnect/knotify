@@ -951,7 +951,7 @@ function TopCommandBar({
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 18, fontStyle: 'italic', letterSpacing: '-0.02em', lineHeight: 1.05, color: 'var(--ink)' }}>
+          <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(20px, 5.5vw, 24px)', fontWeight: 500, fontStyle: 'italic', letterSpacing: '-0.02em', lineHeight: 1.05, color: 'var(--ink)' }}>
             Keep your <span style={{ color: 'var(--signal, #D8442B)' }}>knot</span> warm.
           </div>
           <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -984,7 +984,7 @@ function TopCommandBar({
         <div style={{ fontSize: 10, color: 'var(--ink-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: "'IBM Plex Sans', sans-serif" }}>
           Your Knot
         </div>
-        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(22px, 3vw, 28px)', fontWeight: 400, fontStyle: 'italic', letterSpacing: '-0.02em', marginTop: 4, lineHeight: 1.05, color: 'var(--ink)' }}>
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(24px, 3.2vw, 30px)', fontWeight: 500, fontStyle: 'italic', letterSpacing: '-0.02em', marginTop: 4, lineHeight: 1.05, color: 'var(--ink)' }}>
           Keep your <span style={{ color: 'var(--signal, #D8442B)' }}>knot</span> warm.
         </div>
       </div>
