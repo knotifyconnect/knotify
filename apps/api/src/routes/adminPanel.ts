@@ -141,6 +141,14 @@ async function saveEventTypes(types: string[]) {
 
 function isMissingTimeTba(message: string) { return message.includes('time_tba') }
 
+type TimeTbaAvailability = { available: true } | { available: false } | { available: null; error: string }
+async function timeTbaAvailability(): Promise<TimeTbaAvailability> {
+  const result = await supabase.from('events').select('time_tba').limit(1)
+  if (!result.error) return { available: true }
+  if (isMissingTimeTba(result.error.message)) return { available: false }
+  return { available: null, error: result.error.message }
+}
+
 // Some installations predate migration 057. A normal event does not need the
 // column, so retry without it rather than rejecting an otherwise valid import.
 // A true Time-TBA event must still be rejected: silently dropping that state
@@ -375,15 +383,24 @@ adminPanelRouter.delete('/events/:id', async (req, res) => {
 // Bulk imports are intentionally row-isolated: one failed insert never rolls back or corrupts a valid row.
 // The browser previews validation first; this endpoint revalidates every row under the existing panel secret.
 adminPanelRouter.post('/events/import', async (req, res) => {
-  const rows = Array.isArray(req.body?.rows) ? req.body.rows : []
+  const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : []
   const updateExisting = req.body?.mode === 'update'
   if (!rows.length || rows.length > 500) return res.status(422).json({ error: 'Import must contain 1–500 rows.' })
+  const includesTimeTba = rows.some(item => item?.data?.timeTba === true)
+  const timeTba: TimeTbaAvailability = includesTimeTba ? await timeTbaAvailability() : { available: true }
+  if (timeTba.available === null) return res.status(500).json({ error: timeTba.error })
   const results: Array<{ row: number; status: 'created' | 'updated' | 'skipped' | 'error'; error?: string }> = []
+  const timeTbaUnavailableRows: number[] = []
   const seen = new Set<string>()
   for (const item of rows) {
     const row = Number(item?.row) || 0
     const parsed = eventFields.safeParse(item?.data)
     if (!parsed.success) { results.push({ row, status: 'error', error: parsed.error.issues.map(i => `${i.path.join('.') || 'row'}: ${i.message}`).join('; ') }); continue }
+    if (timeTba.available === false && parsed.data.timeTba) {
+      timeTbaUnavailableRows.push(row)
+      results.push({ row, status: 'skipped', error: 'Time TBA is unavailable in this database.' })
+      continue
+    }
     const fields = parseEventBody(parsed.data)
     const key = `${fields.title.toLowerCase()}|${fields.starts_at.slice(0, 10)}|${(fields.location ?? '').toLowerCase()}`
     if (seen.has(key)) { results.push({ row, status: 'skipped', error: 'Duplicate row in this import.' }); continue }
@@ -404,7 +421,7 @@ adminPanelRouter.post('/events/import', async (req, res) => {
     }
     else results.push({ row, status: existing ? 'updated' : 'created' })
   }
-  return res.json({ results })
+  return res.json({ results, timeTbaUnavailableRows })
 })
 
 adminPanelRouter.post('/cafes/import', async (req, res) => {
