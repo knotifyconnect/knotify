@@ -11,7 +11,13 @@ const CAFE_COLUMNS = ['slug', 'name', 'venue_type', 'address', 'city', 'area', '
 const EVENT_TYPES = new Set(['networking', 'social', 'sports', 'music', 'career', 'workshop', 'outdoor', 'party'])
 
 function key(value: unknown) { return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') }
-function value(row: Record<string, unknown>, name: string) { return String(row[name] ?? '').trim() }
+function value(row: Record<string, unknown>, ...names: string[]) {
+  for (const name of names) {
+    const text = String(row[name] ?? '').trim()
+    if (text && !['n/a', 'na', 'null', 'none', 'undefined', '-', 'tba', 'tbd'].includes(text.toLowerCase())) return text
+  }
+  return ''
+}
 function emptyOrText(v: string) { return v || null }
 function urlOrIssue(v: string, field: string, issues: Issue[]) {
   if (!v) return null
@@ -37,12 +43,14 @@ function bool(v: string, field: string, issues: Issue[], fallback: boolean) {
   issues.push({ field, message: 'must be true/false, yes/no, or 1/0', severity: 'error' })
   return fallback
 }
-function isoDate(v: string, field: string, issues: Issue[]) {
+function isoDate(v: string, field: string, issues: Issue[], occurrence = 0) {
   if (!v) return ''
-  const datePart = v.trim().split(/[T\s]/)[0]
-  const match = /^(?:(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})|(\d{1,2})[./-](\d{1,2})[./-](\d{4}))$/.exec(datePart)
+  const matches = [...v.matchAll(/(?:(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})|(\d{1,2})[./-](\d{1,2})[./-](\d{4}))/g)]
+  const match = matches[occurrence]
   if (!match) {
-    issues.push({ field, message: 'must be a valid date (YYYY-MM-DD or DD.MM.YYYY)', severity: 'error' }); return ''
+    const parsed = new Date(v)
+    if (!Number.isNaN(parsed.getTime())) return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
+    issues.push({ field, message: 'must be a valid date (YYYY-MM-DD, DD.MM.YYYY, or an English month name)', severity: 'error' }); return ''
   }
   const year = Number(match[1] ?? match[6]); const month = Number(match[2] ?? match[5]); const day = Number(match[3] ?? match[4])
   const date = new Date(Date.UTC(year, month - 1, day))
@@ -61,33 +69,42 @@ function embeddedTime(v: string) {
   const match = /(?:T|\s)(\d{1,2}:\d{2})(?::\d{2})?/.exec(v.trim())
   return match?.[1] ?? ''
 }
+function asWarning<T>(issues: Issue[], parse: () => T) {
+  const firstIssue = issues.length
+  const parsed = parse()
+  for (let index = firstIssue; index < issues.length; index += 1) issues[index].severity = 'warning'
+  return parsed
+}
 
 function eventRow(row: Record<string, unknown>, rowNumber: number): PreviewRow {
   const issues: Issue[] = []
-  const title = value(row, 'title')
+  const title = value(row, 'title', 'event_name', 'event_title', 'name')
   if (title.length < 2) issues.push({ field: 'title', message: 'is required (at least 2 characters)', severity: 'error' })
-  const startDateValue = value(row, 'start_date') || value(row, 'starts_at')
-  const endDateValue = value(row, 'end_date') || value(row, 'ends_at')
+  const startDateValue = value(row, 'start_date', 'starts_at', 'event_date', 'date', 'start', 'begin_date', 'datum')
+  const endDateValue = value(row, 'end_date', 'ends_at', 'end', 'finish_date', 'until', 'enddatum')
   const startDate = isoDate(startDateValue, 'start_date', issues)
   if (!startDate) issues.push({ field: 'start_date', message: 'is required', severity: 'error' })
-  const startTime = time(value(row, 'start_time') || embeddedTime(startDateValue), 'start_time', issues)
-  const endDate = isoDate(endDateValue, 'end_date', issues)
-  const endTime = time(value(row, 'end_time') || embeddedTime(endDateValue), 'end_time', issues)
-  if (endTime && !endDate) issues.push({ field: 'end_date', message: 'is required when end_time is provided', severity: 'error' })
-  const rawEventType = value(row, 'event_type').toLowerCase()
+  const startTime = asWarning(issues, () => time(value(row, 'start_time', 'starts_at_time', 'time', 'starttime') || embeddedTime(startDateValue), 'start_time', issues))
+  let endDate = asWarning(issues, () => isoDate(endDateValue, 'end_date', issues, endDateValue === startDateValue ? 1 : 0))
+  let endTime = asWarning(issues, () => time(value(row, 'end_time', 'ends_at_time', 'endtime') || embeddedTime(endDateValue), 'end_time', issues))
+  if (endTime && !endDate) { issues.push({ field: 'end_time', message: 'was omitted because end_date is unavailable', severity: 'warning' }); endTime = '' }
+  const rawEventType = value(row, 'event_type', 'type', 'category', 'event_category').toLowerCase()
   const eventType = EVENT_TYPES.has(rawEventType) ? rawEventType : ''
   if (rawEventType && !eventType) issues.push({ field: 'event_type', message: 'will be imported without a type because it is not one of the admin categories', severity: 'warning' })
   const startsAt = startDate ? `${startDate}T${startTime || '00:00'}:00` : ''
-  const endsAt = endDate ? `${endDate}T${endTime || '00:00'}:00` : null
-  if (startsAt && endsAt && new Date(endsAt) < new Date(startsAt)) issues.push({ field: 'end_date', message: 'must not be before start_date', severity: 'error' })
-  const interests = value(row, 'interests') ? value(row, 'interests').split(/[|,]/).map(x => x.trim()).filter(Boolean) : []
-  if (interests.some(x => x.length > 60) || interests.length > 10) issues.push({ field: 'interests', message: 'allows up to 10 values, each 60 characters', severity: 'error' })
+  let endsAt = endDate ? `${endDate}T${endTime || '00:00'}:00` : null
+  if (startsAt && endsAt && new Date(endsAt) < new Date(startsAt)) { issues.push({ field: 'end_date', message: 'was omitted because it is before start_date', severity: 'warning' }); endDate = ''; endTime = ''; endsAt = null }
+  let interests = value(row, 'interests') ? value(row, 'interests').split(/[|,]/).map(x => x.trim()).filter(Boolean) : []
+  if (interests.some(x => x.length > 60) || interests.length > 10) { issues.push({ field: 'interests', message: 'were omitted because there are more than 10 values or a value is too long', severity: 'warning' }); interests = [] }
+  const url = asWarning(issues, () => urlOrIssue(value(row, 'url'), 'url', issues))
+  const imageUrl = asWarning(issues, () => urlOrIssue(value(row, 'image_url'), 'image_url', issues))
+  const capacity = asWarning(issues, () => wholeNumber(value(row, 'capacity'), 'capacity', issues))
+  const priceEur = asWarning(issues, () => wholeNumber(value(row, 'price_eur'), 'price_eur', issues))
   return { row: rowNumber, issues, data: {
     title, description: emptyOrText(value(row, 'description')), location: emptyOrText(value(row, 'location')),
-    startsAt, endsAt, timeTba: !startTime && !endTime, url: urlOrIssue(value(row, 'url'), 'url', issues),
-    hostLabel: emptyOrText(value(row, 'host_label')), imageUrl: urlOrIssue(value(row, 'image_url'), 'image_url', issues),
-    eventType: eventType || null, capacity: wholeNumber(value(row, 'capacity'), 'capacity', issues),
-    priceEur: wholeNumber(value(row, 'price_eur'), 'price_eur', issues), interests,
+    startsAt, endsAt, timeTba: !startTime && !endTime, url,
+    hostLabel: emptyOrText(value(row, 'host_label')), imageUrl,
+    eventType: eventType || null, capacity, priceEur, interests,
   } }
 }
 
