@@ -251,6 +251,12 @@ adminPanelRouter.patch('/cafes/:id', async (req, res) => {
 })
 
 adminPanelRouter.delete('/cafes/:id', async (req, res) => {
+  if (req.query.permanent === 'true') {
+    const deleted = await supabase.from('cafes').delete().eq('id', req.params.id).select('id').maybeSingle()
+    if (deleted.error) return res.status(409).json({ error: `Could not delete place: ${deleted.error.message}` })
+    if (!deleted.data) return res.status(404).json({ error: 'Place not found.' })
+    return res.json({ ok: true, deleted: true })
+  }
   const archived = await supabase
     .from('cafes')
     .update({ is_active: false, archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
