@@ -51,7 +51,7 @@ adminPanelRouter.post('/upload', upload.single('image'), async (req: any, res: a
 
 // ── Places (admin.knotify.pro only) ─────────────────────────────────────────
 const placeFields = z.object({
-  slug: z.string().min(2).max(64).regex(/^[a-z0-9-]+$/),
+  slug: z.string().min(2).max(64).regex(/^[a-z0-9-]+$/).optional(),
   name: z.string().min(2).max(120),
   venueType: z.enum(['cafe', 'restaurant', 'bar']).default('cafe'),
   address: z.string().max(240).optional().nullable(),
@@ -174,6 +174,9 @@ async function updateEvent(id: string, fields: Record<string, unknown>) {
 }
 
 const placeSchema = placeFields.superRefine((value, ctx) => {
+  if (!value.address?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['address'], message: 'A complete address is required for precise map coordinates.' })
+  }
   if (value.dealCodeEnabled && (!value.isPartnered || !value.dealCode?.trim())) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dealCodeEnabled'], message: 'A visible code requires a partnered listing and a code.' })
   }
@@ -226,9 +229,13 @@ adminPanelRouter.get('/cafes', async (_req, res) => {
 adminPanelRouter.post('/cafes', async (req, res) => {
   const parsed = placeSchema.safeParse(req.body)
   if (!parsed.success) return res.status(422).json({ error: 'Invalid place', fields: parsed.error.flatten() })
-  const insert = await supabase.from('cafes').insert(placePatch(parsed.data)).select('*').single()
-  if (insert.error) return placeSchemaError(res, insert.error.message)
-  return res.status(201).json({ cafe: insert.data })
+  try {
+    const slug = await uniqueCafeSlug(parsed.data.name)
+    const coordinates = await geocodeCafe(parsed.data.address, parsed.data.city)
+    const insert = await supabase.from('cafes').insert({ ...placePatch(parsed.data), slug, ...coordinates }).select('*').single()
+    if (insert.error) return placeSchemaError(res, insert.error.message)
+    return res.status(201).json({ cafe: insert.data })
+  } catch (error) { return res.status(422).json({ error: error instanceof Error ? error.message : 'Could not locate this address.' }) }
 })
 
 adminPanelRouter.patch('/cafes/:id', async (req, res) => {
@@ -243,7 +250,15 @@ adminPanelRouter.patch('/cafes/:id', async (req, res) => {
   const enabled = parsed.data.dealCodeEnabled ?? current.data.deal_code_enabled
   if (enabled && (!partnered || !code?.trim())) return res.status(422).json({ error: 'A visible code requires a partnered listing and a code.' })
 
-  const patch = { ...placePatch(parsed.data as z.infer<typeof placeFields>), updated_at: new Date().toISOString() }
+  let generated: Record<string, unknown> = {}
+  try {
+    if (parsed.data.address !== undefined || parsed.data.city !== undefined) {
+      const existing = await supabase.from('cafes').select('address, city').eq('id', req.params.id).single()
+      if (existing.error) return placeSchemaError(res, existing.error.message)
+      generated = { ...generated, ...await geocodeCafe(parsed.data.address ?? existing.data.address, parsed.data.city ?? existing.data.city) }
+    }
+  } catch (error) { return res.status(422).json({ error: error instanceof Error ? error.message : 'Could not locate this address.' }) }
+  const patch = { ...placePatch(parsed.data as z.infer<typeof placeFields>), ...generated, updated_at: new Date().toISOString() }
   const update = await supabase.from('cafes').update(patch).eq('id', req.params.id).select('*').maybeSingle()
   if (update.error) return placeSchemaError(res, update.error.message)
   if (!update.data) return res.status(404).json({ error: 'Place not found.' })
@@ -313,6 +328,38 @@ adminPanelRouter.get('/events', async (_req, res) => {
   if (result.error) return eventSchemaError(res, result.error.message)
   return res.json({ events: result.data ?? [] })
 })
+
+function cafeSlug(name: string) {
+  return name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 56) || 'place'
+}
+
+async function uniqueCafeSlug(name: string, currentId?: string) {
+  const base = cafeSlug(name)
+  for (let suffix = 0; suffix < 100; suffix += 1) {
+    const slug = suffix ? `${base}-${suffix + 1}` : base
+    let query = supabase.from('cafes').select('id').eq('slug', slug)
+    if (currentId) query = query.neq('id', currentId)
+    const existing = await query.maybeSingle()
+    if (existing.error) throw new Error(existing.error.message)
+    if (!existing.data) return slug
+  }
+  throw new Error('Could not create a unique place identifier.')
+}
+
+async function geocodeCafe(address: string | null | undefined, city: string) {
+  const query = [address?.trim(), city.trim(), 'Germany'].filter(Boolean).join(', ')
+  if (!address?.trim()) return { lat: null, lng: null }
+  const params = new URLSearchParams({ q: query, format: 'jsonv2', limit: '1', countrycodes: 'de', addressdetails: '1' })
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+    headers: { 'User-Agent': 'knotify-admin/1.0 (https://knotify.pro)' }, signal: AbortSignal.timeout(8000),
+  })
+  if (!response.ok) throw new Error('Address lookup is temporarily unavailable.')
+  const [match] = await response.json() as Array<{ lat: string; lon: string }>
+  const lat = Number(match?.lat); const lng = Number(match?.lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error(`Could not precisely locate “${query}”. Check the street, number, postal code, and city.`)
+  return { lat, lng }
+}
 
 adminPanelRouter.get('/event-types', async (_req, res) => {
   const { types, error } = await getEventTypes()
@@ -440,20 +487,24 @@ adminPanelRouter.post('/cafes/import', async (req, res) => {
     const row = Number(item?.row) || 0
     const parsed = placeSchema.safeParse(item?.data)
     if (!parsed.success) { results.push({ row, status: 'error', error: parsed.error.issues.map(i => `${i.path.join('.') || 'row'}: ${i.message}`).join('; ') }); continue }
-    const fields = placePatch(parsed.data)
-    const key = `${String(fields.slug).toLowerCase()}|${String(fields.name).toLowerCase()}|${String(fields.address ?? '').toLowerCase()}|${String(fields.area ?? '').toLowerCase()}`
+    let fields = placePatch(parsed.data)
+    try { fields = { ...fields, ...await geocodeCafe(parsed.data.address, parsed.data.city) } }
+    catch (error) { results.push({ row, status: 'error', error: error instanceof Error ? error.message : 'Could not locate this address.' }); continue }
+    const key = `${String(fields.name).toLowerCase()}|${String(fields.address ?? '').toLowerCase()}|${String(fields.area ?? '').toLowerCase()}`
     if (seen.has(key)) { results.push({ row, status: 'skipped', error: 'Duplicate row in this import.' }); continue }
     seen.add(key)
-    const bySlug = await supabase.from('cafes').select('id, slug, name, address, area').eq('slug', String(fields.slug)).maybeSingle()
-    if (bySlug.error) { results.push({ row, status: 'error', error: bySlug.error.message }); continue }
-    const byName = bySlug.data ? { data: [], error: null } : await supabase.from('cafes').select('id, slug, name, address, area').ilike('name', String(fields.name))
+    const byName = await supabase.from('cafes').select('id, slug, name, address, area').ilike('name', String(fields.name))
     if (byName.error) { results.push({ row, status: 'error', error: byName.error.message }); continue }
-    const existing = [bySlug.data, ...(byName.data ?? [])].filter(Boolean).find(cafe => cafe!.slug === fields.slug || (
+    const existing = (byName.data ?? []).find(cafe => (
       cafe!.name.trim().toLowerCase() === String(fields.name).trim().toLowerCase() &&
       (cafe!.address ?? '').trim().toLowerCase() === String(fields.address ?? '').trim().toLowerCase() &&
       (cafe!.area ?? '').trim().toLowerCase() === String(fields.area ?? '').trim().toLowerCase()
     ))
     if (existing && !updateExisting) { results.push({ row, status: 'skipped', error: 'Likely duplicate exists; choose update mode to update it.' }); continue }
+    if (!existing) {
+      try { fields.slug = await uniqueCafeSlug(parsed.data.name) }
+      catch (error) { results.push({ row, status: 'error', error: error instanceof Error ? error.message : 'Could not create an identifier.' }); continue }
+    }
     const write = existing
       ? await supabase.from('cafes').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', existing.id)
       : await supabase.from('cafes').insert(fields)

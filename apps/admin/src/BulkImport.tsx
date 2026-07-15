@@ -8,7 +8,7 @@ type Issue = { field: string; message: string; severity: 'error' | 'warning' }
 type PreviewRow = { row: number; data: Record<string, unknown>; issues: Issue[] }
 
 const EVENT_COLUMNS = ['title', 'description', 'location', 'start_date', 'start_time', 'end_date', 'end_time', 'url', 'host_label', 'image_url', 'event_type', 'capacity', 'price_eur']
-const CAFE_COLUMNS = ['slug', 'name', 'venue_type', 'address', 'city', 'area', 'description', 'perk_text', 'photo_url', 'hours_text', 'lat', 'lng', 'is_partnered', 'is_active', 'deal_title', 'deal_details', 'deal_code', 'deal_code_enabled', 'featured_priority']
+const CAFE_COLUMNS = ['name', 'venue_type', 'address', 'city', 'area', 'description', 'perk_text', 'photo_url', 'hours_text', 'is_partnered', 'is_active', 'deal_title', 'deal_details', 'deal_code', 'deal_code_enabled', 'featured_priority']
 const EVENT_TYPES = new Set(DEFAULT_EVENT_TYPES.map(type => type.toLowerCase()))
 
 function key(value: unknown) { return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') }
@@ -111,10 +111,9 @@ function eventRow(row: Record<string, unknown>, rowNumber: number): PreviewRow {
 
 function cafeRow(row: Record<string, unknown>, rowNumber: number): PreviewRow {
   const issues: Issue[] = []
-  const slug = value(row, 'slug').toLowerCase()
   const name = value(row, 'name')
-  if (!/^[a-z0-9-]{2,64}$/.test(slug)) issues.push({ field: 'slug', message: 'is required; use 2–64 lowercase letters, numbers, or hyphens', severity: 'error' })
   if (name.length < 2) issues.push({ field: 'name', message: 'is required (at least 2 characters)', severity: 'error' })
+  if (!value(row, 'address')) issues.push({ field: 'address', message: 'is required for precise map coordinates', severity: 'error' })
   const venueType = (value(row, 'venue_type') || 'cafe').toLowerCase()
   if (!['cafe', 'restaurant', 'bar'].includes(venueType)) issues.push({ field: 'venue_type', message: 'must be cafe, restaurant, or bar', severity: 'error' })
   const isPartnered = bool(value(row, 'is_partnered'), 'is_partnered', issues, false)
@@ -122,10 +121,9 @@ function cafeRow(row: Record<string, unknown>, rowNumber: number): PreviewRow {
   const dealCodeEnabled = bool(value(row, 'deal_code_enabled'), 'deal_code_enabled', issues, false)
   if (dealCodeEnabled && (!isPartnered || !dealCode)) issues.push({ field: 'deal_code_enabled', message: 'requires a partnered listing with a deal_code', severity: 'error' })
   return { row: rowNumber, issues, data: {
-    slug, name, venueType, address: emptyOrText(value(row, 'address')), city: value(row, 'city') || 'Munich',
+    name, venueType, address: emptyOrText(value(row, 'address')), city: value(row, 'city') || 'Munich',
     area: emptyOrText(value(row, 'area')), description: emptyOrText(value(row, 'description')), perkText: emptyOrText(value(row, 'perk_text')),
     photoUrl: urlOrIssue(value(row, 'photo_url'), 'photo_url', issues), hoursText: emptyOrText(value(row, 'hours_text')),
-    lat: decimal(value(row, 'lat'), 'lat', issues, -90, 90), lng: decimal(value(row, 'lng'), 'lng', issues, -180, 180),
     isPartnered, isActive: bool(value(row, 'is_active'), 'is_active', issues, true), dealTitle: emptyOrText(value(row, 'deal_title')),
     dealDetails: emptyOrText(value(row, 'deal_details')), dealCode, dealCodeEnabled,
     featuredPriority: wholeNumber(value(row, 'featured_priority'), 'featured_priority', issues),
@@ -136,7 +134,7 @@ function template(kind: Kind, csv: boolean) {
   const columns = kind === 'events' ? EVENT_COLUMNS : CAFE_COLUMNS
   const examples = kind === 'events'
     ? ['TUM x Industry Night', 'Meet local founders and students.', 'Audimax', '2026-09-20', '18:00', '', '', 'https://example.com/event', 'TUM', '', 'Business & Networking', '100', '0']
-    : ['example-cafe', 'Example Cafe', 'cafe', 'Sample street 1', 'Munich', 'Maxvorstadt', '', '', 'https://example.com/image.jpg', '', '', '', 'false', 'true', '', '', '', 'false', '0']
+    : ['Example Cafe', 'cafe', 'Sample street 1, 80333', 'Munich', 'Maxvorstadt', '', '', 'https://example.com/image.jpg', '', 'false', 'true', '', '', '', 'false', '0']
   const worksheet = XLSX.utils.aoa_to_sheet([columns, examples])
   const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, worksheet, kind === 'events' ? 'Events' : 'Cafes')
   XLSX.writeFile(book, `knotify-${kind}-import-template.${csv ? 'csv' : 'xlsx'}`, { bookType: csv ? 'csv' : 'xlsx' })
