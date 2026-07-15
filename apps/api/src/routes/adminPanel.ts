@@ -86,7 +86,7 @@ const eventFieldsBase = z.object({
   url: httpUrl.nullable().optional(),
   hostLabel: z.string().trim().max(160).nullable().optional(),
   imageUrl: httpUrl.nullable().optional(),
-  eventType: z.enum(['networking', 'social', 'sports', 'music', 'career', 'workshop', 'outdoor', 'party']).nullable().optional(),
+  eventType: z.string().trim().min(2).max(80).nullable().optional(),
   capacity: z.number().int().min(0).max(100000).nullable().optional(),
   priceEur: z.number().int().min(0).max(100000).nullable().optional(),
   interests: z.array(z.string().trim().min(1).max(60)).max(10).optional(),
@@ -128,6 +128,16 @@ function eventSchemaError(res: any, message: string) {
 
 const adminEventFields = 'id, title, description, location, starts_at, ends_at, time_tba, source, url, host_label, image_url, event_type, capacity, price_eur, interests, created_at'
 const legacyAdminEventFields = 'id, title, description, location, starts_at, ends_at, source, url, host_label, image_url, event_type, capacity, price_eur, interests, created_at'
+const defaultEventTypes = ['Business & Networking', 'Career & Jobs', 'Conference', 'Seminar', 'Lecture & Talk', 'Workshop & Training', 'Class & Course', 'Meetup', 'Community & Social', 'Education & Academic', 'Technology', 'Science', 'Health & Medical', 'Wellness', 'Sports', 'Fitness', 'Outdoor & Adventure', 'Travel & Excursion', 'Music', 'Concert', 'Dance', 'Theatre', 'Comedy', 'Film Screening', 'Arts & Culture', 'Exhibition', 'Literature & Poetry', 'Festival', 'Party & Nightlife', 'Food & Drink', 'Market', 'Fair & Expo', 'Trade Show', 'Competition & Contest', 'Gaming & Esports', 'Hobby & Leisure', 'Family & Children', 'Dating & Singles', 'Religion & Spirituality', 'Charity & Fundraising', 'Volunteering', 'Environment & Sustainability', 'Government & Civic', 'Politics & Public Affairs', 'Fashion & Beauty', 'Parade & Procession', 'Awards & Ceremony', 'Wedding', 'Private Celebration', 'Holiday & Seasonal', 'Online & Virtual', 'Hybrid', 'Other']
+
+async function getEventTypes() {
+  const result = await supabase.from('app_settings').select('value').eq('key', 'event_types').maybeSingle()
+  const types = Array.isArray(result.data?.value) ? result.data.value.filter((value): value is string => typeof value === 'string' && value.trim().length > 1).map(value => value.trim()) : defaultEventTypes
+  return { types: [...new Set(types)].sort((a, b) => a.localeCompare(b)), error: result.error }
+}
+async function saveEventTypes(types: string[]) {
+  return supabase.from('app_settings').upsert({ key: 'event_types', value: types, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+}
 
 function isMissingTimeTba(message: string) { return message.includes('time_tba') }
 
@@ -264,6 +274,40 @@ adminPanelRouter.get('/events', async (_req, res) => {
   }
   if (result.error) return eventSchemaError(res, result.error.message)
   return res.json({ events: result.data ?? [] })
+})
+
+adminPanelRouter.get('/event-types', async (_req, res) => {
+  const { types, error } = await getEventTypes()
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json({ types })
+})
+adminPanelRouter.post('/event-types', async (req, res) => {
+  const label = typeof req.body?.label === 'string' ? req.body.label.trim().replace(/\s+/g, ' ') : ''
+  if (label.length < 2 || label.length > 80) return res.status(422).json({ error: 'Type must be 2–80 characters.' })
+  const current = await getEventTypes(); if (current.error) return res.status(500).json({ error: current.error.message })
+  const types = [...current.types, label].filter((value, index, all) => all.findIndex(item => item.toLowerCase() === value.toLowerCase()) === index)
+  const saved = await saveEventTypes(types); if (saved.error) return res.status(500).json({ error: saved.error.message })
+  return res.status(201).json({ types })
+})
+adminPanelRouter.patch('/event-types', async (req, res) => {
+  const label = typeof req.body?.label === 'string' ? req.body.label.trim() : ''
+  const nextLabel = typeof req.body?.nextLabel === 'string' ? req.body.nextLabel.trim().replace(/\s+/g, ' ') : ''
+  if (!label || nextLabel.length < 2 || nextLabel.length > 80) return res.status(422).json({ error: 'Invalid event type.' })
+  const current = await getEventTypes(); if (current.error) return res.status(500).json({ error: current.error.message })
+  if (!current.types.includes(label)) return res.status(404).json({ error: 'Event type not found.' })
+  const types = current.types.map(type => type === label ? nextLabel : type)
+  const saved = await saveEventTypes(types); if (saved.error) return res.status(500).json({ error: saved.error.message })
+  const events = await supabase.from('events').update({ event_type: nextLabel }).eq('event_type', label)
+  if (events.error) return res.status(500).json({ error: events.error.message })
+  return res.json({ types })
+})
+adminPanelRouter.delete('/event-types', async (req, res) => {
+  const label = typeof req.body?.label === 'string' ? req.body.label.trim() : ''
+  const current = await getEventTypes(); if (current.error) return res.status(500).json({ error: current.error.message })
+  const types = current.types.filter(type => type !== label)
+  if (types.length === current.types.length) return res.status(404).json({ error: 'Event type not found.' })
+  const saved = await saveEventTypes(types); if (saved.error) return res.status(500).json({ error: saved.error.message })
+  return res.json({ types })
 })
 
 adminPanelRouter.post('/events', async (req, res) => {

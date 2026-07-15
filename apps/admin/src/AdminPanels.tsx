@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from './api'
 import { BulkImport } from './BulkImport'
+import { DEFAULT_EVENT_TYPES } from './eventTypes'
 
 const C = {
   signal: '#D8442B', ink: '#1a1410', inkMuted: '#6b5f55', inkFaint: '#a09287',
@@ -213,8 +214,6 @@ export function CafesAdmin() {
   )
 }
 
-const EVENT_TYPES = ['networking', 'social', 'sports', 'music', 'career', 'workshop', 'outdoor', 'party']
-
 type EventForm = {
   title: string; description: string; location: string; startDate: string; startTime: string; endDate: string; endTime: string
   url: string; hostLabel: string; imageUrl: string; eventType: string
@@ -261,6 +260,8 @@ function formToEventPayload(f: EventForm) {
 
 export function EventsAdmin() {
   const [events, setEvents] = useState<any[]>([])
+  const [eventTypes, setEventTypes] = useState<string[]>(DEFAULT_EVENT_TYPES)
+  const [newEventType, setNewEventType] = useState('')
   const [eventFilter, setEventFilter] = useState<'all' | 'upcoming' | 'past' | 'tba'>('all')
   const [eventSearch, setEventSearch] = useState('')
   const [form, setForm] = useState<EventForm>(emptyEvent)
@@ -272,6 +273,7 @@ export function EventsAdmin() {
     try { setEvents((await api.events()).events) } catch (e: any) { setErr(e.message) }
   }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => { api.eventTypes().then(data => setEventTypes(data.types?.length ? data.types : DEFAULT_EVENT_TYPES)).catch(() => {}) }, [])
 
   function startEdit(ev: any) {
     setEditId(ev.id)
@@ -360,7 +362,7 @@ export function EventsAdmin() {
             <label style={fieldLabel}>Event type</label>
             <select style={inp} value={f.eventType} onChange={set('eventType')}>
               <option value="">— select —</option>
-              {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
         </div>
@@ -438,6 +440,11 @@ export function EventsAdmin() {
         ))}
         {events.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No events yet.</div>}
         {events.length > 0 && visibleEvents.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No events match this filter.</div>}
+      </div>
+      <div style={{ ...cardWrap, marginTop: 20 }}>
+        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Manage event types</h3>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}><input style={{ ...inp, flex: 1, minWidth: 180 }} placeholder="Add a type" value={newEventType} onChange={e => setNewEventType(e.target.value)} /><button type="button" style={primaryBtn} onClick={async () => { const result = await api.addEventType(newEventType); setEventTypes(result.types); setNewEventType('') }}>Add type</button></div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{eventTypes.map(type => <span key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 7px', borderRadius: 7, background: C.paperSoft, fontSize: 12 }}><button type="button" title="Rename" style={{ border: 0, background: 'transparent', cursor: 'pointer', color: C.ink }} onClick={async () => { const next = prompt('Rename event type', type)?.trim(); if (next && next !== type) { const result = await api.renameEventType(type, next); setEventTypes(result.types); setForm(prev => prev.eventType === type ? { ...prev, eventType: next } : prev) } }}>{type}</button><button type="button" title="Delete" style={{ border: 0, background: 'transparent', cursor: 'pointer', color: C.signal }} onClick={async () => { if (confirm(`Remove “${type}” from future choices? Existing events keep their type.`)) { const result = await api.deleteEventType(type); setEventTypes(result.types); setForm(prev => prev.eventType === type ? { ...prev, eventType: '' } : prev) } }}>×</button></span>)}</div>
       </div>
     </div>
   )
