@@ -3,8 +3,8 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CalendarClock, Coffee, Copy, MapPin, Search, Users, X } from 'lucide-react'
-import { KBtn, KCard, KPill } from '@/lib/knotify'
+import { CalendarClock, Check, Coffee, MapPin, Search, Users, X } from 'lucide-react'
+import { KBtn, KCard } from '@/lib/knotify'
 import { apiGetCached, apiPost, getApiCacheSnapshot } from '@/lib/api'
 import { T, DeskPage, DeskHeader, SectionLabel, Chip, RailCard } from '@/lib/desk'
 
@@ -50,6 +50,15 @@ function defaultMeetingTime() {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16)
 }
 
+function mapUrl(cafe: Pick<Cafe, 'name' | 'address' | 'city'>) {
+  const query = [cafe.name, cafe.address, cafe.city].filter(Boolean).join(', ')
+  return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : null
+}
+
+function hourLines(hours: string | null) {
+  return hours?.split(';').map((part) => part.trim()).filter(Boolean) ?? []
+}
+
 export function CafesPage() {
   const [cafes, setCafes] = useState<Cafe[]>(() => getApiCacheSnapshot<{ cafes: Cafe[] }>(CAFES_PATH)?.cafes ?? [])
   const [connections, setConnections] = useState<Connection[]>([])
@@ -58,7 +67,8 @@ export function CafesPage() {
   const [search, setSearch] = useState('')
   const [inviteCafe, setInviteCafe] = useState<Cafe | null>(null)
   const [selectedCafe, setSelectedCafe] = useState<Cafe | null>(null)
-  const [inviteeId, setInviteeId] = useState('')
+  const [inviteeIds, setInviteeIds] = useState<string[]>([])
+  const [inviteSearch, setInviteSearch] = useState('')
   const [scheduledAt, setScheduledAt] = useState(defaultMeetingTime)
   const [note, setNote] = useState('')
   const [sendingInvite, setSendingInvite] = useState(false)
@@ -92,9 +102,16 @@ export function CafesPage() {
     return cafes.filter((cafe) => [cafe.name, cafe.venue_type, cafe.area].some((value) => value?.toLowerCase().includes(query)))
   }, [cafes, search])
 
+  const visibleConnections = useMemo(() => {
+    const query = inviteSearch.trim().toLowerCase()
+    if (!query) return connections
+    return connections.filter(({ user }) => user && `${user.full_name} @${user.username}`.toLowerCase().includes(query))
+  }, [connections, inviteSearch])
+
   function openInvite(cafe: Cafe) {
     setInviteCafe(cafe)
-    setInviteeId('')
+    setInviteeIds([])
+    setInviteSearch('')
     setScheduledAt(defaultMeetingTime())
     setNote('')
     setInviteSent(null)
@@ -102,19 +119,18 @@ export function CafesPage() {
   }
 
   async function sendInvite() {
-    if (!inviteCafe || !inviteeId || !scheduledAt) return
+    if (!inviteCafe || inviteeIds.length === 0 || !scheduledAt) return
     setSendingInvite(true)
     setError(null)
     try {
-      await apiPost('/api/meetings', {
+      await Promise.all(inviteeIds.map((inviteeId) => apiPost('/api/meetings', {
         inviteeId,
         scheduledAt: new Date(scheduledAt).toISOString(),
         cafeId: inviteCafe.id,
         locationText: null,
         note: note.trim() || null,
-      })
-      const invitee = connections.find((connection) => connection.user?.id === inviteeId)?.user
-      setInviteSent(`Invitation sent to ${invitee?.full_name ?? 'your connection'} through Messages.`)
+      })))
+      setInviteSent(`${inviteeIds.length} invitation${inviteeIds.length === 1 ? '' : 's'} sent through Messages.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send the invitation')
     } finally {
@@ -185,12 +201,25 @@ export function CafesPage() {
               <div style={{ padding: 14, borderRadius: 12, background: T.ochreSoft, color: T.ochre, fontSize: 13 }}>You need an accepted connection before you can choose this place. <a href="/discover" style={{ color: 'inherit', fontWeight: 700 }}>Find people</a></div>
             ) : (
               <div style={{ display: 'grid', gap: 13 }}>
-                <label style={{ fontSize: 12, color: T.inkMuted }}>Invitee (required)
-                  <select value={inviteeId} onChange={(event) => setInviteeId(event.target.value)} style={inputStyle}>
-                    <option value="">Choose someone from your knot</option>
-                    {connections.map((connection) => <option key={connection.id} value={connection.user!.id}>{connection.user!.full_name} · @{connection.user!.username}</option>)}
-                  </select>
-                </label>
+                <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+                  <legend style={{ fontSize: 12, color: T.inkMuted, marginBottom: 5 }}>Invite people (required)</legend>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={15} style={{ position: 'absolute', left: 12, top: 14, color: T.inkFaint }} />
+                    <input aria-label="Search people" value={inviteSearch} onChange={(event) => setInviteSearch(event.target.value)} placeholder="Search by name or username" style={{ ...inputStyle, marginTop: 0, paddingLeft: 35 }} />
+                  </div>
+                  <div style={{ marginTop: 7, maxHeight: 190, overflowY: 'auto', border: `0.5px solid ${T.rule}`, borderRadius: 10, background: T.paperSoft }}>
+                    {visibleConnections.map((connection) => {
+                      const user = connection.user!
+                      const selected = inviteeIds.includes(user.id)
+                      return <button key={connection.id} type="button" aria-pressed={selected} onClick={() => setInviteeIds((current) => selected ? current.filter((id) => id !== user.id) : [...current, user.id])} style={{ width: '100%', border: 0, borderBottom: `0.5px solid ${T.ruleSoft}`, background: selected ? T.verdSoft : 'transparent', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: T.ink, cursor: 'pointer', fontFamily: T.text }}>
+                        <span style={{ width: 18, height: 18, borderRadius: 5, border: `1px solid ${selected ? T.verd : T.rule}`, background: selected ? T.verd : T.paper, color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{selected && <Check size={12} />}</span>
+                        <span><b style={{ fontSize: 13 }}>{user.full_name}</b><span style={{ color: T.inkMuted, fontSize: 12 }}> @{user.username}</span></span>
+                      </button>
+                    })}
+                    {visibleConnections.length === 0 && <div style={{ padding: 14, color: T.inkMuted, fontSize: 12.5 }}>No people match this search.</div>}
+                  </div>
+                  {inviteeIds.length > 0 && <div style={{ marginTop: 6, color: T.verd, fontSize: 12 }}>{inviteeIds.length} selected</div>}
+                </fieldset>
                 <label style={{ fontSize: 12, color: T.inkMuted }}>Date and time (required)
                   <input type="datetime-local" value={scheduledAt} min={new Date().toISOString().slice(0, 16)} onChange={(event) => setScheduledAt(event.target.value)} style={inputStyle} />
                 </label>
@@ -201,7 +230,7 @@ export function CafesPage() {
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
               <KBtn variant="ghost" size="sm" onClick={() => setInviteCafe(null)} disabled={sendingInvite}>{inviteSent ? 'Done' : 'Cancel'}</KBtn>
-              {!inviteSent && connections.length > 0 && <KBtn variant="signal" size="sm" onClick={sendInvite} disabled={sendingInvite || !inviteeId || !scheduledAt}>{sendingInvite ? 'Sending…' : 'Send invitation'}</KBtn>}
+              {!inviteSent && connections.length > 0 && <KBtn variant="signal" size="sm" onClick={sendInvite} disabled={sendingInvite || inviteeIds.length === 0 || !scheduledAt}>{sendingInvite ? 'Sending…' : `Send ${inviteeIds.length || ''} invitation${inviteeIds.length === 1 ? '' : 's'}`.trim()}</KBtn>}
             </div>
           </div>
         </div>
@@ -229,6 +258,7 @@ export function CafesPage() {
 
 function CafeCard({ cafe, onInvite, onOpen }: { cafe: Cafe; onInvite: () => void; onOpen: () => void }) {
   const typeLabel = cafe.venue_type === 'cafe' ? 'Café' : cafe.venue_type === 'restaurant' ? 'Restaurant' : 'Bar'
+  const maps = mapUrl(cafe)
 
   return (
     <KCard onClick={onOpen} style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 210, cursor: 'pointer' }}>
@@ -237,11 +267,11 @@ function CafeCard({ cafe, onInvite, onOpen }: { cafe: Cafe; onInvite: () => void
       </div>
       <div style={{ padding: 14, display: 'flex', flexDirection: 'column', flex: 1 }}>
         <div style={{ fontFamily: T.display, fontSize: 19, fontWeight: 500 }}>{cafe.name}</div>
-        <div style={{ marginTop: 4, color: T.inkMuted, fontSize: 12.5 }}>{[cafe.area, cafe.address, cafe.hours_text].filter(Boolean).join(' · ')}</div>
+        <div style={{ marginTop: 5, color: T.inkMuted, fontSize: 12.5, lineHeight: 1.45 }}>{[cafe.area, cafe.address].filter(Boolean).join(' · ')}</div>
+        {cafe.hours_text && <div style={{ marginTop: 7, color: T.inkSoft, fontSize: 12.5, lineHeight: 1.45, display: 'flex', alignItems: 'flex-start', gap: 6 }}><CalendarClock size={13} color={T.ochre} style={{ marginTop: 2, flexShrink: 0 }} /><span>{hourLines(cafe.hours_text).map((line) => <span key={line} style={{ display: 'block' }}>{line}</span>)}</span></div>}
         <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <KBtn variant="signal" size="sm" onClick={(event) => { event.stopPropagation(); onInvite() }}><Users size={13} style={{ marginRight: 5 }} />Plan here</KBtn>
-          {cafe.lat != null && cafe.lng != null && <a onClick={(event) => event.stopPropagation()} href={`https://www.google.com/maps?q=${cafe.lat},${cafe.lng}`} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 12.5, textDecoration: 'none' }}><MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Map</a>}
-          {!cafe.is_partnered && <KPill color="default">Listed place</KPill>}
+          {maps && <a onClick={(event) => event.stopPropagation()} href={maps} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 12.5, textDecoration: 'none' }}><MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Map</a>}
         </div>
       </div>
     </KCard>
@@ -249,7 +279,6 @@ function CafeCard({ cafe, onInvite, onOpen }: { cafe: Cafe; onInvite: () => void
 }
 
 function CafeDetailModal({ cafe, onClose, onInvite }: { cafe: Cafe; onClose: () => void; onInvite: () => void }) {
-  const [copied, setCopied] = useState(false)
   useEffect(() => {
     const previous = document.body.style.overflow; document.body.style.overflow = 'hidden'
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -257,7 +286,7 @@ function CafeDetailModal({ cafe, onClose, onInvite }: { cafe: Cafe; onClose: () 
     return () => { document.body.style.overflow = previous; document.removeEventListener('keydown', close) }
   }, [onClose])
   const typeLabel = cafe.venue_type === 'cafe' ? 'Café' : cafe.venue_type === 'restaurant' ? 'Restaurant' : 'Bar'
-  const mapUrl = cafe.lat != null && cafe.lng != null ? `https://www.google.com/maps?q=${cafe.lat},${cafe.lng}` : null
+  const maps = mapUrl(cafe)
   return createPortal(<div className="k-overlay cafe-detail-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <div className="k-modal-card cafe-detail-modal" role="dialog" aria-modal="true" aria-label={cafe.name}>
       <div style={{ margin: '-28px -24px 0', height: 220, background: cafe.photo_url ? `center/cover no-repeat url(${cafe.photo_url})` : `linear-gradient(135deg, ${cafe.is_partnered ? T.signal : T.inkMuted}, ${cafe.is_partnered ? T.signalDeep : T.ink})`, borderRadius: '20px 20px 0 0', position: 'relative' }}>
@@ -268,11 +297,11 @@ function CafeDetailModal({ cafe, onClose, onInvite }: { cafe: Cafe; onClose: () 
       <div style={{ display: 'flex', gap: 8, margin: '20px 0 16px' }}><Chip color={cafe.is_partnered ? 'signal' : 'paper'}>{cafe.is_partnered ? 'Partner' : typeLabel}</Chip>{cafe.is_partnered && <Chip color="paper">{typeLabel}</Chip>}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10, marginBottom: 18 }}>
         <div style={detailBox}><b style={detailLabel}>Location</b><div><MapPin size={13} color={T.signal} /> {[cafe.address, cafe.city].filter(Boolean).join(', ')}</div></div>
-        {cafe.hours_text && <div style={detailBox}><b style={detailLabel}>Hours</b><div><CalendarClock size={13} color={T.ochre} /> {cafe.hours_text}</div></div>}
+        {cafe.hours_text && <div style={detailBox}><b style={detailLabel}>Hours</b><div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}><CalendarClock size={13} color={T.ochre} style={{ marginTop: 3, flexShrink: 0 }} /><span>{hourLines(cafe.hours_text).map((line) => <span key={line} style={{ display: 'block' }}>{line}</span>)}</span></div></div>}
       </div>
       {cafe.description && <p style={{ color: T.inkSoft, fontSize: 14, lineHeight: 1.7 }}>{cafe.description}</p>}
-      {cafe.is_partnered && (cafe.deal_title || cafe.deal_details || cafe.perk_text) && <div data-tour="cafe-partner-deals" style={{ ...detailBox, margin: '16px 0', background: T.ochreSoft }}><b style={{ color: T.ochre }}>{cafe.deal_title || cafe.perk_text || 'Partner deal'}</b>{cafe.deal_details && <div style={{ marginTop: 5 }}>{cafe.deal_details}</div>}{cafe.deal_code_enabled && cafe.deal_code && <button onClick={async () => { await navigator.clipboard.writeText(cafe.deal_code!); setCopied(true) }} style={{ marginTop: 9, border: 0, borderRadius: 8, padding: '7px 10px', background: T.paper, color: T.ochre, cursor: 'pointer' }}><Copy size={12} /> {copied ? 'Copied' : cafe.deal_code}</button>}</div>}
-      <div style={{ display: 'flex', gap: 10 }}><button onClick={onInvite} style={{ flex: 1, padding: 14, border: 0, borderRadius: 999, background: T.signal, color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Plan here</button>{mapUrl && <a href={mapUrl} target="_blank" rel="noreferrer" style={{ padding: 14, color: T.signal, textDecoration: 'none' }}>Map</a>}</div>
+      {cafe.is_partnered && (cafe.deal_title || cafe.deal_details || cafe.perk_text) && <div data-tour="cafe-partner-deals" style={{ ...detailBox, margin: '16px 0', background: T.ochreSoft }}><b style={{ color: T.ochre }}>{cafe.deal_title || cafe.perk_text || 'Partner deal'}</b>{cafe.deal_details && <div style={{ marginTop: 5 }}>{cafe.deal_details}</div>}{cafe.deal_code_enabled && <div style={{ marginTop: 7, color: T.inkMuted, fontSize: 12 }}>The organiser receives the deal code in Messages after an invitee accepts.</div>}</div>}
+      <div style={{ display: 'flex', gap: 10 }}><button onClick={onInvite} style={{ flex: 1, padding: 14, border: 0, borderRadius: 999, background: T.signal, color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Plan here</button>{maps && <a href={maps} target="_blank" rel="noreferrer" style={{ padding: 14, color: T.signal, textDecoration: 'none' }}>Map</a>}</div>
     </div>
   </div>, document.body)
 }

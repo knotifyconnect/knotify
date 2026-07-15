@@ -366,6 +366,7 @@ type CafeOption = {
   id: string
   name: string
   address: string | null
+  deal_code?: string | null
 }
 
 type MeetingStatus = 'proposed' | 'confirmed' | 'declined' | 'cancelled' | 'completed'
@@ -2358,6 +2359,12 @@ function CoffeeActionCard({
         {meeting.note && (
           <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 6, fontStyle: 'italic' }}>
             “{meeting.note}”
+          </div>
+        )}
+        {isConfirmed && meeting.am_initiator && meeting.cafe?.deal_code && (
+          <div style={{ marginTop: 9, display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 10px', borderRadius: 9, background: 'var(--paper)', border: '0.5px solid rgba(200, 148, 31, 0.36)', color: 'var(--ochre)', fontSize: 12.5 }}>
+            <span style={{ fontWeight: 600 }}>Partner deal code</span>
+            <code style={{ fontSize: 13, fontWeight: 700, userSelect: 'all' }}>{meeting.cafe.deal_code}</code>
           </div>
         )}
       </div>
