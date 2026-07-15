@@ -102,31 +102,29 @@ function toDate(iso: string | null | undefined) { return toLocal(iso).slice(0, 1
 function toTime(iso: string | null | undefined) { return toLocal(iso).slice(11, 16) }
 
 type CafeForm = {
-  slug: string; name: string; venueType: CafeRow['venue_type']; address: string; city: string
+  name: string; venueType: CafeRow['venue_type']; address: string; city: string
   area: string; description: string; perkText: string; photoUrl: string; hoursText: string
-  lat: string; lng: string; isPartnered: boolean; isActive: boolean; dealTitle: string
+  isPartnered: boolean; isActive: boolean; dealTitle: string
   dealDetails: string; dealCode: string; dealCodeEnabled: boolean; featuredPriority: string
 }
 
 const emptyCafe: CafeForm = {
-  slug: '', name: '', venueType: 'cafe', address: '', city: 'Munich', area: '', description: '',
-  perkText: '', photoUrl: '', hoursText: '', lat: '', lng: '', isPartnered: false, isActive: true,
+  name: '', venueType: 'cafe', address: '', city: 'Munich', area: '', description: '',
+  perkText: '', photoUrl: '', hoursText: '', isPartnered: false, isActive: true,
   dealTitle: '', dealDetails: '', dealCode: '', dealCodeEnabled: false, featuredPriority: '0',
 }
 
 function cafeToForm(cafe: CafeRow): CafeForm {
   return {
-    slug: cafe.slug, name: cafe.name, venueType: cafe.venue_type, address: cafe.address ?? '', city: cafe.city,
+    name: cafe.name, venueType: cafe.venue_type, address: cafe.address ?? '', city: cafe.city,
     area: cafe.area ?? '', description: cafe.description ?? '', perkText: cafe.perk_text ?? '', photoUrl: cafe.photo_url ?? '',
-    hoursText: cafe.hours_text ?? '', lat: cafe.lat == null ? '' : String(cafe.lat), lng: cafe.lng == null ? '' : String(cafe.lng),
+    hoursText: cafe.hours_text ?? '',
     isPartnered: cafe.is_partnered, isActive: cafe.is_active, dealTitle: cafe.deal_title ?? '', dealDetails: cafe.deal_details ?? '',
     dealCode: cafe.deal_code ?? '', dealCodeEnabled: cafe.deal_code_enabled, featuredPriority: String(cafe.featured_priority ?? 0),
   }
 }
 
-function cafePayload(form: CafeForm) {
-  return { ...form, lat: form.lat === '' ? null : Number(form.lat), lng: form.lng === '' ? null : Number(form.lng), featuredPriority: Math.max(0, Number(form.featuredPriority) || 0) }
-}
+function cafePayload(form: CafeForm) { return { ...form, featuredPriority: Math.max(0, Number(form.featuredPriority) || 0) } }
 
 export function CafesAdmin() {
   const [cafes, setCafes] = useState<CafeRow[]>([])
@@ -171,18 +169,16 @@ export function CafesAdmin() {
         {editId && <div style={{ fontSize: 12, color: C.ochre }}>Editing an existing listing. <button type="button" onClick={cancelEdit} style={{ ...ghostBtn, marginLeft: 8 }}>Cancel</button></div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
           <div style={fieldGroup}><label style={fieldLabel}>Name *</label><input required style={inp} value={form.name} onChange={set('name')} /></div>
-          <div style={fieldGroup}><label style={fieldLabel}>Slug *</label><input required pattern="[a-z0-9-]+" style={inp} value={form.slug} onChange={e => setForm(prev => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))} /></div>
           <div style={fieldGroup}><label style={fieldLabel}>Type</label><select style={inp} value={form.venueType} onChange={set('venueType')}><option value="cafe">Cafe</option><option value="restaurant">Restaurant</option><option value="bar">Bar</option></select></div>
           <div style={fieldGroup}><label style={fieldLabel}>Area</label><input style={inp} value={form.area} onChange={set('area')} placeholder="Maxvorstadt" /></div>
           <div style={fieldGroup}><label style={fieldLabel}>City</label><input style={inp} value={form.city} onChange={set('city')} /></div>
           <div style={fieldGroup}><label style={fieldLabel}>Hours</label><input style={inp} value={form.hoursText} onChange={set('hoursText')} /></div>
         </div>
-        <div style={fieldGroup}><label style={fieldLabel}>Address</label><input style={inp} value={form.address} onChange={set('address')} /></div>
+        <div style={fieldGroup}><label style={fieldLabel}>Address *</label><input required style={inp} value={form.address} onChange={set('address')} placeholder="Street, number, postal code" /></div>
         <div style={fieldGroup}><label style={fieldLabel}>Description</label><textarea rows={3} style={{ ...inp, resize: 'vertical' }} value={form.description} onChange={set('description')} /></div>
         <div style={fieldGroup}><label style={fieldLabel}>Image / logo</label><ImageUploader value={form.photoUrl} onChange={photoUrl => setForm(prev => ({ ...prev, photoUrl }))} /></div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-          <div style={fieldGroup}><label style={fieldLabel}>Latitude</label><input type="number" step="any" style={inp} value={form.lat} onChange={set('lat')} /></div>
-          <div style={fieldGroup}><label style={fieldLabel}>Longitude</label><input type="number" step="any" style={inp} value={form.lng} onChange={set('lng')} /></div>
+          <div style={{ ...fieldGroup, justifyContent: 'end' }}><div style={{ fontSize: 12, color: C.inkMuted }}>Map coordinates are derived from the full address when saved.</div></div>
           <div style={fieldGroup}><label style={fieldLabel}>Featured priority</label><input type="number" min={0} style={inp} value={form.featuredPriority} onChange={set('featuredPriority')} /></div>
         </div>
         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>

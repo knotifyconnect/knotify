@@ -2,8 +2,8 @@
  * Cafés · IRL — active admin-managed places and real coffee invitations.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { CalendarClock, Coffee, Copy, MapPin, Search, Users } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { CalendarClock, Coffee, Copy, MapPin, Search, Users, X } from 'lucide-react'
 import { KBtn, KCard, KPill } from '@/lib/knotify'
 import { apiGetCached, apiPost, getApiCacheSnapshot } from '@/lib/api'
 import { T, DeskPage, DeskHeader, SectionLabel, Chip, RailCard } from '@/lib/desk'
@@ -51,13 +51,13 @@ function defaultMeetingTime() {
 }
 
 export function CafesPage() {
-  const navigate = useNavigate()
   const [cafes, setCafes] = useState<Cafe[]>(() => getApiCacheSnapshot<{ cafes: Cafe[] }>(CAFES_PATH)?.cafes ?? [])
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(() => !getApiCacheSnapshot<{ cafes: Cafe[] }>(CAFES_PATH))
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [inviteCafe, setInviteCafe] = useState<Cafe | null>(null)
+  const [selectedCafe, setSelectedCafe] = useState<Cafe | null>(null)
   const [inviteeId, setInviteeId] = useState('')
   const [scheduledAt, setScheduledAt] = useState(defaultMeetingTime)
   const [note, setNote] = useState('')
@@ -166,11 +166,13 @@ export function CafesPage() {
             <KCard style={{ padding: 28, textAlign: 'center', color: T.inkMuted }}>No places match “{search}”.</KCard>
           ) : (
             <div data-tour="cafe-directory" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: 14 }}>
-              {visibleCafes.map((cafe) => <CafeCard key={cafe.id} cafe={cafe} onInvite={() => openInvite(cafe)} onOpen={() => navigate(`/cafes/${cafe.slug}`)} />)}
+              {visibleCafes.map((cafe) => <CafeCard key={cafe.id} cafe={cafe} onInvite={() => openInvite(cafe)} onOpen={() => setSelectedCafe(cafe)} />)}
             </div>
           )}
         </DeskPage>
       )}
+
+      {selectedCafe && <CafeDetailModal cafe={selectedCafe} onClose={() => setSelectedCafe(null)} onInvite={() => { setSelectedCafe(null); openInvite(selectedCafe) }} />}
 
       {inviteCafe && (
         <div onClick={() => !sendingInvite && setInviteCafe(null)} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(26,24,21,0.52)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(3px)' }}>
@@ -226,32 +228,56 @@ export function CafesPage() {
 }
 
 function CafeCard({ cafe, onInvite, onOpen }: { cafe: Cafe; onInvite: () => void; onOpen: () => void }) {
-  const [copied, setCopied] = useState(false)
-  const codeVisible = cafe.is_partnered && cafe.deal_code_enabled && Boolean(cafe.deal_code?.trim())
   const typeLabel = cafe.venue_type === 'cafe' ? 'Café' : cafe.venue_type === 'restaurant' ? 'Restaurant' : 'Bar'
 
   return (
-    <KCard style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 320 }}>
-      <div onClick={onOpen} style={{ height: 132, cursor: 'pointer', background: cafe.photo_url ? `center/cover url(${cafe.photo_url})` : `linear-gradient(135deg, ${cafe.is_partnered ? T.signal : T.inkMuted}, ${cafe.is_partnered ? T.signalDeep : T.ink})`, position: 'relative' }}>
+    <KCard onClick={onOpen} style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 210, cursor: 'pointer' }}>
+      <div style={{ height: 96, background: cafe.photo_url ? `center/cover url(${cafe.photo_url})` : `linear-gradient(135deg, ${cafe.is_partnered ? T.signal : T.inkMuted}, ${cafe.is_partnered ? T.signalDeep : T.ink})`, position: 'relative' }}>
         <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: 6 }}><Chip color={cafe.is_partnered ? 'signal' : 'paper'}>{cafe.is_partnered ? 'Partner' : typeLabel}</Chip>{cafe.is_partnered && <Chip color="paper">{typeLabel}</Chip>}</div>
       </div>
-      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <div onClick={onOpen} style={{ fontFamily: T.display, fontSize: 22, fontWeight: 500, cursor: 'pointer' }}>{cafe.name}</div>
+      <div style={{ padding: 14, display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <div style={{ fontFamily: T.display, fontSize: 19, fontWeight: 500 }}>{cafe.name}</div>
         <div style={{ marginTop: 4, color: T.inkMuted, fontSize: 12.5 }}>{[cafe.area, cafe.address, cafe.hours_text].filter(Boolean).join(' · ')}</div>
-        {cafe.description && <p style={{ margin: '10px 0 0', color: T.inkMuted, fontSize: 13, lineHeight: 1.5 }}>{cafe.description}</p>}
-        {cafe.is_partnered && (cafe.deal_title || cafe.deal_details || cafe.perk_text) && <div data-tour="cafe-partner-deals" style={{ marginTop: 12, padding: 11, borderRadius: 10, background: T.ochreSoft }}>
-          <div style={{ color: T.ochre, fontSize: 12.5, fontWeight: 700 }}>{cafe.deal_title || cafe.perk_text || 'Partner deal'}</div>
-          {cafe.deal_details && <div style={{ marginTop: 3, color: T.inkMuted, fontSize: 12, lineHeight: 1.4 }}>{cafe.deal_details}</div>}
-          {codeVisible && <button onClick={async () => { await navigator.clipboard.writeText(cafe.deal_code!); setCopied(true); setTimeout(() => setCopied(false), 1500) }} style={{ marginTop: 8, border: `0.5px solid ${T.ochre}`, background: T.paper, color: T.ochre, borderRadius: 8, padding: '6px 9px', fontFamily: 'monospace', fontWeight: 700, cursor: 'pointer' }}><Copy size={12} style={{ marginRight: 5, verticalAlign: 'text-bottom' }} />{copied ? 'Copied' : cafe.deal_code}</button>}
-        </div>}
         <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <KBtn variant="signal" size="sm" onClick={onInvite}><Users size={13} style={{ marginRight: 5 }} />Plan here</KBtn>
-          {cafe.lat != null && cafe.lng != null && <a href={`https://www.google.com/maps?q=${cafe.lat},${cafe.lng}`} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 12.5, textDecoration: 'none' }}><MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Map</a>}
+          <KBtn variant="signal" size="sm" onClick={(event) => { event.stopPropagation(); onInvite() }}><Users size={13} style={{ marginRight: 5 }} />Plan here</KBtn>
+          {cafe.lat != null && cafe.lng != null && <a onClick={(event) => event.stopPropagation()} href={`https://www.google.com/maps?q=${cafe.lat},${cafe.lng}`} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 12.5, textDecoration: 'none' }}><MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Map</a>}
           {!cafe.is_partnered && <KPill color="default">Listed place</KPill>}
         </div>
       </div>
     </KCard>
   )
 }
+
+function CafeDetailModal({ cafe, onClose, onInvite }: { cafe: Cafe; onClose: () => void; onInvite: () => void }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    const previous = document.body.style.overflow; document.body.style.overflow = 'hidden'
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', close)
+    return () => { document.body.style.overflow = previous; document.removeEventListener('keydown', close) }
+  }, [onClose])
+  const typeLabel = cafe.venue_type === 'cafe' ? 'Café' : cafe.venue_type === 'restaurant' ? 'Restaurant' : 'Bar'
+  const mapUrl = cafe.lat != null && cafe.lng != null ? `https://www.google.com/maps?q=${cafe.lat},${cafe.lng}` : null
+  return createPortal(<div className="k-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="k-modal-card" role="dialog" aria-modal="true" aria-label={cafe.name}>
+      <div style={{ margin: '-28px -24px 0', height: 220, background: cafe.photo_url ? `center/cover no-repeat url(${cafe.photo_url})` : `linear-gradient(135deg, ${cafe.is_partnered ? T.signal : T.inkMuted}, ${cafe.is_partnered ? T.signalDeep : T.ink})`, borderRadius: '20px 20px 0 0', position: 'relative' }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(26,24,21,.78), transparent 58%)', borderRadius: '20px 20px 0 0' }} />
+        <button aria-label="Close" onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, width: 32, height: 32, border: 0, borderRadius: 99, background: 'rgba(26,24,21,.48)', color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><X size={15} /></button>
+        <div style={{ position: 'absolute', left: 20, right: 20, bottom: 18, color: '#fff' }}><div style={{ fontSize: 11.5 }}>{[cafe.area, cafe.city].filter(Boolean).join(' · ')}</div><div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 28, lineHeight: 1.1 }}>{cafe.name}</div></div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, margin: '20px 0 16px' }}><Chip color={cafe.is_partnered ? 'signal' : 'paper'}>{cafe.is_partnered ? 'Partner' : typeLabel}</Chip>{cafe.is_partnered && <Chip color="paper">{typeLabel}</Chip>}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10, marginBottom: 18 }}>
+        <div style={detailBox}><b style={detailLabel}>Location</b><div><MapPin size={13} color={T.signal} /> {[cafe.address, cafe.city].filter(Boolean).join(', ')}</div></div>
+        {cafe.hours_text && <div style={detailBox}><b style={detailLabel}>Hours</b><div><CalendarClock size={13} color={T.ochre} /> {cafe.hours_text}</div></div>}
+      </div>
+      {cafe.description && <p style={{ color: T.inkSoft, fontSize: 14, lineHeight: 1.7 }}>{cafe.description}</p>}
+      {cafe.is_partnered && (cafe.deal_title || cafe.deal_details || cafe.perk_text) && <div data-tour="cafe-partner-deals" style={{ ...detailBox, margin: '16px 0', background: T.ochreSoft }}><b style={{ color: T.ochre }}>{cafe.deal_title || cafe.perk_text || 'Partner deal'}</b>{cafe.deal_details && <div style={{ marginTop: 5 }}>{cafe.deal_details}</div>}{cafe.deal_code_enabled && cafe.deal_code && <button onClick={async () => { await navigator.clipboard.writeText(cafe.deal_code!); setCopied(true) }} style={{ marginTop: 9, border: 0, borderRadius: 8, padding: '7px 10px', background: T.paper, color: T.ochre, cursor: 'pointer' }}><Copy size={12} /> {copied ? 'Copied' : cafe.deal_code}</button>}</div>}
+      <div style={{ display: 'flex', gap: 10 }}><button onClick={onInvite} style={{ flex: 1, padding: 14, border: 0, borderRadius: 999, background: T.signal, color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Plan here</button>{mapUrl && <a href={mapUrl} target="_blank" rel="noreferrer" style={{ padding: 14, color: T.signal, textDecoration: 'none' }}>Map</a>}</div>
+    </div>
+  </div>, document.body)
+}
+
+const detailBox = { padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}`, fontSize: 13, lineHeight: 1.5 }
+const detailLabel = { display: 'block', fontSize: 10, color: T.inkMuted, letterSpacing: '.07em', textTransform: 'uppercase' as const, marginBottom: 5 }
 
 const inputStyle = { width: '100%', boxSizing: 'border-box' as const, padding: '9px 11px', marginTop: 4, borderRadius: 10, border: `0.5px solid ${T.rule}`, background: T.paperSoft, color: T.ink, fontSize: 13.5, fontFamily: T.text, outline: 'none' }
