@@ -8,6 +8,7 @@ type ReferralUnreadResponse = {
     referrerPending: number
     referrerInProgress: number
     applicantUpdates: number
+    offersForYou: number
     hrInbox: number
   }
 }
