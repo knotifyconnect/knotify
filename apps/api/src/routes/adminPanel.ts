@@ -708,6 +708,145 @@ adminPanelRouter.get('/stats', async (_req, res) => {
   })
 })
 
+// ── KPI dashboard (beta launch metrics) ──────────────────────────────────────
+function dayKey(d: Date) { return d.toISOString().slice(0, 10) }
+
+function bucketByDay(rows: { created_at: string }[], days: number) {
+  const buckets = new Map<string, number>()
+  const start = new Date()
+  start.setUTCHours(0, 0, 0, 0)
+  start.setUTCDate(start.getUTCDate() - (days - 1))
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start)
+    d.setUTCDate(d.getUTCDate() + i)
+    buckets.set(dayKey(d), 0)
+  }
+  for (const r of rows) {
+    const key = r.created_at.slice(0, 10)
+    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1)
+  }
+  return [...buckets.entries()].map(([date, count]) => ({ date, count }))
+}
+
+adminPanelRouter.get('/kpis', async (_req, res) => {
+  const now = new Date()
+  const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0)
+  const d7 = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString()
+  const d14 = new Date(now.getTime() - 14 * 24 * 3600 * 1000).toISOString()
+  const d30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString()
+  const todayIso = todayStart.toISOString()
+
+  const count = (table: string, build?: (q: any) => any) => {
+    let q = supabase.from(table).select('id', { count: 'exact', head: true })
+    if (build) q = build(q)
+    return q
+  }
+
+  const [
+    usersTotal, usersToday, users7d, users30d, usersActive7d, usersActiveToday, usersPremium, usersHr, usersOnline,
+    betaTotal, betaPending, betaApproved, betaRejected,
+    connectionsTotal, connectionsAccepted, conversationsTotal, messagesTotal, messagesToday,
+    eventsTotal, eventsUpcoming, eventRsvpsTotal,
+    gigsOpen, gigsClosed, gigRequestsTotal, gigRequestsPending,
+    cafesActive, cafeCheckinsTotal,
+    questsPublished, questCompletionsTotal,
+    invitesTotal,
+    feedbackTotal, feedbackOpen, feedbackBugs,
+    usersSeries, betaSeries, questCompleters,
+  ] = await Promise.all([
+    count('users'),
+    count('users', q => q.gte('created_at', todayIso)),
+    count('users', q => q.gte('created_at', d7)),
+    count('users', q => q.gte('created_at', d30)),
+    count('users', q => q.gte('last_seen_at', d7)),
+    count('users', q => q.gte('last_seen_at', todayIso)),
+    count('users', q => q.eq('is_premium', true)),
+    count('users', q => q.eq('is_hr', true)),
+    count('users', q => q.eq('is_online', true)),
+    count('beta_signups'),
+    count('beta_signups', q => q.eq('status', 'pending')),
+    count('beta_signups', q => q.eq('status', 'approved')),
+    count('beta_signups', q => q.eq('status', 'rejected')),
+    count('connections'),
+    count('connections', q => q.eq('status', 'accepted')),
+    count('conversations'),
+    count('messages'),
+    count('messages', q => q.gte('created_at', todayIso)),
+    count('events'),
+    count('events', q => q.gte('starts_at', now.toISOString())),
+    count('event_rsvps'),
+    count('gigs', q => q.eq('status', 'open')),
+    count('gigs', q => q.eq('status', 'closed')),
+    count('gig_requests'),
+    count('gig_requests', q => q.eq('status', 'pending')),
+    count('cafes', q => q.eq('is_active', true)),
+    count('cafe_checkins'),
+    count('quests', q => q.eq('active', true)),
+    count('user_quests'),
+    count('invites'),
+    count('feedback'),
+    count('feedback', q => q.eq('status', 'open')),
+    count('feedback', q => q.eq('type', 'bug')),
+    supabase.from('users').select('created_at').gte('created_at', d14),
+    supabase.from('beta_signups').select('created_at').gte('created_at', d14),
+    supabase.from('user_quests').select('user_id'),
+  ])
+
+  return res.json({
+    generatedAt: now.toISOString(),
+    users: {
+      total: usersTotal.count ?? 0,
+      newToday: usersToday.count ?? 0,
+      new7d: users7d.count ?? 0,
+      new30d: users30d.count ?? 0,
+      active7d: usersActive7d.count ?? 0,
+      activeToday: usersActiveToday.count ?? 0,
+      onlineNow: usersOnline.count ?? 0,
+      premium: usersPremium.count ?? 0,
+      hr: usersHr.count ?? 0,
+    },
+    betaFunnel: {
+      total: betaTotal.count ?? 0,
+      pending: betaPending.count ?? 0,
+      approved: betaApproved.count ?? 0,
+      rejected: betaRejected.count ?? 0,
+    },
+    growth: {
+      usersPerDay: bucketByDay((usersSeries.data ?? []) as any, 14),
+      signupsPerDay: bucketByDay((betaSeries.data ?? []) as any, 14),
+    },
+    engagement: {
+      connectionsTotal: connectionsTotal.count ?? 0,
+      connectionsAccepted: connectionsAccepted.count ?? 0,
+      conversationsTotal: conversationsTotal.count ?? 0,
+      messagesTotal: messagesTotal.count ?? 0,
+      messagesToday: messagesToday.count ?? 0,
+    },
+    content: {
+      eventsTotal: eventsTotal.count ?? 0,
+      eventsUpcoming: eventsUpcoming.count ?? 0,
+      eventRsvpsTotal: eventRsvpsTotal.count ?? 0,
+      gigsOpen: gigsOpen.count ?? 0,
+      gigsClosed: gigsClosed.count ?? 0,
+      gigRequestsTotal: gigRequestsTotal.count ?? 0,
+      gigRequestsPending: gigRequestsPending.count ?? 0,
+      cafesActive: cafesActive.count ?? 0,
+      cafeCheckinsTotal: cafeCheckinsTotal.count ?? 0,
+      questsPublished: questsPublished.count ?? 0,
+      questCompletionsTotal: questCompletionsTotal.count ?? 0,
+      questCompletersUnique: new Set((questCompleters.data ?? []).map((r: any) => r.user_id)).size,
+    },
+    feedback: {
+      total: feedbackTotal.count ?? 0,
+      open: feedbackOpen.count ?? 0,
+      bugs: feedbackBugs.count ?? 0,
+    },
+    invites: {
+      total: invitesTotal.count ?? 0,
+    },
+  })
+})
+
 // ── App settings (beta toggle etc.) ──────────────────────────────────────────
 adminPanelRouter.get('/settings', async (_req, res) => {
   const { data, error } = await supabase.from('app_settings').select('key, value')

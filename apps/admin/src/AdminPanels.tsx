@@ -1382,3 +1382,142 @@ export function CafeSuggestionsAdmin() {
     </div>
   )
 }
+
+// ── KPI Dashboard ─────────────────────────────────────────────────────────────
+interface Kpis {
+  generatedAt: string
+  users: { total: number; newToday: number; new7d: number; new30d: number; active7d: number; activeToday: number; onlineNow: number; premium: number; hr: number }
+  betaFunnel: { total: number; pending: number; approved: number; rejected: number }
+  growth: { usersPerDay: { date: string; count: number }[]; signupsPerDay: { date: string; count: number }[] }
+  engagement: { connectionsTotal: number; connectionsAccepted: number; conversationsTotal: number; messagesTotal: number; messagesToday: number }
+  content: {
+    eventsTotal: number; eventsUpcoming: number; eventRsvpsTotal: number
+    gigsOpen: number; gigsClosed: number; gigRequestsTotal: number; gigRequestsPending: number
+    cafesActive: number; cafeCheckinsTotal: number
+    questsPublished: number; questCompletionsTotal: number; questCompletersUnique: number
+  }
+  feedback: { total: number; open: number; bugs: number }
+  invites: { total: number }
+}
+
+function KpiCard({ label, value, sub, color }: { label: string; value: number | string; sub?: string; color?: string }) {
+  return (
+    <div style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 14, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ fontSize: 10.5, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{label}</div>
+      <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 30, fontWeight: 400, color: color ?? C.ink, letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11.5, color: C.inkFaint }}>{sub}</div>}
+    </div>
+  )
+}
+
+function KpiSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.inkMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>{title}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>{children}</div>
+    </div>
+  )
+}
+
+function GrowthChart({ series, label }: { series: { date: string; count: number }[]; label: string }) {
+  const max = Math.max(1, ...series.map(d => d.count))
+  return (
+    <div style={cardWrap}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, marginBottom: 14 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 90 }}>
+        {series.map(d => (
+          <div key={d.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }} title={`${d.date}: ${d.count}`}>
+            <div style={{
+              width: '100%', minHeight: 2, height: `${Math.round((d.count / max) * 70)}px`,
+              background: d.count > 0 ? C.signal : C.paperSoft, borderRadius: 3,
+            }} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        {series.map((d, i) => (
+          <div key={d.date} style={{ flex: 1, textAlign: 'center', fontSize: 9.5, color: C.inkFaint }}>
+            {i % 2 === 0 ? d.date.slice(5) : ''}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function DashboardAdmin() {
+  const [kpis, setKpis] = useState<Kpis | null>(null)
+  const [err, setErr] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setErr('')
+    try {
+      const r = await api.kpis()
+      setKpis(r)
+    } catch (e: any) { setErr(e.message) }
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: C.inkFaint, fontSize: 13 }}>Loading…</div>
+  if (err) return <div style={{ color: C.signal, fontSize: 13 }}>{err}</div>
+  if (!kpis) return null
+
+  const { users, betaFunnel, growth, engagement, content, feedback, invites } = kpis
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+        <h2 style={h2}>Dashboard</h2>
+        <button onClick={() => { setLoading(true); void load() }} style={ghostBtn}>Refresh</button>
+      </div>
+      <div style={{ fontSize: 12, color: C.inkFaint, marginBottom: 20 }}>
+        Updated {new Date(kpis.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+      </div>
+
+      <KpiSection title="Users">
+        <KpiCard label="Total users" value={users.total} />
+        <KpiCard label="New today" value={users.newToday} color={C.verd} />
+        <KpiCard label="New, 7 days" value={users.new7d} sub={`${users.new30d} in 30d`} />
+        <KpiCard label="Active, 7 days" value={users.active7d} sub={`${users.activeToday} today`} />
+        <KpiCard label="Online now" value={users.onlineNow} />
+        <KpiCard label="Premium" value={users.premium} />
+      </KpiSection>
+
+      <GrowthChart series={growth.usersPerDay} label="New users per day (14d)" />
+      <GrowthChart series={growth.signupsPerDay} label="Beta signups per day (14d)" />
+
+      <KpiSection title="Beta waitlist">
+        <KpiCard label="Total signups" value={betaFunnel.total} />
+        <KpiCard label="Pending review" value={betaFunnel.pending} color={C.ochre} />
+        <KpiCard label="Approved" value={betaFunnel.approved} color={C.verd} />
+        <KpiCard label="Rejected" value={betaFunnel.rejected} color={C.signal} />
+      </KpiSection>
+
+      <KpiSection title="Engagement">
+        <KpiCard label="Connections" value={engagement.connectionsTotal} sub={`${engagement.connectionsAccepted} accepted`} />
+        <KpiCard label="Conversations" value={engagement.conversationsTotal} />
+        <KpiCard label="Messages sent" value={engagement.messagesTotal} sub={`${engagement.messagesToday} today`} />
+      </KpiSection>
+
+      <KpiSection title="Content & activity">
+        <KpiCard label="Events" value={content.eventsTotal} sub={`${content.eventsUpcoming} upcoming`} />
+        <KpiCard label="Event RSVPs" value={content.eventRsvpsTotal} />
+        <KpiCard label="Gigs open" value={content.gigsOpen} sub={`${content.gigsClosed} closed`} />
+        <KpiCard label="Gig requests" value={content.gigRequestsTotal} sub={`${content.gigRequestsPending} pending`} />
+        <KpiCard label="Active cafés" value={content.cafesActive} sub={`${content.cafeCheckinsTotal} check-ins`} />
+        <KpiCard label="Quests published" value={content.questsPublished} />
+        <KpiCard label="Quest completions" value={content.questCompletionsTotal} sub={`${content.questCompletersUnique} unique members`} />
+        <KpiCard label="Successful invites" value={invites.total} />
+      </KpiSection>
+
+      <KpiSection title="Feedback">
+        <KpiCard label="Total" value={feedback.total} />
+        <KpiCard label="Open" value={feedback.open} color={C.ochre} />
+        <KpiCard label="Bug reports" value={feedback.bugs} color={C.signal} />
+      </KpiSection>
+    </div>
+  )
+}
