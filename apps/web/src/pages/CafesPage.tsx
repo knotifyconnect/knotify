@@ -1,5 +1,5 @@
 /**
- * Cafés · IRL — active admin-managed places and real coffee invitations.
+ * Cafés · IRL: active admin-managed places and real coffee invitations.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -211,7 +211,7 @@ export function CafesPage() {
         <div onClick={() => setSuggestOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(26,24,21,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div onClick={(event) => event.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: T.paper, borderRadius: 18, padding: 22 }}>
             <div style={{ fontFamily: T.display, fontSize: 23, fontStyle: 'italic', marginBottom: 14 }}>Suggest a place</div>
-            {suggestDone ? <div style={{ color: T.verd, fontSize: 13.5 }}>Thanks — the team will review it.</div> : <div style={{ display: 'grid', gap: 10 }}>
+            {suggestDone ? <div style={{ color: T.verd, fontSize: 13.5 }}>Thanks. The team will review it.</div> : <div style={{ display: 'grid', gap: 10 }}>
               <input value={suggestName} onChange={(event) => setSuggestName(event.target.value)} placeholder="Name" style={inputStyle} />
               <input value={suggestAddress} onChange={(event) => setSuggestAddress(event.target.value)} placeholder="Address" style={inputStyle} />
               <textarea value={suggestNotes} onChange={(event) => setSuggestNotes(event.target.value)} placeholder="Why it belongs here (optional)" rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
@@ -258,8 +258,8 @@ function CafeDetailModal({ cafe, onClose, onInvite }: { cafe: Cafe; onClose: () 
   }, [onClose])
   const typeLabel = cafe.venue_type === 'cafe' ? 'Café' : cafe.venue_type === 'restaurant' ? 'Restaurant' : 'Bar'
   const mapUrl = cafe.lat != null && cafe.lng != null ? `https://www.google.com/maps?q=${cafe.lat},${cafe.lng}` : null
-  return createPortal(<div className="k-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <div className="k-modal-card" role="dialog" aria-modal="true" aria-label={cafe.name}>
+  return createPortal(<div className="k-overlay cafe-detail-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="k-modal-card cafe-detail-modal" role="dialog" aria-modal="true" aria-label={cafe.name}>
       <div style={{ margin: '-28px -24px 0', height: 220, background: cafe.photo_url ? `center/cover no-repeat url(${cafe.photo_url})` : `linear-gradient(135deg, ${cafe.is_partnered ? T.signal : T.inkMuted}, ${cafe.is_partnered ? T.signalDeep : T.ink})`, borderRadius: '20px 20px 0 0', position: 'relative' }}>
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(26,24,21,.78), transparent 58%)', borderRadius: '20px 20px 0 0' }} />
         <button aria-label="Close" onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, width: 32, height: 32, border: 0, borderRadius: 99, background: 'rgba(26,24,21,.48)', color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><X size={15} /></button>
