@@ -141,6 +141,30 @@ async function saveEventTypes(types: string[]) {
 
 function isMissingTimeTba(message: string) { return message.includes('time_tba') }
 
+// Some installations predate migration 057. A normal event does not need the
+// column, so retry without it rather than rejecting an otherwise valid import.
+// A true Time-TBA event must still be rejected: silently dropping that state
+// would change what users see.
+async function insertEvent(fields: ReturnType<typeof parseEventBody>) {
+  const insert = (payload: Record<string, unknown>) => supabase.from('events').insert(payload).select('id').single()
+  let result: any = await insert({ ...fields, source: 'curated' })
+  if (result.error && isMissingTimeTba(result.error.message) && fields.time_tba === false) {
+    const { time_tba: _timeTba, ...legacyFields } = fields
+    result = await insert({ ...legacyFields, source: 'curated' })
+  }
+  return result
+}
+
+async function updateEvent(id: string, fields: Record<string, unknown>) {
+  const update = (payload: Record<string, unknown>) => supabase.from('events').update(payload).eq('id', id)
+  let result: any = await update(fields)
+  if (result.error && isMissingTimeTba(result.error.message) && fields.time_tba === false) {
+    const { time_tba: _timeTba, ...legacyFields } = fields
+    result = await update(legacyFields)
+  }
+  return result
+}
+
 const placeSchema = placeFields.superRefine((value, ctx) => {
   if (value.dealCodeEnabled && (!value.isPartnered || !value.dealCode?.trim())) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dealCodeEnabled'], message: 'A visible code requires a partnered listing and a code.' })
@@ -314,10 +338,7 @@ adminPanelRouter.post('/events', async (req, res) => {
   const parsed = eventFields.safeParse(req.body)
   if (!parsed.success) return res.status(422).json({ error: 'Invalid event', fields: parsed.error.flatten() })
   const fields = parseEventBody(parsed.data)
-  const { data, error } = await supabase
-    .from('events')
-    .insert({ ...fields, source: 'curated' })
-    .select('id').single()
+  const { data, error } = await insertEvent(fields)
   if (error) return eventSchemaError(res, error.message)
   return res.status(201).json({ id: data.id })
 })
@@ -340,7 +361,7 @@ adminPanelRouter.patch('/events/:id', async (req, res) => {
   if (parsed.data.capacity === undefined) delete fields.capacity
   if (parsed.data.priceEur === undefined) delete fields.price_eur
   if (parsed.data.interests === undefined) delete fields.interests
-  const { error } = await supabase.from('events').update(fields).eq('id', req.params.id)
+  const { error } = await updateEvent(req.params.id, fields)
   if (error) return eventSchemaError(res, error.message)
   return res.json({ ok: true })
 })
@@ -374,10 +395,13 @@ adminPanelRouter.post('/events/import', async (req, res) => {
       (event.location ?? '').trim().toLowerCase() === (fields.location ?? '').trim().toLowerCase(),
     )
     if (existing && !updateExisting) { results.push({ row, status: 'skipped', error: 'Likely duplicate exists; choose update mode to update it.' }); continue }
-    const write = existing
-      ? await supabase.from('events').update(fields).eq('id', existing.id)
-      : await supabase.from('events').insert({ ...fields, source: 'curated' })
-    if (write.error) results.push({ row, status: 'error', error: write.error.message })
+    const write = existing ? await updateEvent(existing.id, fields) : await insertEvent(fields)
+    if (write.error) {
+      const error = isMissingTimeTba(write.error.message) && fields.time_tba
+        ? 'Time TBA requires event migration 057. Apply it before importing Time-TBA events.'
+        : write.error.message
+      results.push({ row, status: 'error', error })
+    }
     else results.push({ row, status: existing ? 'updated' : 'created' })
   }
   return res.json({ results })
