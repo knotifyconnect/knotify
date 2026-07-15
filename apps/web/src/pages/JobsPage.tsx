@@ -71,6 +71,7 @@ type CompanyConnection = {
 type ReferralItem = {
   id: string
   status: 'requested' | 'declined' | 'in_progress' | 'submitted' | 'under_review' | 'interview' | 'rejected' | 'hired' | 'converted'
+  initiated_by: 'applicant' | 'referrer'
   applicant_note: string | null
   relationship_type?: 'classmate' | 'colleague' | 'project' | 'other' | null
   relationship_duration?: string | null
@@ -166,7 +167,7 @@ function timelineStages(status: ReferralItem['status']) {
 function historyEventTitle(event: ReferralHistoryEvent) {
   const to = event.to_status ? statusLabel(event.to_status as ReferralItem['status']) : 'Unknown'
   if (event.event_type === 'created') return `Request created (${to})`
-  if (event.event_type === 'referrer_response') return `Referrer response (${to})`
+  if (event.event_type === 'referrer_response') return `Response (${to})`
   if (event.event_type === 'submitted') return `Referral submitted (${to})`
   if (event.event_type === 'hr_decision') return `HR decision (${to})`
   if (event.event_type === 'converted') return `Applicant converted (${to})`
@@ -200,6 +201,12 @@ export function JobsPage() {
   const [requesting, setRequesting] = useState(false)
   const [requestMessage, setRequestMessage] = useState<string | null>(null)
   const [requestError, setRequestError] = useState<string | null>(null)
+
+  const [offerEligible, setOfferEligible] = useState(false)
+  const [offerCandidates, setOfferCandidates] = useState<CompanyConnection[]>([])
+  const [selectedOffereeId, setSelectedOffereeId] = useState('')
+  const [offerNote, setOfferNote] = useState('')
+  const [offering, setOffering] = useState(false)
 
   const [pendingReferrals, setPendingReferrals] = useState<ReferralItem[]>(() => getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_PENDING_PATH)?.referrals ?? [])
   const [pendingLoading, setPendingLoading] = useState(() => !getApiCacheSnapshot<{ referrals: ReferralItem[] }>(REFERRAL_PENDING_PATH))
@@ -407,6 +414,10 @@ export function JobsPage() {
     setRequestMessage(null)
     setConnectionsAtCompany([])
     setSelectedReferrerId('')
+    setOfferEligible(false)
+    setOfferCandidates([])
+    setSelectedOffereeId('')
+    setOfferNote('')
 
     try {
       const detail = await apiGet<{ job: JobDetail }>(`/api/jobs/${jobId}`)
@@ -414,10 +425,18 @@ export function JobsPage() {
 
       const companyId = detail.job.company_id
       if (companyId) {
-        const check = await apiGet<{ users: CompanyConnection[] }>(`/api/referrals/check?companyId=${companyId}`)
+        const [check, offerCheck] = await Promise.all([
+          apiGet<{ users: CompanyConnection[] }>(`/api/referrals/check?companyId=${companyId}`),
+          apiGet<{ eligible: boolean; users: CompanyConnection[] }>(`/api/referrals/offer-check?jobId=${jobId}`),
+        ])
         const users = check.users ?? []
         setConnectionsAtCompany(users)
         if (users.length) setSelectedReferrerId(users[0].id)
+
+        setOfferEligible(offerCheck.eligible)
+        const candidates = offerCheck.users ?? []
+        setOfferCandidates(candidates)
+        if (candidates.length) setSelectedOffereeId(candidates[0].id)
       }
     } catch (err) {
       setRequestError(err instanceof Error ? err.message : 'Failed to load job details')
@@ -445,6 +464,31 @@ export function JobsPage() {
       setRequestError(err instanceof Error ? err.message : 'Failed to request referral')
     } finally {
       setRequesting(false)
+    }
+  }
+
+  async function offerReferral() {
+    if (!selectedJob || !selectedOffereeId) return
+
+    setOffering(true)
+    setRequestError(null)
+    setRequestMessage(null)
+
+    try {
+      await apiPost('/api/referrals/offer', {
+        jobId: selectedJob.id,
+        applicantId: selectedOffereeId,
+        note: offerNote.trim() || undefined,
+      })
+      setRequestMessage('Referral offer sent.')
+      setOfferNote('')
+      setOfferCandidates((prev) => prev.filter((u) => u.id !== selectedOffereeId))
+      setSelectedOffereeId((prev) => offerCandidates.find((u) => u.id !== prev)?.id ?? '')
+      await reloadReferralSections()
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : 'Failed to send referral offer')
+    } finally {
+      setOffering(false)
     }
   }
 
@@ -788,20 +832,34 @@ export function JobsPage() {
             <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: "'Fraunces'" }}>Loading…</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {myReferrals.map((ref) => (
+              {myReferrals.map((ref) => {
+                const isOffer = ref.initiated_by === 'referrer'
+                const awaitingMyResponse = isOffer && ref.status === 'requested'
+                return (
                 <div
                   key={ref.id}
                   style={{ padding: '12px 14px', borderRadius: 11, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
                     <div>
-                      <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', marginBottom: 1 }}>{ref.job?.title ?? 'Unknown job'}</div>
+                      <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', marginBottom: 1 }}>
+                        {awaitingMyResponse ? (
+                          <>{ref.referrer?.full_name ?? 'Someone'} offered to refer you for <span style={{ color: 'var(--verd)' }}>{ref.job?.title ?? 'Unknown job'}</span></>
+                        ) : (
+                          ref.job?.title ?? 'Unknown job'
+                        )}
+                      </div>
                       <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
                         Referrer: {ref.referrer?.full_name ?? 'Unknown'} · {ref.company?.name ?? 'Unknown'}
                       </div>
+                      {isOffer && ref.applicant_note && (
+                        <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 5, fontStyle: 'italic' }}>
+                          "{ref.applicant_note}"
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <KPill color={statusPillColor(ref.status)}>{statusLabel(ref.status)}</KPill>
+                      {!awaitingMyResponse && <KPill color={statusPillColor(ref.status)}>{statusLabel(ref.status)}</KPill>}
                       <KBtn variant="ghost" size="sm" onClick={() => toggleReferralHistory(ref.id)}>
                         {historyOpenByReferral[ref.id] ? 'Hide' : 'History'}
                       </KBtn>
@@ -812,6 +870,16 @@ export function JobsPage() {
                       )}
                     </div>
                   </div>
+                  {awaitingMyResponse && (
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <KBtn variant="verd" size="sm" onClick={() => respondToReferral(ref.id, true)} disabled={respondingId === ref.id}>
+                        {respondingId === ref.id ? '…' : 'Accept'}
+                      </KBtn>
+                      <KBtn variant="ghost" size="sm" onClick={() => respondToReferral(ref.id, false)} disabled={respondingId === ref.id}>
+                        Decline
+                      </KBtn>
+                    </div>
+                  )}
                   {/* Timeline stages */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                     {timelineStages(ref.status).map((stage, idx, arr) => (
@@ -852,7 +920,8 @@ export function JobsPage() {
                     </div>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </KCard>
@@ -1411,6 +1480,80 @@ export function JobsPage() {
                     </p>
                   )}
                 </div>
+                )}
+
+                {offerEligible && (
+                  <div
+                    style={{
+                      padding: '16px 18px',
+                      borderRadius: 14,
+                      background: 'var(--paper-soft)',
+                      border: '0.5px solid var(--rule-soft)',
+                      marginBottom: 16,
+                    }}
+                  >
+                    <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>
+                      Know someone for this role?
+                    </div>
+
+                    {offerCandidates.length === 0 ? (
+                      <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: 0 }}>
+                        None of your connections are waiting on a referral here.
+                      </p>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {offerCandidates.map((u) => (
+                            <label
+                              key={u.id}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+                            >
+                              <input
+                                type="radio"
+                                name="offeree"
+                                value={u.id}
+                                checked={selectedOffereeId === u.id}
+                                onChange={() => setSelectedOffereeId(u.id)}
+                              />
+                              <KAvatar name={u.full_name} src={u.avatar_url} size={28} />
+                              <span style={{ fontSize: 13, color: 'var(--ink)' }}>{u.full_name}</span>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div style={{ marginTop: 14 }}>
+                          <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6 }}>
+                            Optional note
+                          </div>
+                          <textarea
+                            value={offerNote}
+                            onChange={(e) => setOfferNote(e.target.value.slice(0, 500))}
+                            placeholder="Why you'd vouch for them…"
+                            style={{
+                              width: '100%',
+                              minHeight: 88,
+                              padding: '9px 12px',
+                              borderRadius: 10,
+                              border: '0.5px solid var(--rule)',
+                              background: 'white',
+                              fontSize: 13.5,
+                              fontFamily: "'IBM Plex Sans', sans-serif",
+                              color: 'var(--ink)',
+                              outline: 'none',
+                              resize: 'vertical',
+                              boxSizing: 'border-box',
+                            }}
+                          />
+                          <div style={{ fontSize: 11, color: 'var(--ink-faint)', textAlign: 'right', marginBottom: 12, fontFamily: "'IBM Plex Mono'" }}>
+                            {offerNote.length}/500
+                          </div>
+                          <KBtn variant="verd" size="sm" fullWidth onClick={offerReferral} disabled={offering || !selectedOffereeId}>
+                            {offering ? 'Sending…' : 'Refer them'}
+                          </KBtn>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </>
             )}

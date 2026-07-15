@@ -53,6 +53,16 @@ const createReferralSchema = z.object({
   note: z.string().max(500).optional(),
 })
 
+const offerReferralSchema = z.object({
+  jobId: z.string().uuid(),
+  applicantId: z.string().uuid(),
+  note: z.string().max(500).optional(),
+})
+
+const offerCheckQuerySchema = z.object({
+  jobId: z.string().uuid(),
+})
+
 const respondSchema = z.object({
   accepted: z.boolean(),
 })
@@ -269,6 +279,7 @@ referralsRouter.get('/pending', requireAuth, async (req, res) => {
     .select('*')
     .eq('referrer_id', req.appUserId)
     .eq('status', 'requested')
+    .eq('initiated_by', 'applicant')
     .order('created_at', { ascending: false })
 
   if (referrals.error) return res.status(500).json({ error: referrals.error.message })
@@ -401,8 +412,13 @@ referralsRouter.get('/unread', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
 
   try {
-    const [pending, inProgress, applicantUpdates, managedCompanyIds] = await Promise.all([
-      supabase.from('referrals').select('id', { count: 'exact', head: true }).eq('referrer_id', req.appUserId).eq('status', 'requested'),
+    const [pending, inProgress, applicantUpdates, offersForYou, managedCompanyIds] = await Promise.all([
+      supabase
+        .from('referrals')
+        .select('id', { count: 'exact', head: true })
+        .eq('referrer_id', req.appUserId)
+        .eq('status', 'requested')
+        .eq('initiated_by', 'applicant'),
       supabase
         .from('referrals')
         .select('id', { count: 'exact', head: true })
@@ -413,12 +429,19 @@ referralsRouter.get('/unread', requireAuth, async (req, res) => {
         .select('id', { count: 'exact', head: true })
         .eq('applicant_id', req.appUserId)
         .in('status', applicantUpdateStatuses),
+      supabase
+        .from('referrals')
+        .select('id', { count: 'exact', head: true })
+        .eq('applicant_id', req.appUserId)
+        .eq('status', 'requested')
+        .eq('initiated_by', 'referrer'),
       managedCompanyIdsForUser(req.appUserId),
     ])
 
     if (pending.error) return res.status(500).json({ error: pending.error.message })
     if (inProgress.error) return res.status(500).json({ error: inProgress.error.message })
     if (applicantUpdates.error) return res.status(500).json({ error: applicantUpdates.error.message })
+    if (offersForYou.error) return res.status(500).json({ error: offersForYou.error.message })
 
     let hrInboxCount = 0
     if (managedCompanyIds.length) {
@@ -436,11 +459,12 @@ referralsRouter.get('/unread', requireAuth, async (req, res) => {
       referrerPending: pending.count ?? 0,
       referrerInProgress: inProgress.count ?? 0,
       applicantUpdates: applicantUpdates.count ?? 0,
+      offersForYou: offersForYou.count ?? 0,
       hrInbox: hrInboxCount,
     }
 
     return res.json({
-      count: breakdown.referrerPending + breakdown.referrerInProgress + breakdown.applicantUpdates + breakdown.hrInbox,
+      count: breakdown.referrerPending + breakdown.referrerInProgress + breakdown.applicantUpdates + breakdown.offersForYou + breakdown.hrInbox,
       breakdown,
     })
   } catch (e) {
@@ -488,6 +512,54 @@ referralsRouter.get('/check', requireAuth, async (req, res) => {
   if (users.error) return res.status(500).json({ error: users.error.message })
 
   return res.json({ users: users.data ?? [] })
+})
+
+referralsRouter.get('/offer-check', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const query = offerCheckQuerySchema.safeParse(req.query)
+  if (!query.success) {
+    return res.status(422).json({ error: 'Invalid query params', fields: query.error.flatten() })
+  }
+  const jobId = query.data.jobId
+
+  const job = await supabase.from('jobs').select('id, company_id, status').eq('id', jobId).maybeSingle()
+  if (job.error) return res.status(500).json({ error: job.error.message })
+  if (!job.data) return res.status(404).json({ error: 'Job not found' })
+
+  const membership = await supabase
+    .from('company_members')
+    .select('id')
+    .eq('company_id', job.data.company_id)
+    .eq('user_id', req.appUserId)
+    .eq('confirmed', true)
+    .maybeSingle()
+
+  if (membership.error) return res.status(500).json({ error: membership.error.message })
+  if (!membership.data || job.data.status !== 'open') return res.json({ eligible: false, users: [] })
+
+  const acceptedConnections = await supabase
+    .from('connections')
+    .select('requester_id, addressee_id')
+    .eq('status', 'accepted')
+    .or(`requester_id.eq.${req.appUserId},addressee_id.eq.${req.appUserId}`)
+
+  if (acceptedConnections.error) return res.status(500).json({ error: acceptedConnections.error.message })
+
+  const connectedIds = [...new Set((acceptedConnections.data ?? []).map((c) => (c.requester_id === req.appUserId ? c.addressee_id : c.requester_id)))]
+
+  if (!connectedIds.length) return res.json({ eligible: true, users: [] })
+
+  const existingReferrals = await supabase.from('referrals').select('applicant_id').eq('job_id', jobId).in('applicant_id', connectedIds)
+  if (existingReferrals.error) return res.status(500).json({ error: existingReferrals.error.message })
+  const alreadyReferredIds = new Set((existingReferrals.data ?? []).map((r) => r.applicant_id))
+
+  const candidateIds = connectedIds.filter((id) => !alreadyReferredIds.has(id))
+  if (!candidateIds.length) return res.json({ eligible: true, users: [] })
+
+  const users = await supabase.from('users').select('id, full_name, avatar_url, username').in('id', candidateIds)
+  if (users.error) return res.status(500).json({ error: users.error.message })
+
+  return res.json({ eligible: true, users: users.data ?? [] })
 })
 
 referralsRouter.post('/', requireAuth, async (req, res) => {
@@ -549,6 +621,65 @@ referralsRouter.post('/', requireAuth, async (req, res) => {
   return res.status(201).json({ referral: insert.data })
 })
 
+referralsRouter.post('/offer', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+
+  const parsed = offerReferralSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+
+  const { jobId, applicantId, note } = parsed.data
+  if (applicantId === req.appUserId) return res.status(422).json({ error: 'Cannot offer a referral to yourself' })
+
+  const job = await supabase.from('jobs').select('id, company_id, status').eq('id', jobId).maybeSingle()
+  if (job.error) return res.status(500).json({ error: job.error.message })
+  if (!job.data) return res.status(404).json({ error: 'Job not found' })
+  if (job.data.status !== 'open') return res.status(422).json({ error: 'Referrals can only be offered for open jobs' })
+
+  const connection = await supabase
+    .from('connections')
+    .select('id')
+    .eq('status', 'accepted')
+    .or(`and(requester_id.eq.${req.appUserId},addressee_id.eq.${applicantId}),and(requester_id.eq.${applicantId},addressee_id.eq.${req.appUserId})`)
+    .maybeSingle()
+
+  if (connection.error) return res.status(500).json({ error: connection.error.message })
+  if (!connection.data) return res.status(422).json({ error: 'You can only offer referrals to accepted connections' })
+
+  const member = await supabase
+    .from('company_members')
+    .select('id')
+    .eq('company_id', job.data.company_id)
+    .eq('user_id', req.appUserId)
+    .eq('confirmed', true)
+    .maybeSingle()
+
+  if (member.error) return res.status(500).json({ error: member.error.message })
+  if (!member.data) return res.status(422).json({ error: 'You must be a confirmed member of this company to offer a referral' })
+
+  const insert = await supabase
+    .from('referrals')
+    .insert({
+      job_id: jobId,
+      applicant_id: applicantId,
+      referrer_id: req.appUserId,
+      company_id: job.data.company_id,
+      initiated_by: 'referrer',
+      applicant_note: note?.trim() || null,
+      status: 'requested',
+    })
+    .select('*')
+    .single()
+
+  if (insert.error) {
+    if (insert.error.code === '23505') {
+      return res.status(409).json({ error: 'A referral already exists for this job and applicant' })
+    }
+    return res.status(500).json({ error: insert.error.message })
+  }
+
+  return res.status(201).json({ referral: insert.data })
+})
+
 referralsRouter.patch('/:id/respond', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
   const params = referralIdParamSchema.safeParse(req.params)
@@ -563,8 +694,11 @@ referralsRouter.patch('/:id/respond', requireAuth, async (req, res) => {
   if (referral.error) return res.status(500).json({ error: referral.error.message })
   if (!referral.data) return res.status(404).json({ error: 'Referral not found' })
 
-  if (referral.data.referrer_id !== req.appUserId) {
-    return res.status(403).json({ error: 'Only the referrer can respond' })
+  const responderId = referral.data.initiated_by === 'referrer' ? referral.data.applicant_id : referral.data.referrer_id
+  if (responderId !== req.appUserId) {
+    return res.status(403).json({
+      error: referral.data.initiated_by === 'referrer' ? 'Only the applicant can respond to this offer' : 'Only the referrer can respond',
+    })
   }
 
   if (referral.data.status !== 'requested') {
