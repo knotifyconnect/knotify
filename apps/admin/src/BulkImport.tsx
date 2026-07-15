@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
+import { DEFAULT_EVENT_TYPES } from './eventTypes'
 
 type Kind = 'events' | 'cafes'
 type Mode = 'create' | 'update'
@@ -8,7 +9,7 @@ type PreviewRow = { row: number; data: Record<string, unknown>; issues: Issue[] 
 
 const EVENT_COLUMNS = ['title', 'description', 'location', 'start_date', 'start_time', 'end_date', 'end_time', 'url', 'host_label', 'image_url', 'event_type', 'capacity', 'price_eur']
 const CAFE_COLUMNS = ['slug', 'name', 'venue_type', 'address', 'city', 'area', 'description', 'perk_text', 'photo_url', 'hours_text', 'lat', 'lng', 'is_partnered', 'is_active', 'deal_title', 'deal_details', 'deal_code', 'deal_code_enabled', 'featured_priority']
-const EVENT_TYPES = new Set(['networking', 'social', 'sports', 'music', 'career', 'workshop', 'outdoor', 'party'])
+const EVENT_TYPES = new Set(DEFAULT_EVENT_TYPES.map(type => type.toLowerCase()))
 
 function key(value: unknown) { return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') }
 function value(row: Record<string, unknown>, ...names: string[]) {

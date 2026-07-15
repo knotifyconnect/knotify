@@ -57,6 +57,10 @@ export const api = {
   updateEvent: (id: string, body: unknown) => request(`/api/admin-panel/events/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteEvent: (id: string) => request(`/api/admin-panel/events/${id}`, { method: 'DELETE' }),
   importEvents: (rows: unknown[], mode: 'create' | 'update') => request('/api/admin-panel/events/import', { method: 'POST', body: JSON.stringify({ rows, mode }) }),
+  eventTypes: () => request('/api/admin-panel/event-types'),
+  addEventType: (label: string) => request('/api/admin-panel/event-types', { method: 'POST', body: JSON.stringify({ label }) }),
+  renameEventType: (label: string, nextLabel: string) => request('/api/admin-panel/event-types', { method: 'PATCH', body: JSON.stringify({ label, nextLabel }) }),
+  deleteEventType: (label: string) => request('/api/admin-panel/event-types', { method: 'DELETE', body: JSON.stringify({ label }) }),
 
   // Gigs
   gigs: () => request('/api/admin-panel/gigs'),
