@@ -7,12 +7,18 @@ import { TOUR_DEMOS } from './demos'
 
 type Rect = { top: number; left: number; width: number; height: number }
 type Side = 'below' | 'above' | 'right' | 'left' | 'center'
-type Layout = { left: number; top?: number; bottom?: number; maxHeight: number; side: Side }
+type Layout = { left: number; top?: number; bottom?: number; maxHeight: number; side: Side; width: number }
 
 const PAD = 8
 const GAP = 14
 const SIDE_MARGIN = 16
 const TOP_MARGIN = 16
+// A card shorter than this can still read fine — used as the bar for
+// "does this side have enough room to avoid touching the target at all".
+const MIN_COMFORTABLE_HEIGHT = 160
+// Minimum width worth using for a beside-the-target placement; below this
+// a squeezed side card reads worse than just stacking above/below instead.
+const MIN_SIDE_WIDTH = 240
 // Mobile has a fixed bottom tab bar (~64px + safe-area inset) the tooltip
 // must never sit under — desktop has no such chrome, so it only needs a
 // small breathing-room margin.
@@ -48,47 +54,57 @@ function rectsEqual(a: Rect | null, b: Rect | null) {
   return a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height
 }
 
-// Centers the tooltip under (or, if there isn't room, above) the target on
-// mobile — never left-aligned to it, which on a narrow phone used to pin the
-// tooltip to nearly the same spot regardless of where the target actually
-// was. On desktop, prefers placing it beside the target (right, or left if
-// that has more room) so most steps never require scrolling a tall page at
-// all. `maxHeight` is always capped to the room genuinely available on
-// whichever side got picked (with internal scroll as a last resort), and the
-// final position is clamped so the card can never spill under the mobile tab
-// bar or off the top of the screen — even for a target taller than the
-// viewport itself, which used to force an impossible minimum height and push
-// the card off-screen.
-function computeLayout(rect: Rect | null, width: number): Layout {
+// Picks whichever side genuinely has room to avoid touching the target at
+// all, trying beside it first on desktop (an explicit request — also means
+// most steps never require scrolling a tall page), then below, then above.
+// `cardHeight` is the tooltip's real measured height (see the ref in
+// TourOverlay below), not a generic ceiling — sizing placement decisions off
+// a worst-case constant is what caused a small target with plenty of open
+// screen around it to still get covered: the old code reserved up to 420px
+// of "do we have room" even for a two-line step that only needed 160px, so
+// it wrongly concluded there wasn't room on the natural side and fell back
+// to overlapping the target. Only once literally no side has comfortable
+// room does this fall back to whichever side has the most (allowing the
+// unavoidable overlap that implies), and even then everything stays clamped
+// on-screen — never off the top, never under the mobile tab bar.
+function computeLayout(rect: Rect | null, preferredWidth: number, cardHeight: number): Layout {
   const bottomSafe = bottomMargin()
-  const maxHeight = clamp(window.innerHeight - TOP_MARGIN - bottomSafe, 120, 420)
+  const ceiling = clamp(window.innerHeight - TOP_MARGIN - bottomSafe, 120, 420)
+  const h = clamp(cardHeight, 120, ceiling)
 
   if (!rect) {
-    const left = clamp(window.innerWidth / 2 - width / 2, SIDE_MARGIN, window.innerWidth - width - SIDE_MARGIN)
-    return { left, top: clamp(window.innerHeight / 2 - maxHeight / 2, TOP_MARGIN, window.innerHeight - bottomSafe - maxHeight), maxHeight, side: 'center' }
+    const left = clamp(window.innerWidth / 2 - preferredWidth / 2, SIDE_MARGIN, window.innerWidth - preferredWidth - SIDE_MARGIN)
+    return { left, top: clamp(window.innerHeight / 2 - h / 2, TOP_MARGIN, window.innerHeight - bottomSafe - h), maxHeight: ceiling, side: 'center', width: preferredWidth }
   }
 
-  if (!isNarrowViewport()) {
-    const spaceRight = window.innerWidth - (rect.left + rect.width + GAP) - SIDE_MARGIN
-    const spaceLeft = rect.left - GAP - SIDE_MARGIN
-    if (spaceRight >= width || spaceLeft >= width) {
-      const onRight = spaceRight >= spaceLeft
-      const left = onRight ? rect.left + rect.width + GAP : rect.left - GAP - width
-      const top = clamp(rect.top + rect.height / 2 - maxHeight / 2, TOP_MARGIN, window.innerHeight - bottomSafe - maxHeight)
-      return { left, top, maxHeight, side: onRight ? 'right' : 'left' }
-    }
-  }
-
-  const left = clamp(rect.left + rect.width / 2 - width / 2, SIDE_MARGIN, window.innerWidth - width - SIDE_MARGIN)
   const spaceBelow = window.innerHeight - bottomSafe - (rect.top + rect.height + GAP)
   const spaceAbove = rect.top - GAP - TOP_MARGIN
+  const spaceRight = window.innerWidth - (rect.left + rect.width + GAP) - SIDE_MARGIN
+  const spaceLeft = rect.left - GAP - SIDE_MARGIN
+  const centeredLeft = clamp(rect.left + rect.width / 2 - preferredWidth / 2, SIDE_MARGIN, window.innerWidth - preferredWidth - SIDE_MARGIN)
 
-  if (spaceBelow >= spaceAbove) {
-    const top = clamp(rect.top + rect.height + GAP, TOP_MARGIN, window.innerHeight - bottomSafe - maxHeight)
-    return { left, top, maxHeight, side: 'below' }
+  if (!isNarrowViewport() && (spaceRight >= MIN_SIDE_WIDTH || spaceLeft >= MIN_SIDE_WIDTH)) {
+    const onRight = spaceRight >= spaceLeft
+    const sideWidth = clamp(onRight ? spaceRight : spaceLeft, MIN_SIDE_WIDTH, preferredWidth)
+    const left = onRight ? rect.left + rect.width + GAP : rect.left - GAP - sideWidth
+    const top = clamp(rect.top + rect.height / 2 - h / 2, TOP_MARGIN, window.innerHeight - bottomSafe - h)
+    return { left, top, maxHeight: ceiling, side: onRight ? 'right' : 'left', width: sideWidth }
   }
-  const bottom = clamp(window.innerHeight - rect.top + GAP, bottomSafe, window.innerHeight - TOP_MARGIN - maxHeight)
-  return { left, bottom, maxHeight, side: 'above' }
+
+  if (spaceBelow >= h) {
+    return { left: centeredLeft, top: rect.top + rect.height + GAP, maxHeight: ceiling, side: 'below', width: preferredWidth }
+  }
+  if (spaceAbove >= h) {
+    return { left: centeredLeft, bottom: window.innerHeight - rect.top + GAP, maxHeight: ceiling, side: 'above', width: preferredWidth }
+  }
+  // Neither side has comfortable room — last resort: whichever has more,
+  // clamped on-screen even though that means overlapping the target a bit.
+  if (spaceBelow >= spaceAbove) {
+    const top = clamp(rect.top + rect.height + GAP, TOP_MARGIN, window.innerHeight - bottomSafe - h)
+    return { left: centeredLeft, top, maxHeight: ceiling, side: 'below', width: preferredWidth }
+  }
+  const bottom = clamp(window.innerHeight - rect.top + GAP, bottomSafe, window.innerHeight - TOP_MARGIN - h)
+  return { left: centeredLeft, bottom, maxHeight: ceiling, side: 'above', width: preferredWidth }
 }
 
 function ProgressBar({ current, total }: { current: number; total: number }) {
@@ -105,11 +121,25 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
   )
 }
 
+const DEFAULT_CARD_HEIGHT = 220
+
 export function TourOverlay() {
   const { isRunning, activeStep, activeIndex, totalSteps, canGoBack, next, back, skip } = useTour()
   const navigate = useNavigate()
   const [rect, setRect] = useState<Rect | null>(null)
+  const [cardHeight, setCardHeight] = useState(DEFAULT_CARD_HEIGHT)
+  const cardRef = useRef<HTMLDivElement>(null)
   const scrolledForRef = useRef<string | null>(null)
+
+  // Position decisions need the card's real height, not a guess — a generic
+  // worst-case estimate is what caused small steps to get placed as if they
+  // needed far more room than they actually did (see computeLayout). Re-measures
+  // after every render (no deps array is deliberate) and only updates state
+  // when it actually changed, so this settles in 1-2 renders instead of looping.
+  useLayoutEffect(() => {
+    const h = cardRef.current?.offsetHeight
+    if (h && Math.abs(h - cardHeight) > 2) setCardHeight(h)
+  })
 
   // No timers, no "give up and skip" logic: every frame we check reality and
   // render whatever's actually true right now. Found -> real spotlight,
@@ -122,6 +152,10 @@ export function TourOverlay() {
       setRect(null)
       return
     }
+    // Stale height from the previous (differently-sized) step would bias the
+    // first placement guess for the new one — reset so it starts from the
+    // shared estimate and re-measures fresh.
+    setCardHeight(DEFAULT_CARD_HEIGHT)
 
     let cancelled = false
     let rafId: number | null = null
@@ -165,8 +199,8 @@ export function TourOverlay() {
   const demo = TOUR_DEMOS[activeStep.id]
   const isNavigate = activeStep.kind === 'navigate'
   const showSpotlight = Boolean(rect)
-  const tooltipWidth = Math.min(320, window.innerWidth - SIDE_MARGIN * 2)
-  const layout = computeLayout(rect, tooltipWidth)
+  const preferredWidth = Math.min(320, window.innerWidth - SIDE_MARGIN * 2)
+  const layout = computeLayout(rect, preferredWidth, cardHeight)
 
   // Straight connecting line from the tooltip's nearest edge to the target's
   // center — makes it unambiguous which on-screen box the tooltip describes,
@@ -177,8 +211,8 @@ export function TourOverlay() {
   const tooltipEdgeY = layout.top != null ? layout.top : window.innerHeight - (layout.bottom ?? 0)
   const lineFrom = rect
     ? layout.side === 'right' || layout.side === 'left'
-      ? { x: layout.side === 'right' ? layout.left : layout.left + tooltipWidth, y: layout.top! + Math.min(layout.maxHeight, 200) / 2 }
-      : { x: layout.left + tooltipWidth / 2, y: tooltipEdgeY }
+      ? { x: layout.side === 'right' ? layout.left : layout.left + layout.width, y: layout.top! + Math.min(layout.maxHeight, cardHeight) / 2 }
+      : { x: layout.left + layout.width / 2, y: tooltipEdgeY }
     : null
   const lineTo = rect ? { x: clamp(rect.left + rect.width / 2, 0, window.innerWidth), y: clamp(rect.top + rect.height / 2, 0, window.innerHeight) } : null
   const pillLeft = rect ? clamp(rect.left, SIDE_MARGIN, window.innerWidth - SIDE_MARGIN - 20) : 0
@@ -250,6 +284,7 @@ export function TourOverlay() {
 
       <motion.div
         key={activeStep.id}
+        ref={cardRef}
         initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.14, ease: 'easeOut' }}
@@ -260,7 +295,7 @@ export function TourOverlay() {
           left: layout.left,
           top: layout.top,
           bottom: layout.bottom,
-          width: tooltipWidth,
+          width: layout.width,
           maxHeight: layout.maxHeight,
           overflowY: 'auto',
           background: T.paperSoft,

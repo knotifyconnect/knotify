@@ -403,8 +403,10 @@ body::before {
   background: rgba(244,239,230,0.84); backdrop-filter: blur(12px);
   box-shadow: 0 12px 36px rgba(26,24,21,0.06);
 }
+/* Desktop only (MapPage.tsx's mobile branch renders its own compact,
+   inline-styled stats/legend pills instead — see the `isMobile ?` ternary
+   around the knot-graph stage — so no mobile-width overrides needed here). */
 @media (min-width: 768px) { .k-knot-legend-box { right: 76px; } }
-@media (max-width: 479px) { .k-knot-legend-box { display: none; } }
 .k-knot-stats-bar {
   position: absolute; left: 14px; bottom: 14px; z-index: 5;
   padding: 8px 11px; border-radius: 999px;
@@ -413,12 +415,6 @@ body::before {
   max-width: calc(100% - 160px);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-@media (max-width: 479px) { .k-knot-stats-bar { font-size: 10px; } }
-/* On mobile the network list renders as a bottom sheet (z-index 9900, see
-   MobileBottomSheet) docked at `64px + safe-area`, which otherwise sits
-   right on top of this bar even collapsed — push it up to clear the sheet's
-   collapsed peek height instead of being hidden underneath it. */
-@media (max-width: 767px) { .k-knot-stats-bar { bottom: calc(64px + env(safe-area-inset-bottom) + 36px); } }
 .k-knot-detail-panel {
   position: absolute; right: 18px; top: 78px; z-index: 7;
   width: 336px; max-height: calc(100% - 100px);

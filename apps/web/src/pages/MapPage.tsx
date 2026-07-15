@@ -1373,6 +1373,30 @@ function KnotStage({
                 onCollapse={onCollapseExpanded}
                 resetToken={graphResetToken}
               />
+              {/* Mobile never hit the desktop-only knot-stats/knot-legend
+                  pills below (different JSX branch entirely) — they simply
+                  didn't exist here, not just hidden. Compact versions,
+                  stacked bottom-left clear of the bottom sheet. */}
+              <div
+                style={{
+                  position: 'absolute', left: 12, bottom: 'calc(64px + env(safe-area-inset-bottom) + 14px)',
+                  zIndex: 6, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
+                  maxWidth: 'calc(100% - 24px)',
+                }}
+              >
+                <div
+                  data-tour="knot-legend"
+                  style={{ padding: '5px 9px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'rgba(244,239,230,0.88)', backdropFilter: 'blur(10px)', maxWidth: '100%', overflowX: 'auto' }}
+                >
+                  <WebLegendRow />
+                </div>
+                <div
+                  data-tour="knot-stats"
+                  style={{ padding: '6px 10px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'rgba(244,239,230,0.88)', backdropFilter: 'blur(10px)', color: 'var(--ink-muted)', fontSize: 10.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {connected.length} connected{knotColdCount > 0 ? ` · ${knotColdCount} going cold` : ''}
+                </div>
+              </div>
               <MobileNodeOverlay
                 open={!!(selectedConnection || selectedSecondDegreeUser)}
                 onClose={onClear}
