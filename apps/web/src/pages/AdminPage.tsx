@@ -58,7 +58,7 @@ type AdminUser = {
   created_at: string
 }
 
-type Tab = 'requests' | 'cafes' | 'users' | 'waitlist'
+type Tab = 'requests' | 'users' | 'waitlist'
 
 type BetaSignup = {
   id: string
@@ -155,7 +155,7 @@ export function AdminPage() {
           Operations console.
         </h1>
         <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0 }}>
-          Approve roles, manage partner cafés, toggle access.
+          Approve roles and toggle member access. Listing management lives on admin.knotify.pro.
         </p>
       </div>
 
@@ -179,7 +179,6 @@ export function AdminPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, borderBottom: '0.5px solid var(--rule-soft)' }}>
         {([
           { id: 'requests', label: 'Role requests', icon: <ShieldCheck size={13} /> },
-          { id: 'cafes', label: 'Cafés', icon: <Coffee size={13} /> },
           { id: 'users', label: 'Users', icon: <UsersIcon size={13} /> },
           { id: 'waitlist', label: 'Waitlist', icon: <ClipboardList size={13} /> },
         ] as Array<{ id: Tab; label: string; icon: ReactNode }>).map((t) => (
@@ -210,7 +209,6 @@ export function AdminPage() {
       </div>
 
       {tab === 'requests' && <RoleRequestsTab onError={setError} />}
-      {tab === 'cafes' && <CafesTab onError={setError} />}
       {tab === 'users' && <UsersTab onError={setError} />}
       {tab === 'waitlist' && <WaitlistTab onError={setError} />}
     </div>

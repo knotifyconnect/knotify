@@ -44,11 +44,19 @@ export const api = {
   // Image upload
   uploadImage: (file: File) => uploadRequest('/api/admin-panel/upload', file),
 
+  // Cafes, restaurants, and bars
+  cafes: () => request('/api/admin-panel/cafes'),
+  createCafe: (body: unknown) => request('/api/admin-panel/cafes', { method: 'POST', body: JSON.stringify(body) }),
+  updateCafe: (id: string, body: unknown) => request(`/api/admin-panel/cafes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  archiveCafe: (id: string) => request(`/api/admin-panel/cafes/${id}`, { method: 'DELETE' }),
+  importCafes: (rows: unknown[], mode: 'create' | 'update') => request('/api/admin-panel/cafes/import', { method: 'POST', body: JSON.stringify({ rows, mode }) }),
+
   // Events
   events: () => request('/api/admin-panel/events'),
   createEvent: (body: unknown) => request('/api/admin-panel/events', { method: 'POST', body: JSON.stringify(body) }),
   updateEvent: (id: string, body: unknown) => request(`/api/admin-panel/events/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteEvent: (id: string) => request(`/api/admin-panel/events/${id}`, { method: 'DELETE' }),
+  importEvents: (rows: unknown[], mode: 'create' | 'update') => request('/api/admin-panel/events/import', { method: 'POST', body: JSON.stringify({ rows, mode }) }),
 
   // Gigs
   gigs: () => request('/api/admin-panel/gigs'),

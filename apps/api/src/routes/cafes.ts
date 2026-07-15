@@ -6,6 +6,27 @@ import { supabase } from '../lib.js'
 export const cafesRouter = Router()
 
 const cafeListFields = 'id, slug, name, venue_type, address, city, area, description, perk_text, photo_url, hours_text, lat, lng, current_checkins, is_partnered, deal_title, deal_details, deal_code, deal_code_enabled, featured_priority' as const
+const legacyCafeFields = 'id, slug, name, address, city, perk_text, photo_url, hours_text, lat, lng, current_checkins' as const
+
+function missingCafeListingSchema(message: string) {
+  return ['venue_type', 'area', 'is_partnered', 'deal_code', 'featured_priority', 'archived_at']
+    .some((column) => message.includes(column))
+}
+
+function legacyPublicCafe(cafe: Record<string, any>) {
+  return {
+    ...cafe,
+    venue_type: 'cafe' as const,
+    area: null,
+    description: null,
+    is_partnered: Boolean(cafe.perk_text?.trim()),
+    deal_title: cafe.perk_text ?? null,
+    deal_details: null,
+    deal_code: null,
+    deal_code_enabled: false,
+    featured_priority: 0,
+  }
+}
 
 function publicCafe<T extends {
   is_partnered: boolean
@@ -35,6 +56,11 @@ cafesRouter.get('/', requireAuth, async (_req, res) => {
     .order('is_partnered', { ascending: false })
     .order('featured_priority', { ascending: false })
     .order('name', { ascending: true })
+  if (result.error && missingCafeListingSchema(result.error.message)) {
+    const legacy = await supabase.from('cafes').select(legacyCafeFields).eq('is_active', true).order('created_at', { ascending: false })
+    if (legacy.error) return res.status(500).json({ error: legacy.error.message })
+    return res.json({ cafes: (legacy.data ?? []).map((cafe) => legacyPublicCafe(cafe)) })
+  }
   if (result.error) return res.status(500).json({ error: result.error.message })
   return res.json({ cafes: (result.data ?? []).map((cafe) => publicCafe(cafe)) })
 })
@@ -56,9 +82,19 @@ cafesRouter.get('/me/checkins', requireAuth, async (req, res) => {
       .select('id, is_active, archived_at, is_partnered, deal_code_enabled, deal_code')
       .in('id', cafeIds)
     : { data: [], error: null }
-  if (cafes.error) return res.status(500).json({ error: cafes.error.message })
+  let cafeRows: Array<{ id: string; is_active: boolean; archived_at: string | null; is_partnered: boolean; deal_code_enabled: boolean; deal_code: string | null }> = []
+  if (cafes.error && missingCafeListingSchema(cafes.error.message)) {
+    const legacy = cafeIds.length
+      ? await supabase.from('cafes').select('id, is_active').in('id', cafeIds)
+      : { data: [], error: null }
+    if (legacy.error) return res.status(500).json({ error: legacy.error.message })
+    cafeRows = (legacy.data ?? []).map((cafe) => ({ ...cafe, archived_at: null, is_partnered: false, deal_code_enabled: false, deal_code: null }))
+  } else {
+    if (cafes.error) return res.status(500).json({ error: cafes.error.message })
+    cafeRows = cafes.data ?? []
+  }
 
-  const codeByCafe = new Map((cafes.data ?? []).map((cafe) => [
+  const codeByCafe = new Map(cafeRows.map((cafe) => [
     cafe.id,
     cafe.is_active && !cafe.archived_at && cafe.is_partnered && cafe.deal_code_enabled
       ? cafe.deal_code
@@ -77,6 +113,13 @@ cafesRouter.get('/:idOrSlug', requireAuth, async (req, res) => {
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrSlug)
   const query = supabase.from('cafes').select(cafeListFields).eq('is_active', true).is('archived_at', null)
   const result = isUuid ? await query.eq('id', idOrSlug).maybeSingle() : await query.eq('slug', idOrSlug).maybeSingle()
+  if (result.error && missingCafeListingSchema(result.error.message)) {
+    const legacyQuery = supabase.from('cafes').select(legacyCafeFields).eq('is_active', true)
+    const legacy = isUuid ? await legacyQuery.eq('id', idOrSlug).maybeSingle() : await legacyQuery.eq('slug', idOrSlug).maybeSingle()
+    if (legacy.error) return res.status(500).json({ error: legacy.error.message })
+    if (!legacy.data) return res.status(404).json({ error: 'Café not found' })
+    return res.json({ cafe: legacyPublicCafe(legacy.data) })
+  }
   if (result.error) return res.status(500).json({ error: result.error.message })
   if (!result.data) return res.status(404).json({ error: 'Café not found' })
   return res.json({ cafe: publicCafe(result.data) })
@@ -101,13 +144,19 @@ cafesRouter.post('/:id/checkin', requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(422).json({ error: 'Invalid café id' })
 
   // Verify café exists and is active
-  const cafe = await supabase
+  let cafe = await supabase
     .from('cafes')
     .select('id, name, is_partnered, deal_code_enabled, deal_code')
     .eq('id', parsed.data.cafeId)
     .eq('is_active', true)
     .is('archived_at', null)
     .maybeSingle()
+  if (cafe.error && missingCafeListingSchema(cafe.error.message)) {
+    const legacy = await supabase.from('cafes').select('id, name').eq('id', parsed.data.cafeId).eq('is_active', true).maybeSingle()
+    if (legacy.error) return res.status(500).json({ error: legacy.error.message })
+    if (!legacy.data) return res.status(404).json({ error: 'Café not found or inactive' })
+    return res.status(403).json({ error: 'Partner codes are unavailable until the cafe listing migration is applied' })
+  }
   if (cafe.error) return res.status(500).json({ error: cafe.error.message })
   if (!cafe.data) return res.status(404).json({ error: 'Café not found or inactive' })
   if (!cafe.data.is_partnered || !cafe.data.deal_code_enabled || !cafe.data.deal_code?.trim()) {

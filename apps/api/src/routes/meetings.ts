@@ -206,13 +206,16 @@ meetingsRouter.post('/', requireAuth, async (req, res) => {
   }
 
   if (normalizedCafeId) {
-    const cafe = await supabase
+    let cafe = await supabase
       .from('cafes')
       .select('id')
       .eq('id', normalizedCafeId)
       .eq('is_active', true)
       .is('archived_at', null)
       .maybeSingle()
+    if (cafe.error?.message.includes('archived_at')) {
+      cafe = await supabase.from('cafes').select('id').eq('id', normalizedCafeId).eq('is_active', true).maybeSingle()
+    }
     if (cafe.error) return res.status(500).json({ error: cafe.error.message })
     if (!cafe.data) return res.status(404).json({ error: 'Café not found or inactive' })
   }

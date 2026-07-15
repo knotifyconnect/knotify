@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from './api'
+import { BulkImport } from './BulkImport'
 
 const C = {
   signal: '#D8442B', ink: '#1a1410', inkMuted: '#6b5f55', inkFaint: '#a09287',
@@ -88,16 +89,140 @@ function ImageUploader({ value, onChange }: { value: string; onChange: (url: str
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
+type CafeRow = {
+  id: string; slug: string; name: string; venue_type: 'cafe' | 'restaurant' | 'bar'
+  address: string | null; city: string; area: string | null; description: string | null
+  perk_text: string | null; photo_url: string | null; hours_text: string | null
+  lat: number | null; lng: number | null; is_partnered: boolean; is_active: boolean
+  deal_title: string | null; deal_details: string | null; deal_code: string | null
+  deal_code_enabled: boolean; featured_priority: number; archived_at: string | null
+}
+function toDate(iso: string | null | undefined) { return toLocal(iso).slice(0, 10) }
+function toTime(iso: string | null | undefined) { return toLocal(iso).slice(11, 16) }
+
+type CafeForm = {
+  slug: string; name: string; venueType: CafeRow['venue_type']; address: string; city: string
+  area: string; description: string; perkText: string; photoUrl: string; hoursText: string
+  lat: string; lng: string; isPartnered: boolean; isActive: boolean; dealTitle: string
+  dealDetails: string; dealCode: string; dealCodeEnabled: boolean; featuredPriority: string
+}
+
+const emptyCafe: CafeForm = {
+  slug: '', name: '', venueType: 'cafe', address: '', city: 'Munich', area: '', description: '',
+  perkText: '', photoUrl: '', hoursText: '', lat: '', lng: '', isPartnered: false, isActive: true,
+  dealTitle: '', dealDetails: '', dealCode: '', dealCodeEnabled: false, featuredPriority: '0',
+}
+
+function cafeToForm(cafe: CafeRow): CafeForm {
+  return {
+    slug: cafe.slug, name: cafe.name, venueType: cafe.venue_type, address: cafe.address ?? '', city: cafe.city,
+    area: cafe.area ?? '', description: cafe.description ?? '', perkText: cafe.perk_text ?? '', photoUrl: cafe.photo_url ?? '',
+    hoursText: cafe.hours_text ?? '', lat: cafe.lat == null ? '' : String(cafe.lat), lng: cafe.lng == null ? '' : String(cafe.lng),
+    isPartnered: cafe.is_partnered, isActive: cafe.is_active, dealTitle: cafe.deal_title ?? '', dealDetails: cafe.deal_details ?? '',
+    dealCode: cafe.deal_code ?? '', dealCodeEnabled: cafe.deal_code_enabled, featuredPriority: String(cafe.featured_priority ?? 0),
+  }
+}
+
+function cafePayload(form: CafeForm) {
+  return { ...form, lat: form.lat === '' ? null : Number(form.lat), lng: form.lng === '' ? null : Number(form.lng), featuredPriority: Math.max(0, Number(form.featuredPriority) || 0) }
+}
+
+export function CafesAdmin() {
+  const [cafes, setCafes] = useState<CafeRow[]>([])
+  const [form, setForm] = useState<CafeForm>(emptyCafe)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const load = useCallback(async () => {
+    try { setCafes((await api.cafes()).cafes ?? []); setErr('') } catch (e: any) { setErr(e.message) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const set = (key: keyof CafeForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm(prev => ({ ...prev, [key]: e.target.value }))
+  function startEdit(cafe: CafeRow) { setEditId(cafe.id); setForm(cafeToForm(cafe)); setErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  function cancelEdit() { setEditId(null); setForm(emptyCafe) }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setErr('')
+    try {
+      if (editId) await api.updateCafe(editId, cafePayload(form)); else await api.createCafe(cafePayload(form))
+      cancelEdit(); await load()
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+  async function archive(cafe: CafeRow) {
+    if (!confirm(`Archive ${cafe.name}?`)) return
+    try { await api.archiveCafe(cafe.id); await load() } catch (e: any) { setErr(e.message) }
+  }
+  async function restore(cafe: CafeRow) {
+    try { await api.updateCafe(cafe.id, { isArchived: false, isActive: true }); await load() } catch (e: any) { setErr(e.message) }
+  }
+
+  return (
+    <div>
+      <BulkImport kind="cafes" onImport={async (rows, mode) => { const result = await api.importCafes(rows, mode); await load(); return result }} />
+      <h2 style={h2}>{editId ? 'Edit place' : 'Create place'}</h2>
+      <form onSubmit={submit} style={{ ...cardWrap, display: 'grid', gap: 12 }}>
+        {editId && <div style={{ fontSize: 12, color: C.ochre }}>Editing an existing listing. <button type="button" onClick={cancelEdit} style={{ ...ghostBtn, marginLeft: 8 }}>Cancel</button></div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+          <div style={fieldGroup}><label style={fieldLabel}>Name *</label><input required style={inp} value={form.name} onChange={set('name')} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Slug *</label><input required pattern="[a-z0-9-]+" style={inp} value={form.slug} onChange={e => setForm(prev => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Type</label><select style={inp} value={form.venueType} onChange={set('venueType')}><option value="cafe">Cafe</option><option value="restaurant">Restaurant</option><option value="bar">Bar</option></select></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Area</label><input style={inp} value={form.area} onChange={set('area')} placeholder="Maxvorstadt" /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>City</label><input style={inp} value={form.city} onChange={set('city')} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Hours</label><input style={inp} value={form.hoursText} onChange={set('hoursText')} /></div>
+        </div>
+        <div style={fieldGroup}><label style={fieldLabel}>Address</label><input style={inp} value={form.address} onChange={set('address')} /></div>
+        <div style={fieldGroup}><label style={fieldLabel}>Description</label><textarea rows={3} style={{ ...inp, resize: 'vertical' }} value={form.description} onChange={set('description')} /></div>
+        <div style={fieldGroup}><label style={fieldLabel}>Image / logo</label><ImageUploader value={form.photoUrl} onChange={photoUrl => setForm(prev => ({ ...prev, photoUrl }))} /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <div style={fieldGroup}><label style={fieldLabel}>Latitude</label><input type="number" step="any" style={inp} value={form.lat} onChange={set('lat')} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Longitude</label><input type="number" step="any" style={inp} value={form.lng} onChange={set('lng')} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Featured priority</label><input type="number" min={0} style={inp} value={form.featuredPriority} onChange={set('featuredPriority')} /></div>
+        </div>
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 13 }}><input type="checkbox" checked={form.isActive} onChange={e => setForm(prev => ({ ...prev, isActive: e.target.checked }))} /> Active / visible</label>
+          <label style={{ fontSize: 13 }}><input type="checkbox" checked={form.isPartnered} onChange={e => setForm(prev => ({ ...prev, isPartnered: e.target.checked, dealCodeEnabled: e.target.checked ? prev.dealCodeEnabled : false }))} /> Partnered</label>
+        </div>
+        {form.isPartnered && <div style={{ padding: 14, borderRadius: 10, background: C.paperSoft, display: 'grid', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+            <div style={fieldGroup}><label style={fieldLabel}>Deal title</label><input style={inp} value={form.dealTitle} onChange={set('dealTitle')} /></div>
+            <div style={fieldGroup}><label style={fieldLabel}>Short perk label</label><input style={inp} value={form.perkText} onChange={set('perkText')} /></div>
+          </div>
+          <div style={fieldGroup}><label style={fieldLabel}>Deal details</label><textarea rows={3} style={{ ...inp, resize: 'vertical' }} value={form.dealDetails} onChange={set('dealDetails')} /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 12, alignItems: 'end' }}>
+            <div style={fieldGroup}><label style={fieldLabel}>Deal code</label><input style={inp} value={form.dealCode} onChange={set('dealCode')} /></div>
+            <label style={{ fontSize: 13, paddingBottom: 9 }}><input type="checkbox" disabled={!form.dealCode.trim()} checked={form.dealCodeEnabled} onChange={e => setForm(prev => ({ ...prev, dealCodeEnabled: e.target.checked }))} /> Show code</label>
+          </div>
+        </div>}
+        {err && <div style={{ color: C.signal, fontSize: 13 }}>{err}</div>}
+        <div><button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Saving…' : editId ? 'Save changes' : 'Create place'}</button></div>
+      </form>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {cafes.map(cafe => <div key={cafe.id} style={{ ...rowCard, opacity: cafe.archived_at ? 0.55 : 1 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {cafe.photo_url ? <img src={cafe.photo_url} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} /> : <div style={{ width: 44, height: 44, borderRadius: 8, background: C.paperSoft }} />}
+            <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 600 }}>{cafe.name} {cafe.is_partnered ? '· Partner' : ''}</div><div style={{ fontSize: 12, color: C.inkMuted }}>{cafe.venue_type} · {[cafe.area, cafe.city, cafe.address].filter(Boolean).join(' · ')}{cafe.archived_at ? ' · archived' : !cafe.is_active ? ' · hidden' : ''}</div></div>
+            <button style={editBtn} onClick={() => startEdit(cafe)}>Edit</button>
+            {cafe.archived_at ? <button style={ghostBtn} onClick={() => restore(cafe)}>Restore</button> : <button style={ghostBtn} onClick={() => archive(cafe)}>Archive</button>}
+          </div>
+        </div>)}
+        {!cafes.length && !err && <div style={{ color: C.inkFaint, fontSize: 13 }}>No places yet.</div>}
+      </div>
+    </div>
+  )
+}
+
 const EVENT_TYPES = ['networking', 'social', 'sports', 'music', 'career', 'workshop', 'outdoor', 'party']
 
 type EventForm = {
-  title: string; description: string; location: string; startsAt: string; endsAt: string
+  title: string; description: string; location: string; startDate: string; startTime: string; endDate: string; endTime: string
   url: string; hostLabel: string; imageUrl: string; eventType: string
   capacity: string; priceEur: string
 }
 
 const emptyEvent: EventForm = {
-  title: '', description: '', location: '', startsAt: '', endsAt: '',
+  title: '', description: '', location: '', startDate: '', startTime: '', endDate: '', endTime: '',
   url: '', hostLabel: '', imageUrl: '', eventType: '', capacity: '', priceEur: '',
 }
 
@@ -106,8 +231,8 @@ function eventToForm(ev: any): EventForm {
     title: ev.title ?? '',
     description: ev.description ?? '',
     location: ev.location ?? '',
-    startsAt: toLocal(ev.starts_at),
-    endsAt: toLocal(ev.ends_at),
+    startDate: toDate(ev.starts_at), startTime: ev.time_tba ? '' : toTime(ev.starts_at),
+    endDate: toDate(ev.ends_at), endTime: ev.time_tba ? '' : toTime(ev.ends_at),
     url: ev.url ?? '',
     hostLabel: ev.host_label ?? '',
     imageUrl: ev.image_url ?? '',
@@ -122,8 +247,9 @@ function formToEventPayload(f: EventForm) {
     title: f.title,
     description: f.description || undefined,
     location: f.location || undefined,
-    startsAt: f.startsAt,
-    endsAt: f.endsAt || undefined,
+    startsAt: f.startDate ? `${f.startDate}T${f.startTime || '00:00'}:00` : '',
+    endsAt: f.endDate ? `${f.endDate}T${f.endTime || '00:00'}:00` : undefined,
+    timeTba: !f.startTime && !f.endTime,
     url: f.url || undefined,
     hostLabel: f.hostLabel || undefined,
     imageUrl: f.imageUrl || undefined,
@@ -177,6 +303,7 @@ export function EventsAdmin() {
 
   return (
     <div>
+      <BulkImport kind="events" onImport={async (rows, mode) => { const result = await api.importEvents(rows, mode); await load(); return result }} />
       <h2 style={h2}>{editId ? 'Edit event' : 'Create event'}</h2>
 
       <form onSubmit={submit} style={{ ...cardWrap, display: 'grid', gap: 12 }}>
@@ -193,15 +320,23 @@ export function EventsAdmin() {
           <input required style={inp} placeholder="TUM x Industry Night" value={f.title} onChange={set('title')} />
         </div>
 
-        {/* Row 2: starts / ends */}
+        {/* Row 2: dates / optional times */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div style={fieldGroup}>
-            <label style={fieldLabel}>Starts *</label>
-            <input required type="datetime-local" style={inp} value={f.startsAt} onChange={set('startsAt')} />
+            <label style={fieldLabel}>Start date *</label>
+            <input required type="date" style={inp} value={f.startDate} onChange={set('startDate')} />
           </div>
           <div style={fieldGroup}>
-            <label style={fieldLabel}>Ends</label>
-            <input type="datetime-local" style={inp} value={f.endsAt} onChange={set('endsAt')} />
+            <label style={fieldLabel}>Start time (optional / TBA)</label>
+            <input type="time" style={inp} value={f.startTime} onChange={set('startTime')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>End date (optional)</label>
+            <input type="date" style={inp} value={f.endDate} onChange={set('endDate')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>End time (optional)</label>
+            <input type="time" style={inp} value={f.endTime} onChange={set('endTime')} />
           </div>
         </div>
 
