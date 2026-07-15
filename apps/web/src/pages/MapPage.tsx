@@ -936,33 +936,33 @@ function TopCommandBar({
   onDiscover: () => void
   onRefresh: () => void
 }) {
-  // Compact (mobile): one tight row — title left, tiny metrics + Discover right.
+  // Compact (mobile): title gets its own full-width row (same size as every other
+  // page's DeskHeader title), metrics + Discover sit together underneath.
   if (compact) {
     return (
       <KCard
         style={{
-          padding: '8px 11px',
+          padding: '14px 14px 12px',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          flexDirection: 'column',
           gap: 10,
           background: 'rgba(244,239,230,0.66)',
           backdropFilter: 'blur(10px)',
         }}
       >
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(20px, 5.5vw, 24px)', fontWeight: 500, fontStyle: 'italic', letterSpacing: '-0.02em', lineHeight: 1.05, color: 'var(--ink)' }}>
-            Keep your <span style={{ color: 'var(--signal, #D8442B)' }}>knot</span> warm.
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(26px, 3.2vw, 34px)', fontWeight: 500, fontStyle: 'italic', letterSpacing: '-0.02em', lineHeight: 1.05, color: 'var(--ink)' }}>
+          Keep your <span style={{ color: 'var(--signal, #D8442B)' }}>knot</span> warm.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--ink-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             <b style={{ color: 'var(--ink)' }}>{connectedCount}</b> in knot
             {incomingCount > 0 && <> · <b style={{ color: 'var(--verd)' }}>{incomingCount}</b> to decide</>}
             {sentCount > 0 && <> · <b style={{ color: 'var(--signal)' }}>{sentCount}</b> waiting</>}
           </div>
+          <KBtn variant="signal" size="sm" onClick={onDiscover}>
+            Discover
+          </KBtn>
         </div>
-        <KBtn variant="signal" size="sm" onClick={onDiscover}>
-          Discover
-        </KBtn>
       </KCard>
     )
   }
