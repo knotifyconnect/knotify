@@ -69,7 +69,7 @@ export function FeedbackWidget() {
   if (typeof document === 'undefined') return null
 
   const buttonPos: React.CSSProperties = isMobile
-    ? { left: 'var(--mobile-floating-action-left)', bottom: 'var(--mobile-feedback-bottom)' }
+    ? { right: 'var(--mobile-floating-action-right)', bottom: 'var(--mobile-feedback-bottom)' }
     : { right: 24, bottom: 24 }
 
   const fab = (
