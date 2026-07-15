@@ -75,6 +75,7 @@ export function FeedbackWidget() {
   const fab = (
     <button
       type="button"
+      className="k-mobile-attention-action"
       aria-label="Send feedback"
       onClick={() => setOpen(true)}
       style={{

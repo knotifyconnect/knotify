@@ -939,6 +939,7 @@ export function DiscoverPage() {
           </svg>
 
           <input
+            id="discover-people-search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by name, university, company, city, or headline..."

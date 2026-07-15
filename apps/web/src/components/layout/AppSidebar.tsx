@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness,
   ChevronRight,
@@ -69,6 +69,16 @@ const MOBILE_TAB_ITEMS: Array<{ title: string; href: string; icon: React.ReactNo
   { title: 'Cafés',    href: '/cafes',    icon: <Coffee size={18} /> },
 ]
 
+const MOBILE_PAGE_TITLES: Record<string, string> = {
+  '/home': 'Home',
+  '/map': 'Your Knot',
+  '/discover': 'Discover',
+  '/jobs': 'Jobs & Gigs',
+  '/messages': 'Messages',
+  '/cafes': 'Cafés',
+  '/profile': 'Profile',
+}
+
 const BASE_ITEMS: NavItem[] = [
   { title: 'Home',         href: '/home',     icon: <Home              size={15} /> },
   { title: 'Your Knot',    href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
@@ -116,6 +126,9 @@ export function AppSidebar() {
   const connectionCount = useConnectionCount()
   const [me, setMe] = useState<Me | null>(null)
   const navigate = useNavigate()
+  const location = useLocation()
+  const mobilePageTitle = MOBILE_PAGE_TITLES[location.pathname] ?? 'knotify'
+  const isDiscoverPage = location.pathname === '/discover'
 
   useEffect(() => {
     return runWhenIdle(() => {
@@ -379,7 +392,9 @@ export function AppSidebar() {
 
       {/* Mobile notifications sit directly above the shared feedback action. */}
       <div className="md:hidden">
-        <NotificationsBell variant="floating" messageUnread={messageUnreadCount} referralUnread={referralUnreadCount} />
+        <div className="k-mobile-attention-action">
+          <NotificationsBell variant="floating" messageUnread={messageUnreadCount} referralUnread={referralUnreadCount} />
+        </div>
       </div>
 
       {/* ── Mobile top bar: logo + Discover + Profile ─────────────── */}
@@ -391,15 +406,15 @@ export function AppSidebar() {
           left: 0,
           right: 0,
           minHeight: 'var(--mobile-topbar-height)',
-          paddingTop: 'env(safe-area-inset-top)',
           background: 'rgba(244,239,230,0.94)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
           borderBottom: '0.5px solid var(--rule-soft)',
           zIndex: 45,
+          display: 'grid',
+          gridTemplateColumns: '72px minmax(0, 1fr) 72px',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 14px',
+          padding: 'env(safe-area-inset-top) 14px 0',
           boxSizing: 'border-box',
         }}
       >
@@ -411,10 +426,21 @@ export function AppSidebar() {
         >
           <KnotifyLogoImg variant="mark" height={22} />
         </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <NavLink to="/discover" aria-label="Discover" style={{ display: 'flex', textDecoration: 'none' }}>
-            {({ isActive }) => <Search size={19} color={isActive ? 'var(--signal)' : 'var(--ink-soft)'} />}
-          </NavLink>
+        <div aria-current="page" style={{ minWidth: 0, textAlign: 'center', fontSize: 12.5, lineHeight: 1.2, fontWeight: 600, color: 'var(--ink-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {mobilePageTitle}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16 }}>
+          <button
+            type="button"
+            aria-label={isDiscoverPage ? 'Focus people search' : 'Find people'}
+            onClick={() => {
+              if (isDiscoverPage) document.getElementById('discover-people-search')?.focus()
+              else navigate('/discover')
+            }}
+            style={{ display: 'flex', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
+          >
+            <Search size={19} color={isDiscoverPage ? 'var(--signal)' : 'var(--ink-soft)'} />
+          </button>
           <NavLink to="/profile" aria-label="Your profile" style={{ display: 'flex', textDecoration: 'none' }}>
             {me
               ? <KAvatar name={me.full_name} src={me.avatar_url} size={28} />

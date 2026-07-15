@@ -933,8 +933,13 @@ export function JobsPage() {
           <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
             Open positions · warm referral required
           </div>
-          <KBtn variant="signal" size="sm" onClick={() => setShowShareForm((p) => !p)}>
-            {showShareForm ? 'Close' : 'Share a job'}
+          <KBtn
+            variant="signal"
+            size="sm"
+            onClick={() => setShowShareForm((p) => !p)}
+            style={{ minWidth: 104 }}
+          >
+            {showShareForm ? 'Close form' : 'Share a job'}
           </KBtn>
         </div>
 
@@ -998,7 +1003,7 @@ export function JobsPage() {
 
             {shareDraft && (
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: '0.5px solid var(--rule-soft)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 10 }}>
+                <div className="k-job-share-row">
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Title</div>
                     <input
@@ -1017,7 +1022,7 @@ export function JobsPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 10 }}>
+                <div className="k-job-share-row k-job-share-row-with-check">
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Location</div>
                     <input
@@ -1042,13 +1047,13 @@ export function JobsPage() {
                       <option value="freelance">Freelance</option>
                     </select>
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap', paddingTop: 18 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap', minHeight: 36 }}>
                     <input type="checkbox" checked={shareDraft.isRemote} onChange={(e) => updateShareDraft({ isRemote: e.target.checked })} />
                     Remote
                   </label>
                 </div>
 
-                <div style={{ display: 'flex', gap: 10 }}>
+                <div className="k-job-share-row">
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 4 }}>Salary min</div>
                     <input
@@ -1083,7 +1088,7 @@ export function JobsPage() {
                   Applicants will be sent to: {shareUrl}
                 </div>
 
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="k-job-share-actions">
                   <KBtn variant="ghost" size="sm" onClick={() => { setShareDraft(null); setShareUrl(''); setShareError(null) }} style={{ flex: 1 }}>
                     Cancel
                   </KBtn>

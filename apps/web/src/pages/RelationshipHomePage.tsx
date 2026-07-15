@@ -695,7 +695,7 @@ export function RelationshipHomePage() {
         Connect with people and knotify will tell you who to reach out to, when, and why.
       </p>
       <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-        <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
+        <KBtn className="k-desktop-only-action" variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
         <KBtn variant="ghost" size="sm" onClick={() => navigate('/map')}>View your knot</KBtn>
       </div>
     </div>
@@ -926,7 +926,7 @@ export function RelationshipHomePage() {
             </button>
           )}
           <KBtn variant="ghost" size="sm" onClick={() => setAskOpen(true)}>Ask your knot</KBtn>
-          <KBtn variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
+          <KBtn className="k-desktop-only-action" variant="signal" size="sm" onClick={() => navigate('/discover')}>Find people</KBtn>
         </>}
       />
 

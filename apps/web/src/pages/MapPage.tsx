@@ -960,9 +960,6 @@ function TopCommandBar({
             {incomingCount > 0 && <> · <b style={{ color: 'var(--verd)' }}>{incomingCount}</b> to decide</>}
             {sentCount > 0 && <> · <b style={{ color: 'var(--signal)' }}>{sentCount}</b> waiting</>}
           </div>
-          <KBtn variant="signal" size="sm" onClick={onDiscover}>
-            Discover
-          </KBtn>
           <ShareInviteButton variant="ghost" size="sm" label="Invite" />
         </div>
       </KCard>
