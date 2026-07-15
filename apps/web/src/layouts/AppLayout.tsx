@@ -48,7 +48,7 @@ export function AppLayout({ children }: PropsWithChildren) {
             ? isMobile
               ? { position: 'fixed', inset: `${topClearance} 0 0`, overflow: 'hidden', overscrollBehavior: 'none', paddingBottom: 0 }
               : { height: '100dvh', overflow: 'hidden', paddingBottom: 0 }
-            : { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))', paddingTop: isMobile ? `calc(${topClearance} + 16px)` : 32 }
+            : { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))', paddingTop: isMobile ? `calc(${topClearance} + 12px)` : 32 }
         }
         className={
           isMapPage

@@ -513,6 +513,13 @@ export function MessagesPage() {
   )
 
   selectedIdRef.current = selectedId
+
+  useEffect(() => {
+    if (!isMobile) return
+    if (selectedId) document.body.dataset.messageThreadOpen = 'true'
+    else delete document.body.dataset.messageThreadOpen
+    return () => { delete document.body.dataset.messageThreadOpen }
+  }, [isMobile, selectedId])
   selectedConvRef.current = selectedConv
   currentUserIdRef.current = currentUserId
   conversationsRef.current = conversations
