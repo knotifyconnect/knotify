@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
 import { resolveInviteCode } from '../lib/access.js'
 import { sendFriendInviteEmail } from '../lib/email.js'
+import { recomputeCredibility } from '../lib/credibility.js'
 
 export const invitesRouter = Router()
 
@@ -19,9 +20,11 @@ const WELCOME_BONUS_KEY = 'joined_via_invite'
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
 function randomCode(length = 7) {
+  // Cryptographically secure: member invite codes grant access in invite-only
+  // mode, so they must not be predictable.
   let out = ''
   for (let i = 0; i < length; i++) {
-    out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+    out += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)]
   }
   return out
 }
@@ -280,9 +283,7 @@ invitesRouter.post('/claim', requireAuth, async (req, res) => {
       { user_id: me, quest_key: WELCOME_BONUS_KEY, points_awarded: WELCOME_BONUS_POINTS },
       { onConflict: 'user_id,quest_key', ignoreDuplicates: true }
     )
-  const myQuests = (await supabase.from('user_quests').select('points_awarded').eq('user_id', me)).data ?? []
-  const myScore = myQuests.reduce((s: number, r: any) => s + (r.points_awarded ?? 0), 0)
-  await supabase.from('users').update({ credibility_score: myScore }).eq('id', me)
+  await recomputeCredibility(me)
 
   // Network-first: the two already know each other, so pre-seed a pending knot.
   const existingConn = await supabase

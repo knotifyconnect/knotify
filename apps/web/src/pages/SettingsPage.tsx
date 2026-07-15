@@ -12,13 +12,14 @@
  */
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, LogOut, Mail, Lock, Bell, ShieldCheck, Volume2 } from 'lucide-react'
+import { ChevronRight, LogOut, Mail, Lock, Bell, ShieldCheck, Volume2, HelpCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useSessionStore } from '../store/session'
 import { getConsent, setConsent } from '../lib/analyticsConsent'
 import { soundEnabled, setSoundEnabled } from '../lib/sound'
 import { DeskHeader, T, Toggle } from '../lib/desk'
 import { KBtn } from '../lib/knotify'
+import { useTour } from '../components/tour/TourProvider'
 
 function Section({ icon, title, description, children }: { icon: React.ReactNode; title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -63,6 +64,7 @@ export function SettingsPage() {
   const [sound, setSound] = useState(soundEnabled())
   const [analyticsOn, setAnalyticsOn] = useState(getConsent() === 'granted')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const tour = useTour()
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? '')).catch(() => {})
@@ -134,6 +136,14 @@ export function SettingsPage() {
             label="Sound effects"
             sub="Play a short sound when you complete a quest or earn credibility."
             right={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Volume2 size={15} color={sound ? T.verd : T.inkFaint} /><Toggle on={sound} onClick={toggleSound} /></span>}
+          />
+        </Section>
+
+        <Section icon={<HelpCircle size={17} />} title="Help">
+          <Row
+            label="Show me around"
+            sub="Replay the guided tour of Home, the knot graph, messages and quests."
+            right={<KBtn variant="ghost" size="sm" onClick={tour.start}>Start tour</KBtn>}
           />
         </Section>
 

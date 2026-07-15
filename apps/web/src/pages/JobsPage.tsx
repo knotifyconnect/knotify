@@ -614,6 +614,7 @@ export function JobsPage() {
       <DeskPage rail={jobsRail}>
 
       {/* ── Referral Inbox ─────────────────────────────────────────────────── */}
+      <div data-tour="referral-inbox">
       <KCard style={{ padding: '18px 20px', marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
@@ -669,6 +670,7 @@ export function JobsPage() {
           </div>
         )}
       </KCard>
+      </div>
 
       {/* ── In Progress (as referrer) ───────────────────────────────────────── */}
       {(inProgressReferrals.length > 0 || inProgressLoading) && (
@@ -1038,7 +1040,7 @@ export function JobsPage() {
             </p>
           </KCard>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 10 }}>
+          <div data-tour="jobs-feed" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 10 }}>
             {(savedOnly ? jobs.filter((j) => j.saved) : jobs).map((job) => (
               <KCard key={job.id} style={{ padding: '18px 20px', cursor: 'pointer', position: 'relative' }} onClick={() => openJob(job.id)}>
                 {/* Save button */}

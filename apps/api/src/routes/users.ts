@@ -53,6 +53,7 @@ const updateMeSchema = z.object({
   homeCountry: z.string().max(80).optional().nullable(),
   munichTenure: z.string().max(40).optional().nullable(),
   socialEnergy: z.enum(['active', 'selective', 'gentle']).optional().nullable(),
+  tourCompletedAt: z.string().datetime().optional().nullable(),
 })
 
 const searchUsersQuerySchema = z.object({
@@ -145,7 +146,7 @@ usersRouter.get('/me/onboarding-status', requireAuth, async (req, res) => {
 
   const userResult = await supabase
     .from('users')
-    .select('id, full_name, username, persona, interests, goals, location_city')
+    .select('id, full_name, username, persona, interests, goals, location_city, tour_completed_at')
     .eq('id', req.appUserId)
     .maybeSingle()
 
@@ -165,6 +166,7 @@ usersRouter.get('/me/onboarding-status', requireAuth, async (req, res) => {
     missing,
     skillsCount,
     minSkills: 3,
+    tourCompleted: Boolean(userResult.data.tour_completed_at),
   })
 })
 usersRouter.patch('/me', requireAuth, async (req, res) => {
@@ -205,6 +207,7 @@ usersRouter.patch('/me', requireAuth, async (req, res) => {
   if (data.homeCountry !== undefined) update.home_country = data.homeCountry ? data.homeCountry.trim() : null
   if (data.munichTenure !== undefined) update.munich_tenure = data.munichTenure
   if (data.socialEnergy !== undefined) update.social_energy = data.socialEnergy
+  if (data.tourCompletedAt !== undefined) update.tour_completed_at = data.tourCompletedAt
 
   if (Object.keys(update).length === 0) {
     return res.status(400).json({ error: 'No fields provided' })

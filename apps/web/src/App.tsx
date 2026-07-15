@@ -24,6 +24,7 @@ const QuestsPage = lazy(() => import('./pages/QuestsPage').then((m) => ({ defaul
 const EventsPage = lazy(() => import('./pages/EventsPage').then((m) => ({ default: m.EventsPage })))
 const GigsPage = lazy(() => import('./pages/GigsPage').then((m) => ({ default: m.GigsPage })))
 const CafesPage = lazy(() => import('./pages/CafesPage').then((m) => ({ default: m.CafesPage })))
+const CafeDetailPage = lazy(() => import('./pages/CafeDetailPage').then((m) => ({ default: m.CafeDetailPage })))
 const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })))
 const TermsPage = lazy(() => import('./pages/TermsPage').then((m) => ({ default: m.TermsPage })))
@@ -266,6 +267,7 @@ function ProtectedAppRoutes() {
         <Route path="/events" element={<EventsPage />} />
         <Route path="/gigs" element={<Navigate to="/jobs" replace />} />
         <Route path="/cafes" element={<CafesPage />} />
+        <Route path="/cafes/:slug" element={<CafeDetailPage />} />
         <Route path="/invite" element={<InvitePage />} />
         <Route path="/asks" element={<AsksPage />} />
         <Route path="/admin" element={<AdminPage />} />

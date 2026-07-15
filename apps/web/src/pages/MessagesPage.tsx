@@ -1484,6 +1484,7 @@ export function MessagesPage() {
       >
         {/* ── Conversation list ─────────────────────────────────────────── */}
         <div
+          data-tour="message-list"
           className={selectedId ? 'hidden md:flex' : 'flex'}
           style={{ flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid rgba(26,24,21,0.08)', background: 'linear-gradient(180deg, rgba(255,252,246,0.96) 0%, rgba(244,239,230,0.82) 100%)' }}
         >
@@ -1503,24 +1504,13 @@ export function MessagesPage() {
                   Warm intros, thoughtful asks, coffee plans.
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedId(null)
-                  searchInputRef.current?.focus()
-                }}
-                aria-label="New chat"
-                style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'var(--ink)', color: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 21, lineHeight: 1, flexShrink: 0, boxShadow: '0 10px 22px rgba(26,24,21,0.18)' }}
-              >
-                +
-              </button>
             </div>
             <div style={{ position: 'relative' }}>
               <input
                 ref={searchInputRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search threads or people"
+                placeholder="Search threads or start a new chat"
                 style={{
                   width: '100%',
                   padding: '11px 42px 11px 15px',
@@ -2213,6 +2203,7 @@ export function MessagesPage() {
 
           {/* Composer */}
           <div
+            data-tour="message-compose"
             style={{
               padding: isMobile ? '5px 14px calc(7px + env(safe-area-inset-bottom))' : '12px clamp(14px, 4vw, 46px) 14px',
               borderTop: '0.5px solid rgba(26,24,21,0.07)',

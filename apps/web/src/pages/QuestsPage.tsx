@@ -304,23 +304,25 @@ export function QuestsPage() {
         <ChapterSection quests={chapters} claiming={claiming} claim={claim} expanded={expanded} setExpanded={setExpanded} justClaimed={justClaimed} askSignature={setSignQuest} />
       )}
 
-      {CATEGORY_ORDER.map((cat) => {
-        const quests = byCategory.get(cat) ?? []
-        if (quests.length === 0) return null
-        return (
-          <CategorySection
-            key={cat}
-            category={cat}
-            quests={quests}
-            claiming={claiming}
-            claim={claim}
-            expanded={expanded}
-            setExpanded={setExpanded}
-            justClaimed={justClaimed}
-            askSignature={setSignQuest}
-          />
-        )
-      })}
+      <div data-tour="quest-categories">
+        {CATEGORY_ORDER.map((cat) => {
+          const quests = byCategory.get(cat) ?? []
+          if (quests.length === 0) return null
+          return (
+            <CategorySection
+              key={cat}
+              category={cat}
+              quests={quests}
+              claiming={claiming}
+              claim={claim}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              justClaimed={justClaimed}
+              askSignature={setSignQuest}
+            />
+          )
+        })}
+      </div>
 
       <CityFog />
 
@@ -386,6 +388,7 @@ function RankPassport({ data }: { data: QuestsResponse }) {
 
   return (
     <motion.div
+      data-tour="quest-tier-display"
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring.settle}

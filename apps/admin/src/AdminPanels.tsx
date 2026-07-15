@@ -992,3 +992,331 @@ export function FeedbackAdmin() {
     </div>
   )
 }
+
+// ── Cafés ─────────────────────────────────────────────────────────────────────
+const VENUE_TYPES = ['cafe', 'restaurant', 'bar']
+
+type LegacyCafeForm = {
+  slug: string; name: string; venueType: string; address: string; city: string; area: string
+  description: string; photoUrl: string; hoursText: string; lat: string; lng: string
+  isPartnered: boolean; isActive: boolean; dealTitle: string; dealDetails: string; dealCode: string
+  dealCodeEnabled: boolean; featuredPriority: string
+}
+
+const legacyEmptyCafe: LegacyCafeForm = {
+  slug: '', name: '', venueType: 'cafe', address: '', city: 'Munich', area: '',
+  description: '', photoUrl: '', hoursText: '', lat: '', lng: '',
+  isPartnered: false, isActive: true, dealTitle: '', dealDetails: '', dealCode: '',
+  dealCodeEnabled: false, featuredPriority: '0',
+}
+
+function legacyCafeToForm(c: any): LegacyCafeForm {
+  return {
+    slug: c.slug ?? '',
+    name: c.name ?? '',
+    venueType: c.venue_type ?? 'cafe',
+    address: c.address ?? '',
+    city: c.city ?? 'Munich',
+    area: c.area ?? '',
+    description: c.description ?? '',
+    photoUrl: c.photo_url ?? '',
+    hoursText: c.hours_text ?? '',
+    lat: c.lat != null ? String(c.lat) : '',
+    lng: c.lng != null ? String(c.lng) : '',
+    isPartnered: Boolean(c.is_partnered),
+    isActive: Boolean(c.is_active),
+    dealTitle: c.deal_title ?? '',
+    dealDetails: c.deal_details ?? '',
+    dealCode: c.deal_code ?? '',
+    dealCodeEnabled: Boolean(c.deal_code_enabled),
+    featuredPriority: c.featured_priority != null ? String(c.featured_priority) : '0',
+  }
+}
+
+function legacyCafePayload(f: LegacyCafeForm) {
+  return {
+    slug: f.slug.trim(),
+    name: f.name.trim(),
+    venueType: f.venueType,
+    address: f.address || undefined,
+    city: f.city || 'Munich',
+    area: f.area || undefined,
+    description: f.description || undefined,
+    photoUrl: f.photoUrl || undefined,
+    hoursText: f.hoursText || undefined,
+    lat: f.lat !== '' ? Number(f.lat) : undefined,
+    lng: f.lng !== '' ? Number(f.lng) : undefined,
+    isPartnered: f.isPartnered,
+    isActive: f.isActive,
+    dealTitle: f.dealTitle || undefined,
+    dealDetails: f.dealDetails || undefined,
+    dealCode: f.dealCode || undefined,
+    dealCodeEnabled: f.dealCodeEnabled,
+    featuredPriority: f.featuredPriority !== '' ? Number(f.featuredPriority) : undefined,
+  }
+}
+
+function LegacyCafesAdmin() {
+  const [cafes, setCafes] = useState<any[]>([])
+  const [form, setForm] = useState<LegacyCafeForm>(legacyEmptyCafe)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const load = useCallback(async () => {
+    try { setCafes((await api.cafes()).cafes) } catch (e: any) { setErr(e.message) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  function startEdit(c: any) {
+    setEditId(c.id)
+    setForm(legacyCafeToForm(c))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  function cancelEdit() { setEditId(null); setForm(legacyEmptyCafe) }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setErr('')
+    try {
+      if (editId) {
+        await api.updateCafe(editId, legacyCafePayload(form))
+        setEditId(null)
+      } else {
+        await api.createCafe(legacyCafePayload(form))
+      }
+      setForm(legacyEmptyCafe)
+      await load()
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  async function archive(id: string) {
+    if (!confirm('Archive this café? It disappears from the member Cafés page.')) return
+    await api.archiveCafe(id); await load()
+  }
+  async function restore(c: any) {
+    await api.updateCafe(c.id, { isArchived: false, isActive: true }); await load()
+  }
+
+  const f = form
+  const set = (k: keyof LegacyCafeForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm(prev => ({ ...prev, [k]: e.target.value }))
+  const setBool = (k: keyof LegacyCafeForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(prev => ({ ...prev, [k]: e.target.checked }))
+
+  return (
+    <div>
+      <h2 style={h2}>{editId ? 'Edit café' : 'Add café'}</h2>
+
+      <form onSubmit={submit} style={{ ...cardWrap, display: 'grid', gap: 12 }}>
+        {editId && (
+          <div style={{ padding: '6px 10px', borderRadius: 6, background: '#fff3cd', border: '0.5px solid #d4a700', fontSize: 12, color: '#7a5500' }}>
+            Editing existing café — save to apply changes.
+            <button type="button" onClick={cancelEdit} style={{ marginLeft: 12, background: 'none', border: 'none', color: C.signal, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Cancel</button>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Name *</label>
+            <input required style={inp} placeholder="Café Reitschule" value={f.name} onChange={set('name')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Slug *</label>
+            <input required style={inp} placeholder="cafe-reitschule" value={f.slug} onChange={set('slug')} />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Venue type</label>
+            <select style={inp} value={f.venueType} onChange={set('venueType')}>
+              {VENUE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Area</label>
+            <input style={inp} placeholder="Glockenbach" value={f.area} onChange={set('area')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>City</label>
+            <input style={inp} value={f.city} onChange={set('city')} />
+          </div>
+        </div>
+
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Address</label>
+          <input style={inp} placeholder="Reichenbachstraße 13, 80469 München" value={f.address} onChange={set('address')} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Hours</label>
+            <input style={inp} placeholder="Mon-Fri 8-18" value={f.hoursText} onChange={set('hoursText')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Lat</label>
+            <input type="number" style={inp} value={f.lat} onChange={set('lat')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Lng</label>
+            <input type="number" style={inp} value={f.lng} onChange={set('lng')} />
+          </div>
+        </div>
+
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Description</label>
+          <textarea rows={3} style={{ ...inp, resize: 'vertical' }} placeholder="What makes this place good for a first coffee?" value={f.description} onChange={set('description')} />
+        </div>
+
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Photo</label>
+          <ImageUploader value={f.photoUrl} onChange={url => setForm(prev => ({ ...prev, photoUrl: url }))} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.ink, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+            <input type="checkbox" checked={f.isActive} onChange={setBool('isActive')} />
+            Active (visible on the member Cafés page)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.ink, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+            <input type="checkbox" checked={f.isPartnered} onChange={setBool('isPartnered')} />
+            Partnered
+          </label>
+        </div>
+
+        {f.isPartnered && (
+          <div style={{ padding: 14, borderRadius: 10, background: C.paperSoft, display: 'grid', gap: 10 }}>
+            <div style={{ fontSize: 11, color: C.inkMuted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+              Partner deal — kept off the live app until you enable the code below
+            </div>
+            <div style={fieldGroup}>
+              <label style={fieldLabel}>Deal title</label>
+              <input style={inp} placeholder="15% off your first coffee" value={f.dealTitle} onChange={set('dealTitle')} />
+            </div>
+            <div style={fieldGroup}>
+              <label style={fieldLabel}>Deal details</label>
+              <textarea rows={2} style={{ ...inp, resize: 'vertical' }} placeholder="Show your knotify profile at the counter" value={f.dealDetails} onChange={set('dealDetails')} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'end' }}>
+              <div style={fieldGroup}>
+                <label style={fieldLabel}>Discount code</label>
+                <input style={inp} placeholder="KNOTIFY15" value={f.dealCode} onChange={set('dealCode')} />
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.ink, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif', paddingBottom: 9 }}>
+                <input type="checkbox" checked={f.dealCodeEnabled} onChange={setBool('dealCodeEnabled')} />
+                Show this code to members
+              </label>
+            </div>
+          </div>
+        )}
+
+        <div style={fieldGroup}>
+          <label style={fieldLabel}>Featured priority</label>
+          <input type="number" min={0} style={inp} value={f.featuredPriority} onChange={set('featuredPriority')} />
+        </div>
+
+        {err && <div style={{ color: C.signal, fontSize: 13 }}>{err}</div>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Saving…' : editId ? 'Save changes' : 'Add café'}</button>
+          {editId && <button type="button" onClick={cancelEdit} style={ghostBtn}>Cancel</button>}
+        </div>
+      </form>
+
+      <div style={{ display: 'grid', gap: 10 }}>
+        {cafes.map(c => (
+          <div key={c.id} style={rowCard}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              {c.photo_url && (
+                <img src={c.photo_url} alt="" style={{ width: 60, height: 60, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>
+                  {c.name}
+                  {c.is_partnered && <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: C.paperSoft, fontSize: 10.5, color: C.signal }}>partner</span>}
+                  {c.archived_at ? <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: C.paperSoft, fontSize: 10.5 }}>archived</span> : !c.is_active && <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: C.paperSoft, fontSize: 10.5 }}>hidden</span>}
+                </div>
+                <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>
+                  {c.venue_type} · /{c.slug} · {[c.area, c.city].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button style={editBtn} onClick={() => startEdit(c)}>Edit</button>
+                {c.archived_at
+                  ? <button style={ghostBtn} onClick={() => restore(c)}>Restore</button>
+                  : <button style={ghostBtn} onClick={() => archive(c.id)}>Archive</button>}
+              </div>
+            </div>
+          </div>
+        ))}
+        {cafes.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No cafés yet.</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── Café suggestions ─────────────────────────────────────────────────────────
+export function CafeSuggestionsAdmin() {
+  const [pending, setPending] = useState<any[]>([])
+  const [err, setErr] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try { setPending((await api.pendingCafes()).pending) } catch (e: any) { setErr(e.message) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  async function review(id: string, status: 'approved' | 'rejected') {
+    setBusyId(id)
+    try {
+      await api.updatePendingCafe(id, status)
+      setPending(prev => prev.map(p => p.id === id ? { ...p, status } : p))
+    } catch (e: any) { setErr(e.message) } finally { setBusyId(null) }
+  }
+
+  const awaiting = pending.filter(p => p.status === 'pending')
+  const reviewed = pending.filter(p => p.status !== 'pending')
+
+  return (
+    <div>
+      <h2 style={h2}>Café suggestions</h2>
+      {err && <div style={{ color: C.signal, fontSize: 13, marginBottom: 12 }}>{err}</div>}
+
+      <div style={{ fontSize: 12.5, color: C.inkMuted, marginBottom: 10 }}>{awaiting.length} awaiting review</div>
+      <div style={{ display: 'grid', gap: 10, marginBottom: 24 }}>
+        {awaiting.map(p => (
+          <div key={p.id} style={rowCard}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>{p.address}</div>
+                {p.notes && <div style={{ fontSize: 12, color: C.inkFaint, marginTop: 4, fontStyle: 'italic' }}>"{p.notes}"</div>}
+                <div style={{ fontSize: 11, color: C.inkFaint, marginTop: 6 }}>
+                  Suggested by {p.suggester?.full_name ?? 'a member'} · {fmtDate(p.created_at)}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button disabled={busyId === p.id} style={{ ...primaryBtn, background: C.verd }} onClick={() => review(p.id, 'approved')}>Approve</button>
+                <button disabled={busyId === p.id} style={ghostBtn} onClick={() => review(p.id, 'rejected')}>Reject</button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {awaiting.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>Nothing pending.</div>}
+      </div>
+
+      {reviewed.length > 0 && (
+        <>
+          <div style={{ fontSize: 12.5, color: C.inkMuted, marginBottom: 10 }}>Reviewed</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {reviewed.map(p => (
+              <div key={p.id} style={{ ...rowCard, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px' }}>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: C.ink }}>{p.name} · {p.address}</div>
+                <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: C.paperSoft, color: p.status === 'approved' ? C.verd : C.signal }}>{p.status}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}

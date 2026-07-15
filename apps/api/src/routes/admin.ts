@@ -2,11 +2,50 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { sendBetaApprovalEmail } from '../lib/email.js'
 
 export const adminRouter = Router()
 
 // All routes require admin
 adminRouter.use(requireAuth, requireAdmin)
+
+// ── Beta waitlist ──────────────────────────────────────────────────────────
+adminRouter.get('/beta-signups', async (req, res) => {
+  const status = req.query.status as string | undefined
+  let query = supabase.from('beta_signups').select('*').order('created_at', { ascending: false })
+  if (status && ['pending', 'approved', 'rejected'].includes(status)) {
+    query = query.eq('status', status)
+  }
+  const result = await query
+  if (result.error) return res.status(500).json({ error: result.error.message })
+  return res.json({ signups: result.data ?? [] })
+})
+
+const betaSignupStatusSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected']),
+})
+
+adminRouter.patch('/beta-signups/:id', async (req, res) => {
+  const parsed = betaSignupStatusSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+
+  const upd = await supabase
+    .from('beta_signups')
+    .update({ status: parsed.data.status })
+    .eq('id', req.params.id)
+    .select('*')
+    .maybeSingle()
+  if (upd.error) return res.status(500).json({ error: upd.error.message })
+  if (!upd.data) return res.status(404).json({ error: 'Signup not found' })
+
+  if (parsed.data.status === 'approved' && upd.data.email) {
+    sendBetaApprovalEmail(upd.data.email, upd.data.name ?? undefined).catch((err) =>
+      console.error('[admin] approval email failed:', err)
+    )
+  }
+
+  return res.json({ signup: upd.data })
+})
 
 // ── Role requests ──────────────────────────────────────────────────────────
 adminRouter.get('/role-requests', async (_req, res) => {

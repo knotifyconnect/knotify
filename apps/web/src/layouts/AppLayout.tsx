@@ -3,6 +3,8 @@ import { useLocation } from 'react-router-dom'
 import { AppSidebar } from '../components/layout/AppSidebar'
 import { FeedbackWidget } from '../components/FeedbackWidget'
 import { GlobalCompanionWidget } from '../components/GlobalCompanionWidget'
+import { TourProvider, AutoStartTour } from '../components/tour/TourProvider'
+import { TourOverlay } from '../components/tour/TourOverlay'
 
 export function AppLayout({ children }: PropsWithChildren) {
   const location = useLocation()
@@ -11,6 +13,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   const lockViewport = isMapPage || isMessagesPage
 
   return (
+    <TourProvider>
     <div
       style={{
         minHeight: '100vh',
@@ -36,6 +39,9 @@ export function AppLayout({ children }: PropsWithChildren) {
       </main>
       <GlobalCompanionWidget />
       <FeedbackWidget />
+      <AutoStartTour />
+      <TourOverlay />
     </div>
+    </TourProvider>
   )
 }

@@ -3,6 +3,7 @@ import multer from 'multer'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
 import { MUNICH_DISTRICTS, districtForPoint, districtForText } from '../lib/districts.js'
+import { recomputeCredibility } from '../lib/credibility.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } })
 const QUEST_PHOTOS_BUCKET = 'quest-photos'
@@ -528,9 +529,7 @@ questsRouter.post('/:key/claim', requireAuth, upload.single('photo'), async (req
     )
   if (ins.error) return res.status(500).json({ error: ins.error.message })
 
-  const rows = await completedRows(req.appUserId)
-  const score = rows.reduce((s: number, r: any) => s + (r.points_awarded ?? 0), 0)
-  await supabase.from('users').update({ credibility_score: score }).eq('id', req.appUserId)
+  const score = await recomputeCredibility(req.appUserId)
 
   // Post to updates feed if photo + shareToFeed
   if (photoUrl && shareToFeed) {

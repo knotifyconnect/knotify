@@ -39,13 +39,13 @@ export async function sendFriendInviteEmail(opts: { to: string; inviterName: str
               ${inviterName} invited you to knotify.
             </h1>
             <p style="font-size:15px;color:#6b5f55;line-height:1.7;margin:0 0 28px;">
-              knotify is a quieter professional network for internationals in Munich — real connections, verified skills, warm introductions. ${inviterName} thinks you belong here.
+              knotify is a quieter professional network for internationals in Munich: real connections, verified skills, warm introductions. ${inviterName} thinks you belong here.
             </p>
             <a href="${url}" style="display:inline-block;background:#D8442B;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:10px;font-size:14px;font-weight:600;">
               Accept your invite
             </a>
             <p style="font-size:13px;color:#a09287;margin:28px 0 0;line-height:1.6;">
-              This invite is just for you — use the email address it was sent to.
+              This invite is just for you. Use the email address it was sent to.
             </p>
           </td>
         </tr>
@@ -66,12 +66,12 @@ export async function sendFriendInviteEmail(opts: { to: string; inviterName: str
 
 export async function sendBetaApprovalEmail(to: string, name?: string) {
   const firstName = name?.split(' ')[0] ?? 'there'
-  const signupUrl = `${WEB_URL}/signup`
+  const signupUrl = `${WEB_URL}/signup?email=${encodeURIComponent(to)}`
 
   const { error } = await getResend().emails.send({
     from: FROM,
     to,
-    subject: "You're in — welcome to knotify",
+    subject: "You're in, welcome to knotify",
     html: `
 <!DOCTYPE html>
 <html>
@@ -87,7 +87,7 @@ export async function sendBetaApprovalEmail(to: string, name?: string) {
               Hey ${firstName}, you're in.
             </h1>
             <p style="font-size:15px;color:#6b5f55;line-height:1.7;margin:0 0 28px;">
-              Your spot on knotify is ready. We built this for internationals navigating Munich — professionals, students, and everyone in between who's trying to build a real network here.
+              Your spot on knotify is ready. We built this for internationals navigating Munich: professionals, students, and everyone in between trying to build a real network here.
             </p>
             <a href="${signupUrl}" style="display:inline-block;background:#D8442B;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:10px;font-size:14px;font-weight:600;letter-spacing:0.01em;">
               Create your account

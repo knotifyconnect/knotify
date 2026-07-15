@@ -177,18 +177,35 @@ asksRouter.post('/', requireAuth, async (req, res) => {
 })
 
 // ── "Asks for you" feed: targeted, answerable asks from other people ──────────
+async function acceptedConnectionIds(viewerId: string): Promise<string[]> {
+  const result = await supabase
+    .from('connections')
+    .select('requester_id, addressee_id, status')
+    .or(`requester_id.eq.${viewerId},addressee_id.eq.${viewerId}`)
+
+  const rows = (result.data ?? []) as { requester_id: string; addressee_id: string; status: string }[]
+  return rows
+    .filter((c) => c.status === 'accepted')
+    .map((c) => (c.requester_id === viewerId ? c.addressee_id : c.requester_id))
+}
+
 async function matchedOpenAsks(viewerId: string): Promise<AskRow[]> {
+  // "Everyone" means everyone in the viewer's own network, not the whole
+  // knotify user base — asks are a connections-scoped discovery surface.
+  const connectionIds = await acceptedConnectionIds(viewerId)
+  if (connectionIds.length === 0) return []
+
   const meR = await supabase.from('users').select('interests, persona').eq('id', viewerId).maybeSingle()
   const interests: string[] = Array.isArray(meR.data?.interests) ? meR.data!.interests : []
   const persona: string | null = meR.data?.persona ?? null
 
-  // Pull recent open asks from other people, then match by audience in JS — the
+  // Pull recent open asks from connections, then match by audience in JS — the
   // audience values (interest strings) aren't safe to interpolate into a filter.
   const askR = await supabase
     .from('user_asks')
     .select('*')
     .eq('status', 'open')
-    .neq('user_id', viewerId)
+    .in('user_id', connectionIds)
     .order('created_at', { ascending: false })
     .limit(200)
 

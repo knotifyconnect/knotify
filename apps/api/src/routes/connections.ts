@@ -304,21 +304,10 @@ connectionsRouter.get('/map', requireAuth, async (req, res) => {
     return res.json({
       firstDegreeNodes: firstDegreeUsers.data ?? [],
       peerEdges,
-      _debug: {
-        version: 'map-visible-relationships-v2',
-        meId,
-        totalConns: (myConns.data ?? []).length,
-        acceptedConns: acceptedConns.length,
-        visibleRelationshipConns: visibleRelationshipConns.length,
-        firstDegreeIdCount: firstDegreeIdList.length,
-        firstDegreeUserCount: (firstDegreeUsers.data ?? []).length,
-        peerEdgeCount: peerEdges.length,
-      },
     })
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error('connections/map: unexpected error:', err)
-    return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+    return res.status(500).json({ error: 'Internal server error' })
   }
 })
 
@@ -478,17 +467,9 @@ connectionsRouter.get('/map/expand/:userId', requireAuth, async (req, res) => {
       secondDegreeNodes,
       secondDegreeEdges,
       peerEdges,
-      _debug: {
-        version: 'map-expand-one-root-v1',
-        rootUserId,
-        secondDegreeNodeCount: secondDegreeNodes.length,
-        secondDegreeEdgeCount: secondDegreeEdges.length,
-        peerEdgeCount: peerEdges.length,
-      },
     })
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error('connections/map/expand: unexpected error:', err)
-    return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+    return res.status(500).json({ error: 'Internal server error' })
   }
 })

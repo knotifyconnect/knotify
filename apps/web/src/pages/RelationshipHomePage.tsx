@@ -572,7 +572,7 @@ export function RelationshipHomePage() {
   // ── Companion — a separate chat card, not fused into the queue below ────────
   // ── "Today's moves" — the unified queue ────────────────────────────────────
   const maintenanceNode = (stats.total > 0 || moves.length > 0) ? (
-    <div style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
+    <div data-tour="today-moves-queue" style={{ padding: 20, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)' }}>
       <HealthStrip stats={stats} onOpenMap={() => navigate('/map')} />
       <DeskSectionLabel right={
         moves.length > 0 ? <span style={{ color: coldCount > 0 ? T.signal : coolingCount > 0 ? T.ochre : T.verd, textTransform: 'none', letterSpacing: 0, fontWeight: 700 }}>
@@ -721,7 +721,7 @@ export function RelationshipHomePage() {
 
   const RAIL_FEED_LIMIT = 4
   const asksBlock = (
-    <>
+    <div data-tour="asks-for-you">
       <div>
         <DeskSectionLabel right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -763,12 +763,12 @@ export function RelationshipHomePage() {
           </button>
         )}
       </div>
-    </>
+    </div>
   )
 
   // ── Upcoming coffees (real meetings from the planner) ─────────────────────
   const coffeesBlock = upcomingMeetings.length > 0 ? (
-    <div>
+    <div data-tour="coffees-booked">
       <DeskSectionLabel>Coffees · booked</DeskSectionLabel>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {upcomingMeetings.slice(0, 3).map((m) => (
@@ -803,7 +803,7 @@ export function RelationshipHomePage() {
     <>
       {coffeesBlock}
 
-      <div>
+      <div data-tour="pulse-knot">
         <DeskSectionLabel right={networkFeed.length > 0 ? <span style={{ color: T.signal }}>● live</span> : undefined}>Pulse · your knot</DeskSectionLabel>
         {networkFeed.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -831,8 +831,8 @@ export function RelationshipHomePage() {
       {asksBlock}
 
       {sideQuests.length > 0 && (
-        <div>
-          <DeskSectionLabel right={<button type="button" onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.ochre, fontWeight: 600, cursor: 'pointer', fontFamily: T.text, padding: 0 }}>All →</button>}>Side quests</DeskSectionLabel>
+        <div data-tour="side-quests">
+          <DeskSectionLabel right={<button type="button" data-tour="nav-quests" onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.ochre, fontWeight: 600, cursor: 'pointer', fontFamily: T.text, padding: 0 }}>All →</button>}>Side quests</DeskSectionLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {sideQuests.map((q) => (
               <button
@@ -852,7 +852,7 @@ export function RelationshipHomePage() {
         </div>
       )}
 
-      <div>
+      <div data-tour="next-irl">
         <DeskSectionLabel>Next · IRL</DeskSectionLabel>
         {railEvents.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

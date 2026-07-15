@@ -202,7 +202,7 @@ export function CompanionHero({
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 6, borderTop: `0.5px solid ${T.ruleSoft}`, paddingTop: 10 }}>
+      <div data-tour="companion-input" style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 6, borderTop: `0.5px solid ${T.ruleSoft}`, paddingTop: 10 }}>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
