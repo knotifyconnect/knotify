@@ -6,22 +6,34 @@ import { useTour } from './TourProvider'
 import { TOUR_DEMOS } from './demos'
 
 type Rect = { top: number; left: number; width: number; height: number }
+type Layout = { left: number; top?: number; bottom?: number; maxHeight: number }
 
 const PAD = 8
+const GAP = 14
+const SIDE_MARGIN = 16
+const TOP_MARGIN = 16
+// Mobile has a fixed bottom tab bar (~64px + safe-area inset) the tooltip
+// must never sit under — desktop has no such chrome, so it only needs a
+// small breathing-room margin.
+const isNarrowViewport = () => window.innerWidth < 768
+const bottomMargin = () => (isNarrowViewport() ? 100 : 24)
 
 // Multiple elements can share a data-tour id (e.g. the desktop sidebar and
 // the mobile tab bar both tag their "Messages" link) — only one is visible
-// at a time, so pick the first with a real rect instead of just the first
+// at a time, so pick the first with a real box instead of just the first
 // DOM match.
-function findTargetRect(selector: string): Rect | null {
+function findTargetEl(selector: string): Element | null {
   const candidates = document.querySelectorAll(selector)
   for (const el of candidates) {
     const r = el.getBoundingClientRect()
-    if (r.width > 0 || r.height > 0) {
-      return { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 }
-    }
+    if (r.width > 0 || r.height > 0) return el
   }
   return null
+}
+
+function rectFromEl(el: Element): Rect {
+  const r = el.getBoundingClientRect()
+  return { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 }
 }
 
 function rectsEqual(a: Rect | null, b: Rect | null) {
@@ -30,20 +42,41 @@ function rectsEqual(a: Rect | null, b: Rect | null) {
   return a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height
 }
 
+// Centers the tooltip under (or, if there isn't room, above) the target —
+// never left-aligned to it, which on a narrow phone screen used to pin the
+// tooltip to the same spot regardless of where the target actually was.
+// Whichever side is picked gets a max-height capped to the room actually
+// available there (with internal scroll as a last resort), so the card can
+// never spill under the mobile tab bar or off the top of the screen.
+function computeLayout(rect: Rect | null, width: number): Layout {
+  const bottomSafe = bottomMargin()
+  const centerX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2
+  const left = Math.max(SIDE_MARGIN, Math.min(centerX - width / 2, window.innerWidth - width - SIDE_MARGIN))
+
+  if (!rect) {
+    const maxHeight = Math.min(420, window.innerHeight - TOP_MARGIN - bottomSafe)
+    return { left, top: Math.max(TOP_MARGIN, window.innerHeight / 2 - maxHeight / 2), maxHeight }
+  }
+
+  const spaceBelow = window.innerHeight - bottomSafe - (rect.top + rect.height + GAP)
+  const spaceAbove = rect.top - GAP - TOP_MARGIN
+
+  if (spaceBelow >= 160 || spaceBelow >= spaceAbove) {
+    return { left, top: rect.top + rect.height + GAP, maxHeight: Math.max(140, Math.min(420, spaceBelow)) }
+  }
+  return { left, bottom: window.innerHeight - rect.top + GAP, maxHeight: Math.max(140, Math.min(420, spaceAbove)) }
+}
+
 function ProgressBar({ current, total }: { current: number; total: number }) {
+  const pct = total > 1 ? (current / (total - 1)) * 100 : 100
   return (
-    <div style={{ display: 'flex', gap: 3, marginBottom: 10 }}>
-      {Array.from({ length: total }, (_, i) => (
-        <div
-          key={i}
-          style={{
-            flex: 1,
-            height: 3,
-            borderRadius: 2,
-            background: i <= current ? T.signal : T.ruleSoft,
-          }}
-        />
-      ))}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+      <div style={{ flex: 1, height: 3, borderRadius: 2, background: T.ruleSoft, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: T.signal, transition: 'width 0.2s ease' }} />
+      </div>
+      <span style={{ fontSize: 11, color: T.inkFaint, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+        {current + 1} / {total}
+      </span>
     </div>
   )
 }
@@ -52,6 +85,7 @@ export function TourOverlay() {
   const { isRunning, activeStep, activeIndex, totalSteps, canGoBack, next, back, skip } = useTour()
   const navigate = useNavigate()
   const [rect, setRect] = useState<Rect | null>(null)
+  const scrolledForRef = useRef<string | null>(null)
 
   // No timers, no "give up and skip" logic: every frame we check reality and
   // render whatever's actually true right now. Found -> real spotlight,
@@ -70,8 +104,23 @@ export function TourOverlay() {
 
     function tick() {
       if (cancelled) return
-      const found = findTargetRect(activeStep!.target)
+      const el = findTargetEl(activeStep!.target)
+      const found = el ? rectFromEl(el) : null
       setRect((prev) => (rectsEqual(prev, found) ? prev : found))
+
+      // Bring a freshly-found target into view once per step — critical on
+      // mobile where most of a long page starts out of frame, so a spotlight
+      // on something below the fold used to just point at nothing visible.
+      if (el && scrolledForRef.current !== activeStep!.id) {
+        scrolledForRef.current = activeStep!.id
+        const r = el.getBoundingClientRect()
+        const clearTop = 60
+        const clearBottom = window.innerHeight - bottomMargin()
+        if (r.top < clearTop || r.bottom > clearBottom) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+        }
+      }
+
       rafId = requestAnimationFrame(tick)
     }
 
@@ -88,14 +137,16 @@ export function TourOverlay() {
   const demo = TOUR_DEMOS[activeStep.id]
   const isNavigate = activeStep.kind === 'navigate'
   const showSpotlight = Boolean(rect)
-  const tooltipTop = rect ? Math.min(rect.top + rect.height + 14, window.innerHeight - 220) : window.innerHeight / 2 - 90
-  const tooltipLeft = rect ? Math.max(16, Math.min(rect.left, window.innerWidth - 336)) : Math.max(16, window.innerWidth / 2 - 160)
-  const tooltipWidth = 320
+  const tooltipWidth = Math.min(320, window.innerWidth - SIDE_MARGIN * 2)
+  const layout = computeLayout(rect, tooltipWidth)
 
-  // Straight connecting line from the tooltip's top edge to the target's
-  // center — makes it unambiguous which on-screen box the tooltip describes.
-  const lineFrom = rect ? { x: tooltipLeft + tooltipWidth / 2, y: tooltipTop } : null
+  // Straight connecting line from the tooltip's nearest edge to the target's
+  // center — makes it unambiguous which on-screen box the tooltip describes,
+  // regardless of which side (above/below) the tooltip landed on.
+  const tooltipEdgeY = layout.top != null ? layout.top : window.innerHeight - (layout.bottom ?? 0)
+  const lineFrom = rect ? { x: layout.left + tooltipWidth / 2, y: tooltipEdgeY } : null
   const lineTo = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
+  const pillLeft = rect ? Math.min(rect.left, window.innerWidth - SIDE_MARGIN - 20) : 0
 
   return (
     // No click-to-dismiss anywhere on the backdrop: this whole layer is
@@ -143,7 +194,8 @@ export function TourOverlay() {
           style={{
             position: 'absolute',
             top: Math.max(4, rect.top - 26),
-            left: rect.left,
+            left: pillLeft,
+            maxWidth: window.innerWidth - pillLeft - SIDE_MARGIN,
             background: T.ink,
             color: T.paperSoft,
             fontFamily: T.text,
@@ -153,6 +205,8 @@ export function TourOverlay() {
             borderRadius: 999,
             pointerEvents: 'none',
             whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
           }}
         >
           {activeStep.title}
@@ -168,10 +222,12 @@ export function TourOverlay() {
         aria-label={activeStep.title}
         style={{
           position: 'absolute',
-          top: tooltipTop,
-          left: tooltipLeft,
+          left: layout.left,
+          top: layout.top,
+          bottom: layout.bottom,
           width: tooltipWidth,
-          maxWidth: 'calc(100vw - 32px)',
+          maxHeight: layout.maxHeight,
+          overflowY: 'auto',
           background: T.paperSoft,
           border: `0.5px solid ${T.rule}`,
           borderRadius: 16,
@@ -190,8 +246,9 @@ export function TourOverlay() {
             aria-label="Close tour"
             title="Close tour"
             style={{
-              background: 'none', border: 0, cursor: 'pointer', padding: 2, lineHeight: 1, flexShrink: 0,
-              color: T.inkFaint, fontSize: 15, fontWeight: 600, marginTop: -6, marginLeft: 10,
+              background: 'none', border: 0, cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0,
+              color: T.inkFaint, fontSize: 15, fontWeight: 600, marginTop: -8, marginRight: -6,
+              width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
             ✕
@@ -212,7 +269,7 @@ export function TourOverlay() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <button
             onClick={skip}
-            style={{ background: 'none', border: 0, fontSize: 12.5, color: T.inkMuted, cursor: 'pointer', padding: '6px 4px' }}
+            style={{ background: 'none', border: 0, fontSize: 13, color: T.inkMuted, cursor: 'pointer', padding: '10px 6px', minHeight: 40 }}
           >
             Skip for now
           </button>
@@ -222,22 +279,22 @@ export function TourOverlay() {
                 onClick={back}
                 aria-label="Previous step"
                 style={{
-                  background: 'none', border: `0.5px solid ${T.rule}`, borderRadius: 999, width: 34, height: 34,
-                  color: T.inkMuted, cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'none', border: `0.5px solid ${T.rule}`, borderRadius: 999, width: 40, height: 40,
+                  color: T.inkMuted, cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
                 ←
               </button>
             )}
             {isNavigate && rect ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: T.inkMuted, fontStyle: 'italic', fontFamily: T.display }}>
-                <span style={{ width: 6, height: 6, borderRadius: 999, background: T.signal, display: 'inline-block' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: T.inkMuted, fontStyle: 'italic', fontFamily: T.display, padding: '10px 4px' }}>
+                <span style={{ width: 6, height: 6, borderRadius: 999, background: T.signal, display: 'inline-block', flexShrink: 0 }} />
                 Waiting for you to click…
               </div>
             ) : isNavigate && !rect ? (
               <button
                 onClick={() => navigate(activeStep.toPath)}
-                style={{ background: T.ink, color: T.paperSoft, border: 0, borderRadius: 999, padding: '9px 18px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+                style={{ background: T.ink, color: T.paperSoft, border: 0, borderRadius: 999, padding: '11px 20px', minHeight: 40, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
               >
                 Open it for me
               </button>
@@ -249,7 +306,8 @@ export function TourOverlay() {
                   color: T.paperSoft,
                   border: 0,
                   borderRadius: 999,
-                  padding: '9px 18px',
+                  padding: '11px 20px',
+                  minHeight: 40,
                   fontSize: 13,
                   fontWeight: 500,
                   cursor: 'pointer',
