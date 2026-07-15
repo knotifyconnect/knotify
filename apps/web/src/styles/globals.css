@@ -167,6 +167,23 @@ body::before {
   }
 }
 
+.cafe-detail-modal {
+  background: #f5f0e8;
+  color: #1a1815;
+  box-shadow: 0 24px 80px rgba(26,24,21,0.34);
+}
+
+@media (min-width: 768px) {
+  .cafe-detail-overlay {
+    align-items: center;
+    padding: 32px;
+  }
+  .cafe-detail-modal {
+    max-height: calc(100dvh - 64px);
+    overflow-y: auto;
+  }
+}
+
 /* ── Safe-area support ─────────────────────────────────────────────────────── */
 /* Applied to mobile tab bar so it clears iPhone/Android home indicator */
 .k-tab-bar {

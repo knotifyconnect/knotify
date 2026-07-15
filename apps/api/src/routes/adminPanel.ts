@@ -348,15 +348,23 @@ async function uniqueCafeSlug(name: string, currentId?: string) {
 }
 
 async function geocodeCafe(address: string | null | undefined, city: string) {
-  const query = [address?.trim(), city.trim(), 'Germany'].filter(Boolean).join(', ')
   if (!address?.trim()) return { lat: null, lng: null }
-  const params = new URLSearchParams({ q: query, format: 'jsonv2', limit: '1', countrycodes: 'de', addressdetails: '1' })
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+  const streetAddress = address.split(',')[0]?.trim()
+  const streetMatch = streetAddress.match(/^(.*?)(?:\s+(\d+[a-zA-Z]?(?:[-/]\d+[a-zA-Z]?)?))?$/)
+  const street = streetMatch?.[1]?.trim() || streetAddress
+  const houseNumber = streetMatch?.[2]
+  const postalCode = address.match(/\b\d{5}\b/)?.[0]
+  const query = [streetAddress, postalCode, city.trim(), 'Germany'].filter(Boolean).join(', ')
+  const params = new URLSearchParams({ street, city: city.trim(), countrycode: 'DE', limit: '1', lang: 'de' })
+  if (houseNumber) params.set('housenumber', houseNumber)
+  if (postalCode) params.set('postcode', postalCode)
+  const response = await fetch(`https://photon.komoot.io/structured?${params}`, {
     headers: { 'User-Agent': 'knotify-admin/1.0 (https://knotify.pro)' }, signal: AbortSignal.timeout(8000),
   })
   if (!response.ok) throw new Error('Address lookup is temporarily unavailable.')
-  const [match] = await response.json() as Array<{ lat: string; lon: string }>
-  const lat = Number(match?.lat); const lng = Number(match?.lon)
+  const payload = await response.json() as { features?: Array<{ geometry?: { coordinates?: [number, number] } }> }
+  const coordinates = payload.features?.[0]?.geometry?.coordinates
+  const lng = Number(coordinates?.[0]); const lat = Number(coordinates?.[1])
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error(`Could not precisely locate “${query}”. Check the street, number, postal code, and city.`)
   return { lat, lng }
 }
@@ -482,14 +490,25 @@ adminPanelRouter.post('/cafes/import', async (req, res) => {
   const updateExisting = req.body?.mode === 'update'
   if (!rows.length || rows.length > 500) return res.status(422).json({ error: 'Import must contain 1–500 rows.' })
   const results: Array<{ row: number; status: 'created' | 'updated' | 'skipped' | 'error'; error?: string }> = []
+  const coordinateUnavailableRows: number[] = []
   const seen = new Set<string>()
+  let geocoderAvailable = true
   for (const item of rows) {
     const row = Number(item?.row) || 0
     const parsed = placeSchema.safeParse(item?.data)
     if (!parsed.success) { results.push({ row, status: 'error', error: parsed.error.issues.map(i => `${i.path.join('.') || 'row'}: ${i.message}`).join('; ') }); continue }
     let fields = placePatch(parsed.data)
-    try { fields = { ...fields, ...await geocodeCafe(parsed.data.address, parsed.data.city) } }
-    catch (error) { results.push({ row, status: 'error', error: error instanceof Error ? error.message : 'Could not locate this address.' }); continue }
+    if (geocoderAvailable) {
+      try { fields = { ...fields, ...await geocodeCafe(parsed.data.address, parsed.data.city) } }
+      catch (error) {
+        coordinateUnavailableRows.push(row)
+        fields = { ...fields, lat: null, lng: null }
+        if (error instanceof Error && error.message.includes('temporarily unavailable')) geocoderAvailable = false
+      }
+    } else {
+      coordinateUnavailableRows.push(row)
+      fields = { ...fields, lat: null, lng: null }
+    }
     const key = `${String(fields.name).toLowerCase()}|${String(fields.address ?? '').toLowerCase()}|${String(fields.area ?? '').toLowerCase()}`
     if (seen.has(key)) { results.push({ row, status: 'skipped', error: 'Duplicate row in this import.' }); continue }
     seen.add(key)
@@ -511,7 +530,7 @@ adminPanelRouter.post('/cafes/import', async (req, res) => {
     if (write.error) results.push({ row, status: 'error', error: write.error.message })
     else results.push({ row, status: existing ? 'updated' : 'created' })
   }
-  return res.json({ results })
+  return res.json({ results, coordinateUnavailableRows })
 })
 
 // ── Gigs ──────────────────────────────────────────────────────────────────────
