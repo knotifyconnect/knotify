@@ -722,8 +722,8 @@ export function RelationshipHomePage() {
 
   const RAIL_FEED_LIMIT = 4
   const asksBlock = (
-    <div data-tour="asks-for-you">
-      <div>
+    <div className="k-home-asks-group" data-tour="asks-for-you">
+      <section className="k-home-rail-section">
         <DeskSectionLabel right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {feedAsks.length > RAIL_FEED_LIMIT && (
@@ -746,9 +746,9 @@ export function RelationshipHomePage() {
             No targeted asks yet — view all →
           </button>
         )}
-      </div>
+      </section>
 
-      <div>
+      <section className="k-home-rail-section">
         <DeskSectionLabel right={
           myOpenAsks.length > 0
             ? <button type="button" onClick={() => navigate('/asks')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.inkMuted, cursor: 'pointer', fontFamily: T.text, padding: 0 }}>Manage →</button>
@@ -763,7 +763,7 @@ export function RelationshipHomePage() {
             Need something? Ask for help.
           </button>
         )}
-      </div>
+      </section>
     </div>
   )
 
@@ -805,7 +805,7 @@ export function RelationshipHomePage() {
   // breakpoint, so mobile needs its own visible copy of the same content
   // rather than losing these sections entirely.
   const pulseKnotBlock = (
-    <div data-tour="pulse-knot">
+    <section className="k-home-rail-section" data-tour="pulse-knot">
       <DeskSectionLabel right={networkFeed.length > 0 ? <span style={{ color: T.signal }}>● live</span> : undefined}>Pulse · your knot</DeskSectionLabel>
       {networkFeed.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -828,7 +828,7 @@ export function RelationshipHomePage() {
       ) : (
         <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>Activity from your knot will appear here.</div>
       )}
-    </div>
+    </section>
   )
 
   const sideQuestsBlock = sideQuests.length > 0 ? (
@@ -854,7 +854,7 @@ export function RelationshipHomePage() {
   ) : null
 
   const nextIrlBlock = (
-    <div data-tour="next-irl">
+    <section className="k-home-rail-section" data-tour="next-irl">
       <DeskSectionLabel>Next · IRL</DeskSectionLabel>
       {railEvents.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -869,7 +869,7 @@ export function RelationshipHomePage() {
       ) : (
         <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>No upcoming events yet.</div>
       )}
-    </div>
+    </section>
   )
 
   const rail = (

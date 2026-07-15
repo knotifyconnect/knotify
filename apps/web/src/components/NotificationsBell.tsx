@@ -140,7 +140,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
       {creatingAsk && <CreateAskModal onClose={() => setCreatingAsk(false)} onCreated={() => void load()} />}
       {selectedAsk && <AskDrawer ask={selectedAsk} currentUserId={currentUserId} onClose={() => setSelectedAsk(null)} onChanged={() => void load()} />}
       {variant === 'floating' ? (
-        <div style={{ position: 'fixed', bottom: 'var(--mobile-notifications-bottom)', right: 'var(--mobile-floating-action-right)', zIndex: 9991 }}>{bellButton}</div>
+        <div style={{ position: 'fixed', bottom: 'var(--mobile-notifications-bottom)', left: 'var(--mobile-floating-action-left)', zIndex: 9991 }}>{bellButton}</div>
       ) : (
         bellButton
       )}
