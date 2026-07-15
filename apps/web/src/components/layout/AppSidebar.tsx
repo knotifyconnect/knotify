@@ -56,6 +56,19 @@ const NAV_TOUR_TARGET: Record<string, string> = {
   '/cafes': 'nav-cafes',
 }
 
+// Mobile bottom tab bar only has room for five items comfortably. Discover
+// and Profile move to a small top bar instead (logo + search + avatar, the
+// same shape as most mobile-first social apps) so Cafés — previously
+// unreachable from mobile nav at all — gets a real slot at the bottom
+// alongside the other core sections.
+const MOBILE_TAB_ITEMS: Array<{ title: string; href: string; icon: React.ReactNode; badge?: NavItem['badge'] }> = [
+  { title: 'Home',     href: '/home',     icon: <Home size={18} /> },
+  { title: 'Knot',     href: '/map',      icon: <Network size={18} />, badge: 'connections' },
+  { title: 'Jobs',     href: '/jobs',     icon: <BriefcaseBusiness size={18} />, badge: 'jobs' },
+  { title: 'Messages', href: '/messages', icon: <MessageSquare size={18} />, badge: 'messages' },
+  { title: 'Cafés',    href: '/cafes',    icon: <Coffee size={18} /> },
+]
+
 const BASE_ITEMS: NavItem[] = [
   { title: 'Home',         href: '/home',     icon: <Home              size={15} /> },
   { title: 'Your Knot',    href: '/map',      icon: <Network           size={15} />, badge: 'connections' },
@@ -369,6 +382,47 @@ export function AppSidebar() {
         <NotificationsBell variant="floating" messageUnread={messageUnreadCount} referralUnread={referralUnreadCount} />
       </div>
 
+      {/* ── Mobile top bar: logo + Discover + Profile ─────────────── */}
+      <div
+        className="flex md:hidden"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          minHeight: 'var(--mobile-topbar-height)',
+          paddingTop: 'env(safe-area-inset-top)',
+          background: 'rgba(244,239,230,0.94)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderBottom: '0.5px solid var(--rule-soft)',
+          zIndex: 45,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 14px',
+          boxSizing: 'border-box',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => navigate('/home')}
+          aria-label="Go to home"
+          style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 4, margin: '0 0 0 -4px' }}
+        >
+          <KnotifyLogoImg variant="mark" height={22} />
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <NavLink to="/discover" aria-label="Discover" style={{ display: 'flex', textDecoration: 'none' }}>
+            {({ isActive }) => <Search size={19} color={isActive ? 'var(--signal)' : 'var(--ink-soft)'} />}
+          </NavLink>
+          <NavLink to="/profile" aria-label="Your profile" style={{ display: 'flex', textDecoration: 'none' }}>
+            {me
+              ? <KAvatar name={me.full_name} src={me.avatar_url} size={28} />
+              : <div style={{ width: 28, height: 28, borderRadius: 999, background: 'var(--rule)' }} />}
+          </NavLink>
+        </div>
+      </div>
+
       {/* ── Mobile bottom tab bar ─────────────────────────────────── */}
       <nav
         className="flex md:hidden k-tab-bar"
@@ -387,18 +441,7 @@ export function AppSidebar() {
           padding: '0 8px',
         }}
       >
-        {([
-          { title: 'Home',     href: '/home',     icon: <Home size={18} /> },
-          { title: 'Knot',     href: '/map',      icon: <Network size={18} />, badge: 'connections' as const },
-          { title: 'Jobs',     href: '/jobs',     icon: <BriefcaseBusiness size={18} />, badge: 'jobs' as const },
-          { title: 'Messages', href: '/messages', icon: <MessageSquare size={18} />, badge: 'messages' as const },
-          { title: 'Discover', href: '/discover', icon: <Search size={18} /> },
-          {
-            title: 'Me',
-            href: '/profile',
-            icon: me ? <KAvatar name={me.full_name} src={me.avatar_url} size={22} /> : <Search size={18} />,
-          },
-        ] as Array<{ title: string; href: string; icon: React.ReactNode; badge?: 'jobs' | 'messages' | 'connections' }>).map((item) => {
+        {MOBILE_TAB_ITEMS.map((item) => {
           const count = item.badge ? badgeFor(item as NavItem) : 0
           return (
           <NavLink

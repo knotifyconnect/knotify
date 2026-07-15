@@ -800,75 +800,85 @@ export function RelationshipHomePage() {
   ) : null
 
   // ── Right rail: Coffees + Pulse + Asks + Next IRL ──────────────────────────
+  // Each block is a standalone const (not inlined) so it can be reused
+  // verbatim in the mobile stack below — that rail is `hidden` under the lg
+  // breakpoint, so mobile needs its own visible copy of the same content
+  // rather than losing these sections entirely.
+  const pulseKnotBlock = (
+    <div data-tour="pulse-knot">
+      <DeskSectionLabel right={networkFeed.length > 0 ? <span style={{ color: T.signal }}>● live</span> : undefined}>Pulse · your knot</DeskSectionLabel>
+      {networkFeed.length > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {networkFeed.slice(0, 5).map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              onClick={() => it.user && navigate(`/profile/${it.user.id}`)}
+              style={{ textAlign: 'left', cursor: it.user ? 'pointer' : 'default', width: '100%', padding: 10, borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 10, fontFamily: T.text }}
+            >
+              <div style={{ width: 6, height: 6, borderRadius: 3, background: T.verd, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.3 }}>
+                {it.user && <span style={{ fontWeight: 500 }}>{it.user.full_name} · </span>}
+                <span style={{ color: T.inkMuted }}>{it.content}</span>
+              </div>
+              <div style={{ fontSize: 10, color: T.inkFaint, flexShrink: 0 }}>{timeAgo(it.created_at)}</div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>Activity from your knot will appear here.</div>
+      )}
+    </div>
+  )
+
+  const sideQuestsBlock = sideQuests.length > 0 ? (
+    <div data-tour="side-quests">
+      <DeskSectionLabel right={<button type="button" data-tour="nav-quests" onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.ochre, fontWeight: 600, cursor: 'pointer', fontFamily: T.text, padding: 0 }}>All →</button>}>Side quests</DeskSectionLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {sideQuests.map((q) => (
+          <button
+            key={q.key}
+            type="button"
+            onClick={() => navigate('/quests')}
+            style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: '10px 12px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 10, fontFamily: T.text }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, lineHeight: 1.25 }}>{q.title}</div>
+              {q.description && <div style={{ fontSize: 11, color: T.inkMuted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.description}</div>}
+            </div>
+            <span style={{ flexShrink: 0, fontFamily: T.display, fontStyle: 'italic', fontSize: 15, color: T.ochre }}>+{q.points}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  ) : null
+
+  const nextIrlBlock = (
+    <div data-tour="next-irl">
+      <DeskSectionLabel>Next · IRL</DeskSectionLabel>
+      {railEvents.length > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {railEvents.map((ev, i) => (
+            <button key={ev.id} type="button" onClick={() => navigate('/events')} style={{ textAlign: 'left', cursor: 'pointer', padding: 14, borderRadius: 12, background: i === 0 ? T.signal : T.paper, color: i === 0 ? '#fff' : T.ink, border: i === 0 ? 'none' : `0.5px solid ${T.rule}` }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: i === 0 ? 'rgba(255,255,255,0.85)' : T.inkMuted }}>{shortWhen(ev.starts_at, ev.time_tba)}{ev.location ? ` · ${ev.location}` : ''}</div>
+              <div style={{ fontFamily: T.display, fontSize: 16, fontWeight: 400, marginTop: 3, lineHeight: 1.15 }}>{ev.title}</div>
+              <div style={{ fontSize: 11, color: i === 0 ? 'rgba(255,255,255,0.85)' : T.inkMuted, marginTop: 4 }}>{ev.rsvp_count} going</div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>No upcoming events yet.</div>
+      )}
+    </div>
+  )
+
   const rail = (
     <>
       {coffeesBlock}
-
-      <div data-tour="pulse-knot">
-        <DeskSectionLabel right={networkFeed.length > 0 ? <span style={{ color: T.signal }}>● live</span> : undefined}>Pulse · your knot</DeskSectionLabel>
-        {networkFeed.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {networkFeed.slice(0, 5).map((it) => (
-              <button
-                key={it.id}
-                type="button"
-                onClick={() => it.user && navigate(`/profile/${it.user.id}`)}
-                style={{ textAlign: 'left', cursor: it.user ? 'pointer' : 'default', width: '100%', padding: 10, borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 10, fontFamily: T.text }}
-              >
-                <div style={{ width: 6, height: 6, borderRadius: 3, background: T.verd, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.3 }}>
-                  {it.user && <span style={{ fontWeight: 500 }}>{it.user.full_name} · </span>}
-                  <span style={{ color: T.inkMuted }}>{it.content}</span>
-                </div>
-                <div style={{ fontSize: 10, color: T.inkFaint, flexShrink: 0 }}>{timeAgo(it.created_at)}</div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>Activity from your knot will appear here.</div>
-        )}
-      </div>
-
+      {pulseKnotBlock}
       {asksBlock}
-
-      {sideQuests.length > 0 && (
-        <div data-tour="side-quests">
-          <DeskSectionLabel right={<button type="button" data-tour="nav-quests" onClick={() => navigate('/quests')} style={{ background: 'none', border: 'none', fontSize: 11, color: T.ochre, fontWeight: 600, cursor: 'pointer', fontFamily: T.text, padding: 0 }}>All →</button>}>Side quests</DeskSectionLabel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {sideQuests.map((q) => (
-              <button
-                key={q.key}
-                type="button"
-                onClick={() => navigate('/quests')}
-                style={{ textAlign: 'left', cursor: 'pointer', width: '100%', padding: '10px 12px', borderRadius: 10, background: T.paper, border: `0.5px solid ${T.ruleSoft}`, display: 'flex', alignItems: 'center', gap: 10, fontFamily: T.text }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, lineHeight: 1.25 }}>{q.title}</div>
-                  {q.description && <div style={{ fontSize: 11, color: T.inkMuted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.description}</div>}
-                </div>
-                <span style={{ flexShrink: 0, fontFamily: T.display, fontStyle: 'italic', fontSize: 15, color: T.ochre }}>+{q.points}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div data-tour="next-irl">
-        <DeskSectionLabel>Next · IRL</DeskSectionLabel>
-        {railEvents.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {railEvents.map((ev, i) => (
-              <button key={ev.id} type="button" onClick={() => navigate('/events')} style={{ textAlign: 'left', cursor: 'pointer', padding: 14, borderRadius: 12, background: i === 0 ? T.signal : T.paper, color: i === 0 ? '#fff' : T.ink, border: i === 0 ? 'none' : `0.5px solid ${T.rule}` }}>
-                <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: i === 0 ? 'rgba(255,255,255,0.85)' : T.inkMuted }}>{shortWhen(ev.starts_at, ev.time_tba)}{ev.location ? ` · ${ev.location}` : ''}</div>
-                <div style={{ fontFamily: T.display, fontSize: 16, fontWeight: 400, marginTop: 3, lineHeight: 1.15 }}>{ev.title}</div>
-                <div style={{ fontSize: 11, color: i === 0 ? 'rgba(255,255,255,0.85)' : T.inkMuted, marginTop: 4 }}>{ev.rsvp_count} going</div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div style={{ fontSize: 12.5, color: T.inkFaint, fontStyle: 'italic', fontFamily: T.display }}>No upcoming events yet.</div>
-        )}
-      </div>
+      {sideQuestsBlock}
+      {nextIrlBlock}
     </>
   )
 
@@ -912,10 +922,14 @@ export function RelationshipHomePage() {
         </>}
       />
 
-      {/* Mobile-only: coffees + asks (the desktop rail is hidden under lg) */}
+      {/* Mobile-only: the desktop rail is `hidden` under lg, so mobile gets its
+          own visible copy of the same content instead of losing it outright. */}
       <div className="k-mobile-stack">
         {coffeesBlock}
         {asksBlock}
+        {pulseKnotBlock}
+        {nextIrlBlock}
+        {sideQuestsBlock}
       </div>
 
       <DeskPage rail={rail}>
