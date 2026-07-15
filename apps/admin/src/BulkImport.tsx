@@ -39,29 +39,44 @@ function bool(v: string, field: string, issues: Issue[], fallback: boolean) {
 }
 function isoDate(v: string, field: string, issues: Issue[]) {
   if (!v) return ''
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(`${v}T00:00:00Z`))) {
-    issues.push({ field, message: 'must use YYYY-MM-DD', severity: 'error' }); return ''
+  const datePart = v.trim().split(/[T\s]/)[0]
+  const match = /^(?:(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})|(\d{1,2})[./-](\d{1,2})[./-](\d{4}))$/.exec(datePart)
+  if (!match) {
+    issues.push({ field, message: 'must be a valid date (YYYY-MM-DD or DD.MM.YYYY)', severity: 'error' }); return ''
   }
-  return v
+  const year = Number(match[1] ?? match[6]); const month = Number(match[2] ?? match[5]); const day = Number(match[3] ?? match[4])
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    issues.push({ field, message: 'must be a real calendar date', severity: 'error' }); return ''
+  }
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 function time(v: string, field: string, issues: Issue[]) {
   if (!v) return ''
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) { issues.push({ field, message: 'must use HH:MM (24-hour)', severity: 'error' }); return '' }
-  return v
+  const match = /^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$/.exec(v.trim())
+  if (!match || Number(match[1]) > 23) { issues.push({ field, message: 'must use HH:MM (24-hour)', severity: 'error' }); return '' }
+  return `${match[1].padStart(2, '0')}:${match[2]}`
+}
+function embeddedTime(v: string) {
+  const match = /(?:T|\s)(\d{1,2}:\d{2})(?::\d{2})?/.exec(v.trim())
+  return match?.[1] ?? ''
 }
 
 function eventRow(row: Record<string, unknown>, rowNumber: number): PreviewRow {
   const issues: Issue[] = []
   const title = value(row, 'title')
   if (title.length < 2) issues.push({ field: 'title', message: 'is required (at least 2 characters)', severity: 'error' })
-  const startDate = isoDate(value(row, 'start_date') || value(row, 'starts_at'), 'start_date', issues)
+  const startDateValue = value(row, 'start_date') || value(row, 'starts_at')
+  const endDateValue = value(row, 'end_date') || value(row, 'ends_at')
+  const startDate = isoDate(startDateValue, 'start_date', issues)
   if (!startDate) issues.push({ field: 'start_date', message: 'is required', severity: 'error' })
-  const startTime = time(value(row, 'start_time'), 'start_time', issues)
-  const endDate = isoDate(value(row, 'end_date'), 'end_date', issues)
-  const endTime = time(value(row, 'end_time'), 'end_time', issues)
+  const startTime = time(value(row, 'start_time') || embeddedTime(startDateValue), 'start_time', issues)
+  const endDate = isoDate(endDateValue, 'end_date', issues)
+  const endTime = time(value(row, 'end_time') || embeddedTime(endDateValue), 'end_time', issues)
   if (endTime && !endDate) issues.push({ field: 'end_date', message: 'is required when end_time is provided', severity: 'error' })
-  const eventType = value(row, 'event_type').toLowerCase()
-  if (eventType && !EVENT_TYPES.has(eventType)) issues.push({ field: 'event_type', message: 'is not one of the supported event types', severity: 'error' })
+  const rawEventType = value(row, 'event_type').toLowerCase()
+  const eventType = EVENT_TYPES.has(rawEventType) ? rawEventType : ''
+  if (rawEventType && !eventType) issues.push({ field: 'event_type', message: 'will be imported without a type because it is not one of the admin categories', severity: 'warning' })
   const startsAt = startDate ? `${startDate}T${startTime || '00:00'}:00` : ''
   const endsAt = endDate ? `${endDate}T${endTime || '00:00'}:00` : null
   if (startsAt && endsAt && new Date(endsAt) < new Date(startsAt)) issues.push({ field: 'end_date', message: 'must not be before start_date', severity: 'error' })
@@ -162,7 +177,7 @@ export function BulkImport({ kind, onImport }: { kind: Kind; onImport: (rows: Ar
       <label style={{ fontSize: 12, marginRight: 10 }}><input type="radio" checked={mode === 'create'} onChange={() => setMode('create')} /> Create only (skip duplicates)</label>
       <label style={{ fontSize: 12 }}><input type="radio" checked={mode === 'update'} onChange={() => setMode('update')} /> Update likely duplicates</label>
       <div style={{ maxHeight: 220, overflow: 'auto', marginTop: 10, border: '1px solid rgba(84,72,58,.14)', borderRadius: 7 }}>
-        {rows.map(row => <div key={row.row} style={{ padding: '7px 9px', borderBottom: '1px solid rgba(84,72,58,.1)', fontSize: 12 }}><strong>Row {row.row}</strong> · {String(row.data.title ?? row.data.name ?? 'Untitled')}{row.issues.length > 0 && <div style={{ color: '#D8442B', marginTop: 2 }}>{row.issues.map(issue => `${issue.field}: ${issue.message}`).join(' · ')}</div>}</div>)}
+        {rows.map(row => <div key={row.row} style={{ padding: '7px 9px', borderBottom: '1px solid rgba(84,72,58,.1)', fontSize: 12 }}><strong>Row {row.row}</strong> · {String(row.data.title ?? row.data.name ?? 'Untitled')}{row.issues.length > 0 && <div style={{ marginTop: 2 }}>{row.issues.map(issue => <span key={`${issue.field}-${issue.message}`} style={{ color: issue.severity === 'error' ? '#D8442B' : '#b8820f' }}>{issue.field}: {issue.message} · </span>)}</div>}</div>)}
       </div>
       <button type="button" disabled={busy || !valid.length} style={{ ...importBtnStyle, marginTop: 10, opacity: busy || !valid.length ? .55 : 1 }} onClick={() => void save()}>{busy ? 'Importing…' : `Import ${valid.length} valid row(s)`}</button>
     </div>}
