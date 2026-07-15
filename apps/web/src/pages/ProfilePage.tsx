@@ -981,7 +981,7 @@ function OwnProfileView() {
 
       {/* ─── Credibility widget (moved from Home) ────────────────────────── */}
       {isWidgetVisible('credibility') && credibility && showOverview && (
-        <button type="button" onClick={() => navigate('/quests')} style={{ textAlign: 'left', cursor: 'pointer', border: 'none', padding: 22, borderRadius: 18, background: 'var(--ink)', color: 'var(--paper-soft)', position: 'relative', overflow: 'hidden' }}>
+        <button type="button" onClick={() => navigate('/quests')} style={{ display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', padding: 22, borderRadius: 18, background: 'var(--ink)', color: 'var(--paper-soft)', position: 'relative', overflow: 'hidden' }}>
           <div aria-hidden style={{ position: 'absolute', right: -30, top: -30, width: 160, height: 160, borderRadius: '50%', background: 'radial-gradient(circle, rgba(216,68,43,0.3) 0%, transparent 70%)' }} />
           <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
             <CredRingDark score={credibility.score} max={credibility.next?.at ?? 120} size={66} label={credibility.tier} sub={`Credibility${credibility.percentile != null ? ` · top ${credibility.percentile}%` : ''}`} />
