@@ -30,6 +30,7 @@ type EventItem = {
   source: string; url: string | null; image_url?: string | null; interests?: string[]
   host_label?: string | null; capacity?: number | null
   price_eur?: number | null; event_type?: string | null
+  time_tba?: boolean
   reason?: string
 }
 type Gig = {
@@ -59,16 +60,22 @@ const T = {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function whenLabel(iso: string) {
+function whenLabel(iso: string, timeTba = false) {
   const d = new Date(iso); const now = new Date()
   const sameDay = d.toDateString() === now.toDateString()
   const tomorrow = new Date(now.getTime() + 86400000).toDateString() === d.toDateString()
+  if (timeTba) {
+    if (sameDay) return 'Today · Time TBA'
+    if (tomorrow) return 'Tomorrow · Time TBA'
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · Time TBA'
+  }
   const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   if (sameDay) return `Today, ${time}`
   if (tomorrow) return `Tomorrow, ${time}`
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + `, ${time}`
 }
-function timeOnly(iso: string) {
+function timeOnly(iso: string, timeTba = false) {
+  if (timeTba) return 'Time TBA'
   return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 function minuteLabel(m: number) {
@@ -377,7 +384,7 @@ function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onC
         <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: 'rgba(26,24,21,0.45)', border: 'none', borderRadius: 999, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', backdropFilter: 'blur(4px)' }}><X size={15} /></button>
         {e.source === 'curated' && <div style={{ position: 'absolute', top: 14, left: 14, background: T.verd, color: '#fff', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '4px 10px', borderRadius: 999, fontFamily: T.text }}>Curated</div>}
         <div style={{ position: 'absolute', bottom: 18, left: 20, right: 20 }}>
-          <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.8)', fontFamily: T.text, marginBottom: 5, fontWeight: 500 }}>{whenLabel(e.starts_at)}</div>
+          <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.8)', fontFamily: T.text, marginBottom: 5, fontWeight: 500 }}>{whenLabel(e.starts_at, e.time_tba)}</div>
           <div style={{ fontFamily: T.display, fontStyle: 'italic', fontSize: 26, fontWeight: 500, color: '#fff', lineHeight: 1.1 }}>{e.title}</div>
         </div>
       </div>
@@ -401,7 +408,7 @@ function EventDetailModal({ event: e, onClose, onRsvp }: { event: EventItem; onC
         <div style={{ padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}` }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: T.inkMuted, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 4, fontFamily: T.text }}>Time</div>
           <div style={{ fontSize: 13, color: T.ink, fontFamily: T.text }}>
-            {timeOnly(e.starts_at)}{e.ends_at ? ` – ${timeOnly(e.ends_at)}` : ''}
+            {timeOnly(e.starts_at, e.time_tba)}{e.ends_at && !e.time_tba ? ` – ${timeOnly(e.ends_at)}` : ''}
           </div>
         </div>
         <div style={{ padding: '12px 14px', borderRadius: 12, background: T.paperSoft, border: `0.5px solid ${T.ruleSoft}` }}>
@@ -522,7 +529,7 @@ function EventsCarousel({ events, interests, onRsvp, onOpen, onSeeAll }: {
                 </div>
               </div>
               <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ fontSize: 11, color: T.signal, fontWeight: 600, fontFamily: T.text }}>{whenLabel(e.starts_at)}</div>
+                <div style={{ fontSize: 11, color: T.signal, fontWeight: 600, fontFamily: T.text }}>{whenLabel(e.starts_at, e.time_tba)}</div>
                 <div style={{ fontFamily: T.display, fontSize: 14, fontWeight: 500, color: T.ink, lineHeight: 1.2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{e.title}</div>
                 {e.location && <div style={{ fontSize: 11, color: T.inkFaint, display: 'flex', alignItems: 'center', gap: 3, fontFamily: T.text }}><MapPin size={10} />{e.location}</div>}
                 <div style={{ flex: 1 }} />
