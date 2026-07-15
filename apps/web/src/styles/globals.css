@@ -34,6 +34,9 @@
   --mobile-floating-action-right: 14px;
   --mobile-feedback-bottom: max(92px, calc(70px + env(safe-area-inset-bottom)));
   --mobile-notifications-bottom: max(140px, calc(118px + env(safe-area-inset-bottom)));
+  /* Mobile top bar (logo + Discover + Profile, see AppSidebar.tsx) — pages
+     need this to offset their own content/fixed layouts below it. */
+  --mobile-topbar-height: calc(52px + env(safe-area-inset-top));
 }
 
 html,
