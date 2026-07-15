@@ -331,7 +331,7 @@ export function TourOverlay() {
         {!rect && demo && (
           <div style={{ marginBottom: 12 }}>
             <p style={{ fontSize: 12, color: T.inkFaint, fontStyle: 'italic', margin: '0 0 8px' }}>
-              You don't have any data here yet — here's what it looks like once you're connected.
+              You don't have any data here yet. Here's what it looks like once you're connected.
             </p>
             {demo()}
           </div>
