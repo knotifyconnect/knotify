@@ -1376,23 +1376,24 @@ function KnotStage({
               {/* Mobile never hit the desktop-only knot-stats/knot-legend
                   pills below (different JSX branch entirely) — they simply
                   didn't exist here, not just hidden. Compact versions,
-                  stacked bottom-left clear of the bottom sheet. */}
+                  stacked bottom-left, sitting just above the collapsed
+                  bottom sheet handle rather than floating mid-screen. */}
               <div
                 style={{
-                  position: 'absolute', left: 12, bottom: 'calc(64px + env(safe-area-inset-bottom) + 14px)',
-                  zIndex: 6, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
-                  maxWidth: 'calc(100% - 24px)',
+                  position: 'absolute', left: 10, bottom: 'calc(64px + env(safe-area-inset-bottom) + 6px)',
+                  zIndex: 6, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4,
+                  maxWidth: 'calc(100% - 20px)',
                 }}
               >
                 <div
                   data-tour="knot-legend"
-                  style={{ padding: '5px 9px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'rgba(244,239,230,0.88)', backdropFilter: 'blur(10px)', maxWidth: '100%', overflowX: 'auto' }}
+                  style={{ padding: '4px 8px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'rgba(244,239,230,0.88)', backdropFilter: 'blur(10px)', maxWidth: '100%', overflowX: 'auto' }}
                 >
-                  <WebLegendRow />
+                  <WebLegendRow compact />
                 </div>
                 <div
                   data-tour="knot-stats"
-                  style={{ padding: '6px 10px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'rgba(244,239,230,0.88)', backdropFilter: 'blur(10px)', color: 'var(--ink-muted)', fontSize: 10.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  style={{ padding: '4px 8px', borderRadius: 999, border: '0.5px solid var(--rule)', background: 'rgba(244,239,230,0.88)', backdropFilter: 'blur(10px)', color: 'var(--ink-muted)', fontSize: 9.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 >
                   {connected.length} connected{knotColdCount > 0 ? ` · ${knotColdCount} going cold` : ''}
                 </div>
@@ -1505,30 +1506,30 @@ function KnotStage({
   )
 }
 
-function WebLegendRow() {
+function WebLegendRow({ compact = false }: { compact?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
-      <WebLegend label="Warm" color="#4caf7d" />
-      <WebLegend label="Cooling" color="#d4a017" />
-      <WebLegend label="Cold" color="#e05c3a" />
-      <span style={{ width: 1, height: 10, background: 'var(--rule)' }} />
-      <WebLegend label="Coffee" glyph="☕" color="#1F6B5E" />
-      <WebLegend label="Ask" glyph="?" color="#C8941F" />
+    <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 6 : 10, whiteSpace: 'nowrap' }}>
+      <WebLegend label="Warm" color="#4caf7d" compact={compact} />
+      <WebLegend label="Cooling" color="#d4a017" compact={compact} />
+      <WebLegend label="Cold" color="#e05c3a" compact={compact} />
+      <span style={{ width: 1, height: compact ? 8 : 10, background: 'var(--rule)' }} />
+      <WebLegend label="Coffee" glyph="☕" color="#1F6B5E" compact={compact} />
+      <WebLegend label="Ask" glyph="?" color="#C8941F" compact={compact} />
     </div>
   )
 }
 
-function WebLegend({ label, color, glyph }: { label: string; color: string; glyph?: string }) {
+function WebLegend({ label, color, glyph, compact = false }: { label: string; color: string; glyph?: string; compact?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.8, color: 'var(--ink-muted)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 4 : 5, fontSize: compact ? 9.5 : 10.8, color: 'var(--ink-muted)' }}>
       {glyph ? (
         <span style={{
-          width: 12, height: 12, borderRadius: '50%', background: color, color: '#fff',
+          width: compact ? 10 : 12, height: compact ? 10 : 12, borderRadius: '50%', background: color, color: '#fff',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 7.5, fontWeight: 700, lineHeight: 1,
+          fontSize: compact ? 6.5 : 7.5, fontWeight: 700, lineHeight: 1,
         }}>{glyph}</span>
       ) : (
-        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+        <span style={{ width: compact ? 6 : 7, height: compact ? 6 : 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
       )}
       {label}
     </div>
