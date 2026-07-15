@@ -394,6 +394,11 @@ body::before {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 @media (max-width: 479px) { .k-knot-stats-bar { font-size: 10px; } }
+/* On mobile the network list renders as a bottom sheet (z-index 9900, see
+   MobileBottomSheet) docked at `64px + safe-area`, which otherwise sits
+   right on top of this bar even collapsed — push it up to clear the sheet's
+   collapsed peek height instead of being hidden underneath it. */
+@media (max-width: 767px) { .k-knot-stats-bar { bottom: calc(64px + env(safe-area-inset-bottom) + 36px); } }
 .k-knot-detail-panel {
   position: absolute; right: 18px; top: 78px; z-index: 7;
   width: 336px; max-height: calc(100% - 100px);

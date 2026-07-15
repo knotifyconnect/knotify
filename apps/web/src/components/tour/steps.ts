@@ -33,7 +33,7 @@ export const TOUR_STEPS: TourStep[] = [
     path: '/home',
     target: '[data-tour="companion-input"]',
     title: 'Ask the Companion',
-    body: 'Your AI relationship advisor, grounded in your real connections and history. Ask who to talk to or how to word something tricky, and it can draft a message for you to confirm.',
+    body: 'Tap this anytime to open your AI relationship advisor, grounded in your real connections and history. Ask who to talk to or how to word something tricky, and it can draft a message for you to confirm.',
   },
   {
     kind: 'spotlight',
@@ -162,6 +162,14 @@ export const TOUR_STEPS: TourStep[] = [
     target: '[data-tour="referral-inbox"]',
     title: 'Referral inbox',
     body: 'When someone asks you to refer them for a role at your company, it lands here. A real referral is one of the highest-trust things you can give.',
+  },
+  {
+    kind: 'spotlight',
+    id: 'gigs-toggle',
+    path: '/jobs',
+    target: '[data-tour="gigs-toggle"]',
+    title: 'Or switch to Gigs',
+    body: 'Small favors between real people: a CV review, a mentorship chat, a campus tour, in exchange for coffee, a fair rate, or just goodwill. Tap here to see what is on offer.',
   },
   {
     kind: 'navigate',

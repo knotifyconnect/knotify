@@ -6,7 +6,8 @@ import { useTour } from './TourProvider'
 import { TOUR_DEMOS } from './demos'
 
 type Rect = { top: number; left: number; width: number; height: number }
-type Layout = { left: number; top?: number; bottom?: number; maxHeight: number }
+type Side = 'below' | 'above' | 'right' | 'left' | 'center'
+type Layout = { left: number; top?: number; bottom?: number; maxHeight: number; side: Side }
 
 const PAD = 8
 const GAP = 14
@@ -17,6 +18,11 @@ const TOP_MARGIN = 16
 // small breathing-room margin.
 const isNarrowViewport = () => window.innerWidth < 768
 const bottomMargin = () => (isNarrowViewport() ? 100 : 24)
+
+// A clamp that degrades gracefully instead of throwing nonsense when min > max
+// (happens on pathologically short viewports) — falls back to min rather than
+// producing an inverted/negative range.
+const clamp = (n: number, min: number, max: number) => (min > max ? min : Math.min(max, Math.max(min, n)))
 
 // Multiple elements can share a data-tour id (e.g. the desktop sidebar and
 // the mobile tab bar both tag their "Messages" link) — only one is visible
@@ -42,29 +48,47 @@ function rectsEqual(a: Rect | null, b: Rect | null) {
   return a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height
 }
 
-// Centers the tooltip under (or, if there isn't room, above) the target —
-// never left-aligned to it, which on a narrow phone screen used to pin the
-// tooltip to the same spot regardless of where the target actually was.
-// Whichever side is picked gets a max-height capped to the room actually
-// available there (with internal scroll as a last resort), so the card can
-// never spill under the mobile tab bar or off the top of the screen.
+// Centers the tooltip under (or, if there isn't room, above) the target on
+// mobile — never left-aligned to it, which on a narrow phone used to pin the
+// tooltip to nearly the same spot regardless of where the target actually
+// was. On desktop, prefers placing it beside the target (right, or left if
+// that has more room) so most steps never require scrolling a tall page at
+// all. `maxHeight` is always capped to the room genuinely available on
+// whichever side got picked (with internal scroll as a last resort), and the
+// final position is clamped so the card can never spill under the mobile tab
+// bar or off the top of the screen — even for a target taller than the
+// viewport itself, which used to force an impossible minimum height and push
+// the card off-screen.
 function computeLayout(rect: Rect | null, width: number): Layout {
   const bottomSafe = bottomMargin()
-  const centerX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2
-  const left = Math.max(SIDE_MARGIN, Math.min(centerX - width / 2, window.innerWidth - width - SIDE_MARGIN))
+  const maxHeight = clamp(window.innerHeight - TOP_MARGIN - bottomSafe, 120, 420)
 
   if (!rect) {
-    const maxHeight = Math.min(420, window.innerHeight - TOP_MARGIN - bottomSafe)
-    return { left, top: Math.max(TOP_MARGIN, window.innerHeight / 2 - maxHeight / 2), maxHeight }
+    const left = clamp(window.innerWidth / 2 - width / 2, SIDE_MARGIN, window.innerWidth - width - SIDE_MARGIN)
+    return { left, top: clamp(window.innerHeight / 2 - maxHeight / 2, TOP_MARGIN, window.innerHeight - bottomSafe - maxHeight), maxHeight, side: 'center' }
   }
 
+  if (!isNarrowViewport()) {
+    const spaceRight = window.innerWidth - (rect.left + rect.width + GAP) - SIDE_MARGIN
+    const spaceLeft = rect.left - GAP - SIDE_MARGIN
+    if (spaceRight >= width || spaceLeft >= width) {
+      const onRight = spaceRight >= spaceLeft
+      const left = onRight ? rect.left + rect.width + GAP : rect.left - GAP - width
+      const top = clamp(rect.top + rect.height / 2 - maxHeight / 2, TOP_MARGIN, window.innerHeight - bottomSafe - maxHeight)
+      return { left, top, maxHeight, side: onRight ? 'right' : 'left' }
+    }
+  }
+
+  const left = clamp(rect.left + rect.width / 2 - width / 2, SIDE_MARGIN, window.innerWidth - width - SIDE_MARGIN)
   const spaceBelow = window.innerHeight - bottomSafe - (rect.top + rect.height + GAP)
   const spaceAbove = rect.top - GAP - TOP_MARGIN
 
-  if (spaceBelow >= 160 || spaceBelow >= spaceAbove) {
-    return { left, top: rect.top + rect.height + GAP, maxHeight: Math.max(140, Math.min(420, spaceBelow)) }
+  if (spaceBelow >= spaceAbove) {
+    const top = clamp(rect.top + rect.height + GAP, TOP_MARGIN, window.innerHeight - bottomSafe - maxHeight)
+    return { left, top, maxHeight, side: 'below' }
   }
-  return { left, bottom: window.innerHeight - rect.top + GAP, maxHeight: Math.max(140, Math.min(420, spaceAbove)) }
+  const bottom = clamp(window.innerHeight - rect.top + GAP, bottomSafe, window.innerHeight - TOP_MARGIN - maxHeight)
+  return { left, bottom, maxHeight, side: 'above' }
 }
 
 function ProgressBar({ current, total }: { current: number; total: number }) {
@@ -111,13 +135,17 @@ export function TourOverlay() {
       // Bring a freshly-found target into view once per step — critical on
       // mobile where most of a long page starts out of frame, so a spotlight
       // on something below the fold used to just point at nothing visible.
+      // A target taller than the viewport (a big list/grid) gets scrolled to
+      // its start instead of centered, so its heading lands near the top
+      // instead of the tooltip needing a second manual scroll to find it.
       if (el && scrolledForRef.current !== activeStep!.id) {
         scrolledForRef.current = activeStep!.id
         const r = el.getBoundingClientRect()
         const clearTop = 60
         const clearBottom = window.innerHeight - bottomMargin()
         if (r.top < clearTop || r.bottom > clearBottom) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+          const tall = r.height > window.innerHeight * 0.6
+          el.scrollIntoView({ behavior: 'smooth', block: tall ? 'start' : 'center', inline: 'nearest' })
         }
       }
 
@@ -142,11 +170,18 @@ export function TourOverlay() {
 
   // Straight connecting line from the tooltip's nearest edge to the target's
   // center — makes it unambiguous which on-screen box the tooltip describes,
-  // regardless of which side (above/below) the tooltip landed on.
+  // regardless of which side the tooltip landed on. The "to" point is
+  // clamped on-screen so a target much taller than the viewport (its true
+  // center could be far below the fold) still gets a sensible-looking arrow
+  // instead of one aimed at an off-canvas point.
   const tooltipEdgeY = layout.top != null ? layout.top : window.innerHeight - (layout.bottom ?? 0)
-  const lineFrom = rect ? { x: layout.left + tooltipWidth / 2, y: tooltipEdgeY } : null
-  const lineTo = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
-  const pillLeft = rect ? Math.min(rect.left, window.innerWidth - SIDE_MARGIN - 20) : 0
+  const lineFrom = rect
+    ? layout.side === 'right' || layout.side === 'left'
+      ? { x: layout.side === 'right' ? layout.left : layout.left + tooltipWidth, y: layout.top! + Math.min(layout.maxHeight, 200) / 2 }
+      : { x: layout.left + tooltipWidth / 2, y: tooltipEdgeY }
+    : null
+  const lineTo = rect ? { x: clamp(rect.left + rect.width / 2, 0, window.innerWidth), y: clamp(rect.top + rect.height / 2, 0, window.innerHeight) } : null
+  const pillLeft = rect ? clamp(rect.left, SIDE_MARGIN, window.innerWidth - SIDE_MARGIN - 20) : 0
 
   return (
     // No click-to-dismiss anywhere on the backdrop: this whole layer is

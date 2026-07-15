@@ -566,7 +566,7 @@ export function JobsPage() {
   const SectionToggle = () => (
     <div style={{ display: 'inline-flex', background: 'var(--paper-soft,#ede8df)', borderRadius: 999, padding: 3, gap: 2 }}>
       {(['jobs', 'gigs'] as const).map(s => (
-        <button key={s} onClick={() => setSection(s)} style={{
+        <button key={s} data-tour={s === 'gigs' ? 'gigs-toggle' : undefined} onClick={() => setSection(s)} style={{
           padding: '6px 18px', borderRadius: 999, border: 'none', cursor: 'pointer',
           fontSize: 13, fontWeight: 600, fontFamily: "'IBM Plex Sans', sans-serif",
           background: section === s ? 'var(--paper,#fff)' : 'transparent',

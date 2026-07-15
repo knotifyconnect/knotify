@@ -35,6 +35,7 @@ function CompanionEdgeTab({ y, onOpen, onDragTo }: { y: number; onOpen: () => vo
     <button
       type="button"
       aria-label="Open Knotify Companion"
+      data-tour="companion-input"
       onPointerDown={(e) => {
         dragRef.current = { startY: e.clientY, originY: y, moved: false }
         e.currentTarget.setPointerCapture(e.pointerId)
@@ -158,6 +159,7 @@ export function GlobalCompanionWidget() {
         <button
           type="button"
           aria-label="Open Knotify Companion"
+          data-tour="companion-input"
           onPointerDown={(e) => {
             dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y, moved: false }
             e.currentTarget.setPointerCapture(e.pointerId)
