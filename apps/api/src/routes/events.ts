@@ -6,6 +6,9 @@ import { supabase } from '../lib.js'
 
 export const eventsRouter = Router()
 
+const publicEventFields = 'id, title, description, location, starts_at, ends_at, time_tba, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)'
+const legacyPublicEventFields = 'id, title, description, location, starts_at, ends_at, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)'
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
@@ -41,13 +44,17 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
 
   const events = await supabase
     .from('events')
-    .select('id, title, description, location, starts_at, ends_at, time_tba, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)')
+    .select(publicEventFields)
     .gte('starts_at', new Date(Date.now() - 6 * 3600 * 1000).toISOString())
     .order('starts_at', { ascending: true })
     .limit(limit)
 
-  if (events.error) return res.status(500).json({ error: events.error.message })
-  const rows = events.data ?? []
+  const legacyEvents = events.error?.message.includes('time_tba')
+    ? await supabase.from('events').select(legacyPublicEventFields).gte('starts_at', new Date(Date.now() - 6 * 3600 * 1000).toISOString()).order('starts_at', { ascending: true }).limit(limit)
+    : null
+  if (events.error && !legacyEvents) return res.status(500).json({ error: events.error.message })
+  if (legacyEvents?.error) return res.status(500).json({ error: legacyEvents.error.message })
+  const rows = (legacyEvents?.data ?? events.data ?? []).map(event => legacyEvents ? { ...event, time_tba: false } : event)
   const ids = rows.map((e) => e.id)
 
   // rsvp counts + my rsvps

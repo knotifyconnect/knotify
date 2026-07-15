@@ -261,6 +261,8 @@ function formToEventPayload(f: EventForm) {
 
 export function EventsAdmin() {
   const [events, setEvents] = useState<any[]>([])
+  const [eventFilter, setEventFilter] = useState<'all' | 'upcoming' | 'past' | 'tba'>('all')
+  const [eventSearch, setEventSearch] = useState('')
   const [form, setForm] = useState<EventForm>(emptyEvent)
   const [editId, setEditId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -298,6 +300,14 @@ export function EventsAdmin() {
   }
 
   const f = form
+  const visibleEvents = events.filter((event) => {
+    const matchesSearch = !eventSearch.trim() || [event.title, event.location, event.host_label, event.event_type].filter(Boolean).some((value: string) => value.toLowerCase().includes(eventSearch.trim().toLowerCase()))
+    if (!matchesSearch) return false
+    if (eventFilter === 'tba') return Boolean(event.time_tba)
+    if (eventFilter === 'upcoming') return new Date(event.starts_at) >= new Date()
+    if (eventFilter === 'past') return new Date(event.starts_at) < new Date()
+    return true
+  })
   const set = (k: keyof EventForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
 
@@ -398,8 +408,13 @@ export function EventsAdmin() {
         </div>
       </form>
 
+      <div style={{ display: 'flex', gap: 8, margin: '20px 0 10px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <input aria-label="Search events" style={{ ...inp, width: 220 }} placeholder="Search events" value={eventSearch} onChange={e => setEventSearch(e.target.value)} />
+        <select aria-label="Filter events" style={{ ...inp, width: 150 }} value={eventFilter} onChange={e => setEventFilter(e.target.value as typeof eventFilter)}><option value="all">All events</option><option value="upcoming">Upcoming</option><option value="past">Past</option><option value="tba">Time TBA</option></select>
+        <span style={{ fontSize: 12, color: C.inkMuted }}>{visibleEvents.length} shown</span>
+      </div>
       <div style={{ display: 'grid', gap: 10 }}>
-        {events.map(ev => (
+        {visibleEvents.map(ev => (
           <div key={ev.id} style={rowCard}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               {ev.image_url && (
@@ -422,6 +437,7 @@ export function EventsAdmin() {
           </div>
         ))}
         {events.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No events yet.</div>}
+        {events.length > 0 && visibleEvents.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No events match this filter.</div>}
       </div>
     </div>
   )
