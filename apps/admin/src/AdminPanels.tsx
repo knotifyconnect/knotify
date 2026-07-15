@@ -158,6 +158,10 @@ export function CafesAdmin() {
   async function restore(cafe: CafeRow) {
     try { await api.updateCafe(cafe.id, { isArchived: false, isActive: true }); await load() } catch (e: any) { setErr(e.message) }
   }
+  async function remove(cafe: CafeRow) {
+    if (!confirm(`Permanently delete ${cafe.name}? Check-ins will be deleted and past meetings will no longer link to this cafe.`)) return
+    try { await api.deleteCafe(cafe.id); if (editId === cafe.id) cancelEdit(); await load() } catch (e: any) { setErr(e.message) }
+  }
 
   return (
     <div>
@@ -206,6 +210,7 @@ export function CafesAdmin() {
             <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 600 }}>{cafe.name} {cafe.is_partnered ? '· Partner' : ''}</div><div style={{ fontSize: 12, color: C.inkMuted }}>{cafe.venue_type} · {[cafe.area, cafe.city, cafe.address].filter(Boolean).join(' · ')}{cafe.archived_at ? ' · archived' : !cafe.is_active ? ' · hidden' : ''}</div></div>
             <button style={editBtn} onClick={() => startEdit(cafe)}>Edit</button>
             {cafe.archived_at ? <button style={ghostBtn} onClick={() => restore(cafe)}>Restore</button> : <button style={ghostBtn} onClick={() => archive(cafe)}>Archive</button>}
+            <button style={{ ...ghostBtn, color: C.signal }} onClick={() => void remove(cafe)}>Delete</button>
           </div>
         </div>)}
         {!cafes.length && !err && <div style={{ color: C.inkFaint, fontSize: 13 }}>No places yet.</div>}

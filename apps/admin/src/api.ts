@@ -49,6 +49,7 @@ export const api = {
   createCafe: (body: unknown) => request('/api/admin-panel/cafes', { method: 'POST', body: JSON.stringify(body) }),
   updateCafe: (id: string, body: unknown) => request(`/api/admin-panel/cafes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   archiveCafe: (id: string) => request(`/api/admin-panel/cafes/${id}`, { method: 'DELETE' }),
+  deleteCafe: (id: string) => request(`/api/admin-panel/cafes/${id}?permanent=true`, { method: 'DELETE' }),
   importCafes: (rows: unknown[], mode: 'create' | 'update') => request('/api/admin-panel/cafes/import', { method: 'POST', body: JSON.stringify({ rows, mode }) }),
 
   // Events
