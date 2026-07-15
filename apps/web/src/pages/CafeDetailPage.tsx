@@ -1,5 +1,5 @@
 /**
- * Café detail — full info for a single place from the Cafés directory.
+ * Café detail: full info for a single place from the Cafés directory.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
