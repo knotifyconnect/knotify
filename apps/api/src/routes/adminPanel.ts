@@ -122,9 +122,14 @@ function parseEventBody(b: z.infer<typeof eventFields>) {
 }
 
 function eventSchemaError(res: any, message: string) {
-  if (message.includes('time_tba')) return res.status(503).json({ error: 'Event import migration 055 must be applied before managing time-TBA events.' })
+  if (message.includes('time_tba')) return res.status(503).json({ error: 'Migration 057 must be applied before saving events with Time TBA.' })
   return res.status(500).json({ error: message })
 }
+
+const adminEventFields = 'id, title, description, location, starts_at, ends_at, time_tba, source, url, host_label, image_url, event_type, capacity, price_eur, interests, created_at'
+const legacyAdminEventFields = 'id, title, description, location, starts_at, ends_at, source, url, host_label, image_url, event_type, capacity, price_eur, interests, created_at'
+
+function isMissingTimeTba(message: string) { return message.includes('time_tba') }
 
 const placeSchema = placeFields.superRefine((value, ctx) => {
   if (value.dealCodeEnabled && (!value.isPartnered || !value.dealCode?.trim())) {
@@ -248,12 +253,17 @@ adminPanelRouter.patch('/beta-signups/:id', async (req, res) => {
 
 // ── Events ────────────────────────────────────────────────────────────────────
 adminPanelRouter.get('/events', async (_req, res) => {
-  const { data, error } = await supabase
+  const result = await supabase
     .from('events')
-    .select('id, title, description, location, starts_at, ends_at, time_tba, source, url, host_label, image_url, event_type, capacity, price_eur, interests, created_at')
+    .select(adminEventFields)
     .order('starts_at', { ascending: true })
-  if (error) return eventSchemaError(res, error.message)
-  return res.json({ events: data ?? [] })
+  if (result.error && isMissingTimeTba(result.error.message)) {
+    const legacy = await supabase.from('events').select(legacyAdminEventFields).order('starts_at', { ascending: true })
+    if (legacy.error) return eventSchemaError(res, legacy.error.message)
+    return res.json({ events: (legacy.data ?? []).map(event => ({ ...event, time_tba: false })) })
+  }
+  if (result.error) return eventSchemaError(res, result.error.message)
+  return res.json({ events: result.data ?? [] })
 })
 
 adminPanelRouter.post('/events', async (req, res) => {
