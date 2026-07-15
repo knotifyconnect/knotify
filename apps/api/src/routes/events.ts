@@ -41,7 +41,7 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
 
   const events = await supabase
     .from('events')
-    .select('id, title, description, location, starts_at, ends_at, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)')
+    .select('id, title, description, location, starts_at, ends_at, time_tba, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)')
     .gte('starts_at', new Date(Date.now() - 6 * 3600 * 1000).toISOString())
     .order('starts_at', { ascending: true })
     .limit(limit)
@@ -83,6 +83,7 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
       capacity: (e as any).capacity ?? null,
       price_eur: (e as any).price_eur ?? null,
       event_type: (e as any).event_type ?? null,
+      time_tba: Boolean((e as any).time_tba),
     }
   })
 
