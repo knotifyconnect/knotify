@@ -3,7 +3,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, CalendarClock, Copy, MapPin, Users } from 'lucide-react'
+import { ArrowLeft, CalendarClock, Check, MapPin, Search, Users } from 'lucide-react'
 import { KBtn, KPill } from '@/lib/knotify'
 import { apiGet, apiPost } from '@/lib/api'
 import { T, DeskPage, RailCard } from '@/lib/desk'
@@ -55,10 +55,10 @@ export function CafeDetailPage() {
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
 
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteeId, setInviteeId] = useState('')
+  const [inviteeIds, setInviteeIds] = useState<string[]>([])
+  const [inviteSearch, setInviteSearch] = useState('')
   const [scheduledAt, setScheduledAt] = useState(defaultMeetingTime)
   const [note, setNote] = useState('')
   const [sendingInvite, setSendingInvite] = useState(false)
@@ -86,8 +86,15 @@ export function CafeDetailPage() {
     return cafe.venue_type === 'cafe' ? 'Café' : cafe.venue_type === 'restaurant' ? 'Restaurant' : 'Bar'
   }, [cafe])
 
+  const visibleConnections = useMemo(() => {
+    const query = inviteSearch.trim().toLowerCase()
+    if (!query) return connections
+    return connections.filter(({ user }) => user && `${user.full_name} @${user.username}`.toLowerCase().includes(query))
+  }, [connections, inviteSearch])
+
   function openInvite() {
-    setInviteeId('')
+    setInviteeIds([])
+    setInviteSearch('')
     setScheduledAt(defaultMeetingTime())
     setNote('')
     setInviteSent(null)
@@ -95,18 +102,17 @@ export function CafeDetailPage() {
   }
 
   async function sendInvite() {
-    if (!cafe || !inviteeId || !scheduledAt) return
+    if (!cafe || inviteeIds.length === 0 || !scheduledAt) return
     setSendingInvite(true)
     try {
-      await apiPost('/api/meetings', {
+      await Promise.all(inviteeIds.map((inviteeId) => apiPost('/api/meetings', {
         inviteeId,
         scheduledAt: new Date(scheduledAt).toISOString(),
         cafeId: cafe.id,
         locationText: null,
         note: note.trim() || null,
-      })
-      const invitee = connections.find((c) => c.user?.id === inviteeId)?.user
-      setInviteSent(`Invitation sent to ${invitee?.full_name ?? 'your connection'} through Messages.`)
+      })))
+      setInviteSent(`${inviteeIds.length} invitation${inviteeIds.length === 1 ? '' : 's'} sent through Messages.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send the invitation')
     } finally {
@@ -127,7 +133,8 @@ export function CafeDetailPage() {
     )
   }
 
-  const codeVisible = cafe.is_partnered && cafe.deal_code_enabled && Boolean(cafe.deal_code?.trim())
+  const mapsQuery = [cafe.name, cafe.address, cafe.city].filter(Boolean).join(', ')
+  const mapsUrl = mapsQuery ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}` : null
 
   const rail = (
     <RailCard tone="signal">
@@ -168,7 +175,7 @@ export function CafeDetailPage() {
                 <div><MapPin size={13} style={{ verticalAlign: 'text-bottom', marginRight: 5 }} />{[cafe.area, cafe.address].filter(Boolean).join(' · ')}</div>
               )}
               {cafe.hours_text && (
-                <div><CalendarClock size={13} style={{ verticalAlign: 'text-bottom', marginRight: 5 }} />{cafe.hours_text}</div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><CalendarClock size={13} style={{ marginTop: 3, flexShrink: 0 }} /><span>{cafe.hours_text.split(';').map((hours) => <span key={hours} style={{ display: 'block' }}>{hours.trim()}</span>)}</span></div>
               )}
             </div>
             {cafe.description && <p style={{ margin: '16px 0 0', color: T.inkSoft, fontSize: 14, lineHeight: 1.6 }}>{cafe.description}</p>}
@@ -177,21 +184,14 @@ export function CafeDetailPage() {
               <div style={{ marginTop: 18, padding: 16, borderRadius: 12, background: T.ochreSoft }}>
                 <div style={{ color: T.ochre, fontSize: 14, fontWeight: 700 }}>{cafe.deal_title || cafe.perk_text || 'Partner deal'}</div>
                 {cafe.deal_details && <div style={{ marginTop: 4, color: T.inkMuted, fontSize: 13, lineHeight: 1.5 }}>{cafe.deal_details}</div>}
-                {codeVisible && (
-                  <button
-                    onClick={async () => { await navigator.clipboard.writeText(cafe.deal_code!); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-                    style={{ marginTop: 10, border: `0.5px solid ${T.ochre}`, background: T.paper, color: T.ochre, borderRadius: 8, padding: '7px 11px', fontFamily: 'monospace', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    <Copy size={12} style={{ marginRight: 5, verticalAlign: 'text-bottom' }} />{copied ? 'Copied' : cafe.deal_code}
-                  </button>
-                )}
+                {cafe.deal_code_enabled && <div style={{ marginTop: 8, color: T.inkMuted, fontSize: 12 }}>The organiser receives the deal code in Messages after an invitee accepts.</div>}
               </div>
             )}
 
             <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <KBtn variant="signal" size="sm" onClick={openInvite}><Users size={13} style={{ marginRight: 5 }} />Plan here</KBtn>
-              {cafe.lat && cafe.lng && (
-                <a href={`https://www.google.com/maps?q=${cafe.lat},${cafe.lng}`} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 13, textDecoration: 'none' }}>
+              {mapsUrl && (
+                <a href={mapsUrl} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 13, textDecoration: 'none' }}>
                   <MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Open in Maps
                 </a>
               )}
@@ -213,12 +213,15 @@ export function CafeDetailPage() {
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 13 }}>
-                <label style={{ fontSize: 12, color: T.inkMuted }}>Invitee (required)
-                  <select value={inviteeId} onChange={(event) => setInviteeId(event.target.value)} style={inputStyle}>
-                    <option value="">Choose someone from your knot</option>
-                    {connections.map((c) => <option key={c.id} value={c.user!.id}>{c.user!.full_name} · @{c.user!.username}</option>)}
-                  </select>
-                </label>
+                <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+                  <legend style={{ fontSize: 12, color: T.inkMuted, marginBottom: 5 }}>Invite people (required)</legend>
+                  <div style={{ position: 'relative' }}><Search size={15} style={{ position: 'absolute', left: 12, top: 14, color: T.inkFaint }} /><input aria-label="Search people" value={inviteSearch} onChange={(event) => setInviteSearch(event.target.value)} placeholder="Search by name or username" style={{ ...inputStyle, marginTop: 0, paddingLeft: 35 }} /></div>
+                  <div style={{ marginTop: 7, maxHeight: 190, overflowY: 'auto', border: `0.5px solid ${T.rule}`, borderRadius: 10, background: T.paperSoft }}>
+                    {visibleConnections.map((connection) => { const user = connection.user!; const selected = inviteeIds.includes(user.id); return <button key={connection.id} type="button" aria-pressed={selected} onClick={() => setInviteeIds((current) => selected ? current.filter((id) => id !== user.id) : [...current, user.id])} style={{ width: '100%', border: 0, borderBottom: `0.5px solid ${T.ruleSoft}`, background: selected ? T.verdSoft : 'transparent', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', color: T.ink, cursor: 'pointer', fontFamily: T.text }}><span style={{ width: 18, height: 18, borderRadius: 5, border: `1px solid ${selected ? T.verd : T.rule}`, background: selected ? T.verd : T.paper, color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{selected && <Check size={12} />}</span><span><b style={{ fontSize: 13 }}>{user.full_name}</b><span style={{ color: T.inkMuted, fontSize: 12 }}> @{user.username}</span></span></button> })}
+                    {visibleConnections.length === 0 && <div style={{ padding: 14, color: T.inkMuted, fontSize: 12.5 }}>No people match this search.</div>}
+                  </div>
+                  {inviteeIds.length > 0 && <div style={{ marginTop: 6, color: T.verd, fontSize: 12 }}>{inviteeIds.length} selected</div>}
+                </fieldset>
                 <label style={{ fontSize: 12, color: T.inkMuted }}>Date and time (required)
                   <input type="datetime-local" value={scheduledAt} min={new Date().toISOString().slice(0, 16)} onChange={(event) => setScheduledAt(event.target.value)} style={inputStyle} />
                 </label>
@@ -230,7 +233,7 @@ export function CafeDetailPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
               <KBtn variant="ghost" size="sm" onClick={() => setInviteOpen(false)} disabled={sendingInvite}>{inviteSent ? 'Done' : 'Cancel'}</KBtn>
               {!inviteSent && connections.length > 0 && (
-                <KBtn variant="signal" size="sm" onClick={sendInvite} disabled={sendingInvite || !inviteeId || !scheduledAt}>{sendingInvite ? 'Sending…' : 'Send invitation'}</KBtn>
+                <KBtn variant="signal" size="sm" onClick={sendInvite} disabled={sendingInvite || inviteeIds.length === 0 || !scheduledAt}>{sendingInvite ? 'Sending…' : `Send ${inviteeIds.length || ''} invitation${inviteeIds.length === 1 ? '' : 's'}`.trim()}</KBtn>
               )}
             </div>
           </div>

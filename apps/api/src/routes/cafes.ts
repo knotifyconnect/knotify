@@ -41,7 +41,9 @@ function publicCafe<T extends {
     deal_title: cafe.is_partnered ? cafe.deal_title ?? null : null,
     deal_details: cafe.is_partnered ? cafe.deal_details ?? null : null,
     perk_text: cafe.is_partnered ? cafe.perk_text ?? null : null,
-    deal_code: cafe.is_partnered && cafe.deal_code_enabled ? cafe.deal_code : null,
+    // Deal codes are secrets. They are only returned by the meetings API to
+    // the organiser after an invitee confirms the plan.
+    deal_code: null,
     deal_code_enabled: cafe.is_partnered && cafe.deal_code_enabled && Boolean(cafe.deal_code?.trim()),
   }
 }

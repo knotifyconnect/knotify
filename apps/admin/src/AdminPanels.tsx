@@ -128,6 +128,7 @@ function cafePayload(form: CafeForm) { return { ...form, featuredPriority: Math.
 
 export function CafesAdmin() {
   const [cafes, setCafes] = useState<CafeRow[]>([])
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [form, setForm] = useState<CafeForm>(emptyCafe)
   const [editId, setEditId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -159,6 +160,17 @@ export function CafesAdmin() {
   async function remove(cafe: CafeRow) {
     if (!confirm(`Permanently delete ${cafe.name}? Check-ins will be deleted and past meetings will no longer link to this cafe.`)) return
     try { await api.deleteCafe(cafe.id); if (editId === cafe.id) cancelEdit(); await load() } catch (e: any) { setErr(e.message) }
+  }
+  async function bulkCafeAction(action: 'archive' | 'delete') {
+    const ids = [...selectedIds]
+    if (!ids.length) return
+    const label = action === 'archive' ? 'Archive' : 'Permanently delete'
+    if (!confirm(`${label} ${ids.length} selected place${ids.length === 1 ? '' : 's'}?`)) return
+    setBusy(true); setErr('')
+    try {
+      await Promise.all(ids.map((id) => action === 'archive' ? api.archiveCafe(id) : api.deleteCafe(id)))
+      setSelectedIds(new Set()); if (editId && ids.includes(editId)) cancelEdit(); await load()
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
 
   return (
@@ -199,9 +211,16 @@ export function CafesAdmin() {
         {err && <div style={{ color: C.signal, fontSize: 13 }}>{err}</div>}
         <div><button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Saving…' : editId ? 'Save changes' : 'Create place'}</button></div>
       </form>
+      <div style={{ display: 'flex', gap: 8, margin: '20px 0 10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <label style={{ fontSize: 12, color: C.inkMuted }}><input type="checkbox" checked={cafes.length > 0 && selectedIds.size === cafes.length} onChange={(event) => setSelectedIds(event.target.checked ? new Set(cafes.map((cafe) => cafe.id)) : new Set())} /> Select all</label>
+        <span style={{ fontSize: 12, color: C.inkMuted }}>{selectedIds.size} selected</span>
+        <button type="button" style={ghostBtn} disabled={busy || selectedIds.size === 0} onClick={() => void bulkCafeAction('archive')}>Archive selected</button>
+        <button type="button" style={{ ...ghostBtn, color: C.signal }} disabled={busy || selectedIds.size === 0} onClick={() => void bulkCafeAction('delete')}>Delete selected</button>
+      </div>
       <div style={{ display: 'grid', gap: 10 }}>
         {cafes.map(cafe => <div key={cafe.id} style={{ ...rowCard, opacity: cafe.archived_at ? 0.55 : 1 }}>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input aria-label={`Select ${cafe.name}`} type="checkbox" checked={selectedIds.has(cafe.id)} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); if (event.target.checked) next.add(cafe.id); else next.delete(cafe.id); return next })} />
             {cafe.photo_url ? <img src={cafe.photo_url} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} /> : <div style={{ width: 44, height: 44, borderRadius: 8, background: C.paperSoft }} />}
             <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 600 }}>{cafe.name} {cafe.is_partnered ? '· Partner' : ''}</div><div style={{ fontSize: 12, color: C.inkMuted }}>{cafe.venue_type} · {[cafe.area, cafe.city, cafe.address].filter(Boolean).join(' · ')}{cafe.archived_at ? ' · archived' : !cafe.is_active ? ' · hidden' : ''}</div></div>
             <button style={editBtn} onClick={() => startEdit(cafe)}>Edit</button>
@@ -261,6 +280,7 @@ function formToEventPayload(f: EventForm) {
 
 export function EventsAdmin() {
   const [events, setEvents] = useState<any[]>([])
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [eventTypes, setEventTypes] = useState<string[]>(DEFAULT_EVENT_TYPES)
   const [newEventType, setNewEventType] = useState('')
   const [eventFilter, setEventFilter] = useState<'all' | 'upcoming' | 'past' | 'tba'>('all')
@@ -300,6 +320,18 @@ export function EventsAdmin() {
   async function remove(id: string) {
     if (!confirm('Delete this event?')) return
     await api.deleteEvent(id); await load()
+  }
+
+  async function bulkEventAction(action: 'archive' | 'delete') {
+    const ids = [...selectedIds]
+    if (!ids.length) return
+    const label = action === 'archive' ? 'Archive' : 'Permanently delete'
+    if (!confirm(`${label} ${ids.length} selected event${ids.length === 1 ? '' : 's'}?`)) return
+    setBusy(true); setErr('')
+    try {
+      await Promise.all(ids.map((id) => action === 'archive' ? api.archiveEvent(id) : api.deleteEvent(id)))
+      setSelectedIds(new Set()); if (editId && ids.includes(editId)) cancelEdit(); await load()
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
 
   const f = form
@@ -415,16 +447,21 @@ export function EventsAdmin() {
         <input aria-label="Search events" style={{ ...inp, width: 220 }} placeholder="Search events" value={eventSearch} onChange={e => setEventSearch(e.target.value)} />
         <select aria-label="Filter events" style={{ ...inp, width: 150 }} value={eventFilter} onChange={e => setEventFilter(e.target.value as typeof eventFilter)}><option value="all">All events</option><option value="upcoming">Upcoming</option><option value="past">Past</option><option value="tba">Time TBA</option></select>
         <span style={{ fontSize: 12, color: C.inkMuted }}>{visibleEvents.length} shown</span>
+        <label style={{ fontSize: 12, color: C.inkMuted }}><input type="checkbox" checked={visibleEvents.length > 0 && visibleEvents.every((event) => selectedIds.has(event.id))} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); for (const item of visibleEvents) event.target.checked ? next.add(item.id) : next.delete(item.id); return next })} /> Select shown</label>
+        <span style={{ fontSize: 12, color: C.inkMuted }}>{selectedIds.size} selected</span>
+        <button type="button" style={ghostBtn} disabled={busy || selectedIds.size === 0} onClick={() => void bulkEventAction('archive')}>Archive selected</button>
+        <button type="button" style={{ ...ghostBtn, color: C.signal }} disabled={busy || selectedIds.size === 0} onClick={() => void bulkEventAction('delete')}>Delete selected</button>
       </div>
       <div style={{ display: 'grid', gap: 10 }}>
         {visibleEvents.map(ev => (
-          <div key={ev.id} style={rowCard}>
+          <div key={ev.id} style={{ ...rowCard, opacity: ev.archived_at ? 0.55 : 1 }}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <input aria-label={`Select ${ev.title}`} type="checkbox" checked={selectedIds.has(ev.id)} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); if (event.target.checked) next.add(ev.id); else next.delete(ev.id); return next })} />
               {ev.image_url && (
                 <img src={ev.image_url} alt="" style={{ width: 60, height: 60, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{ev.title}</div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{ev.title}{ev.archived_at && <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: C.paperSoft, fontSize: 10.5 }}>archived</span>}</div>
                 <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2 }}>
                   {fmtDate(ev.starts_at)}{ev.location ? ` · ${ev.location}` : ''}
                   {ev.event_type && <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: C.paperSoft, fontSize: 10.5 }}>{ev.event_type}</span>}
@@ -434,6 +471,7 @@ export function EventsAdmin() {
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <button style={editBtn} onClick={() => startEdit(ev)}>Edit</button>
+                {ev.archived_at ? <button style={ghostBtn} onClick={async () => { await api.archiveEvent(ev.id, false); await load() }}>Restore</button> : <button style={ghostBtn} onClick={async () => { await api.archiveEvent(ev.id); await load() }}>Archive</button>}
                 <button style={ghostBtn} onClick={() => remove(ev.id)}>Delete</button>
               </div>
             </div>

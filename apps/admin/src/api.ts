@@ -56,6 +56,7 @@ export const api = {
   events: () => request('/api/admin-panel/events'),
   createEvent: (body: unknown) => request('/api/admin-panel/events', { method: 'POST', body: JSON.stringify(body) }),
   updateEvent: (id: string, body: unknown) => request(`/api/admin-panel/events/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  archiveEvent: (id: string, archived = true) => request(`/api/admin-panel/events/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ archived }) }),
   deleteEvent: (id: string) => request(`/api/admin-panel/events/${id}`, { method: 'DELETE' }),
   importEvents: (rows: unknown[], mode: 'create' | 'update') => request('/api/admin-panel/events/import', { method: 'POST', body: JSON.stringify({ rows, mode }) }),
   eventTypes: () => request('/api/admin-panel/event-types'),
