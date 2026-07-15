@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
 import { runWhenIdle } from '../lib/schedule'
 import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '../lib/knotify'
+import { ShareInviteButton } from '../components/ShareInviteButton'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
 
 type Skill = {
@@ -1075,7 +1076,12 @@ export function DiscoverPage() {
       <DeskHeader
         kicker="Discover · Munich"
         title={<span style={{ fontStyle: 'italic' }}>People worth knowing.</span>}
-        right={<div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}><KPill color="verd">Based on {contextBits.length ? contextBits.join(' · ') : 'your profile'}</KPill></div>}
+        right={
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+            <KPill color="verd">Based on {contextBits.length ? contextBits.join(' · ') : 'your profile'}</KPill>
+            <ShareInviteButton variant="ghost" size="sm" label="Invite" />
+          </div>
+        }
       />
 
       {error && (

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiDelete, apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
 import { runWhenIdle } from '../lib/schedule'
 import { KAvatar, KBtn, KCard } from '../lib/knotify'
+import { ShareInviteButton } from '../components/ShareInviteButton'
 import type { KnotGraphNode, KnotGraphPeerEdge, KnotHealthState } from '../components/knot/KnotForceGraph'
 import { KnotMobileGraph, MobileBottomSheet, MobileNodeOverlay, type MeNode } from '../components/knot/KnotMobileGraph'
 import 'leaflet/dist/leaflet.css'
@@ -962,6 +963,7 @@ function TopCommandBar({
           <KBtn variant="signal" size="sm" onClick={onDiscover}>
             Discover
           </KBtn>
+          <ShareInviteButton variant="ghost" size="sm" label="Invite" />
         </div>
       </KCard>
     )
@@ -999,6 +1001,7 @@ function TopCommandBar({
         <KBtn variant="ghost" size="sm" onClick={onRefresh} disabled={loading}>
           {loading ? 'Refreshing...' : 'Refresh'}
         </KBtn>
+        <ShareInviteButton variant="ghost" size="sm" label="Invite" />
       </div>
     </KCard>
   )
