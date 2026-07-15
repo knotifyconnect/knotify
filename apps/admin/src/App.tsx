@@ -497,10 +497,10 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
           ))}
         </div>
 
+        {section === 'cafes' && <CafesAdmin />}
         {section === 'events' && <EventsAdmin />}
         {section === 'gigs' && <GigsAdmin />}
         {section === 'quests' && <QuestsAdmin />}
-        {section === 'cafes' && <CafesAdmin />}
         {section === 'cafeSuggestions' && <CafeSuggestionsAdmin />}
         {section === 'invites' && <InvitesAdmin />}
         {section === 'feedback' && <FeedbackAdmin />}

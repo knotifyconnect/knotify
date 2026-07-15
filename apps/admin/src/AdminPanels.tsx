@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from './api'
+import { BulkImport } from './BulkImport'
+import { DEFAULT_EVENT_TYPES } from './eventTypes'
 
 const C = {
   signal: '#D8442B', ink: '#1a1410', inkMuted: '#6b5f55', inkFaint: '#a09287',
@@ -88,16 +90,143 @@ function ImageUploader({ value, onChange }: { value: string; onChange: (url: str
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
-const EVENT_TYPES = ['networking', 'social', 'sports', 'music', 'career', 'workshop', 'outdoor', 'party']
+type CafeRow = {
+  id: string; slug: string; name: string; venue_type: 'cafe' | 'restaurant' | 'bar'
+  address: string | null; city: string; area: string | null; description: string | null
+  perk_text: string | null; photo_url: string | null; hours_text: string | null
+  lat: number | null; lng: number | null; is_partnered: boolean; is_active: boolean
+  deal_title: string | null; deal_details: string | null; deal_code: string | null
+  deal_code_enabled: boolean; featured_priority: number; archived_at: string | null
+}
+function toDate(iso: string | null | undefined) { return toLocal(iso).slice(0, 10) }
+function toTime(iso: string | null | undefined) { return toLocal(iso).slice(11, 16) }
+
+type CafeForm = {
+  slug: string; name: string; venueType: CafeRow['venue_type']; address: string; city: string
+  area: string; description: string; perkText: string; photoUrl: string; hoursText: string
+  lat: string; lng: string; isPartnered: boolean; isActive: boolean; dealTitle: string
+  dealDetails: string; dealCode: string; dealCodeEnabled: boolean; featuredPriority: string
+}
+
+const emptyCafe: CafeForm = {
+  slug: '', name: '', venueType: 'cafe', address: '', city: 'Munich', area: '', description: '',
+  perkText: '', photoUrl: '', hoursText: '', lat: '', lng: '', isPartnered: false, isActive: true,
+  dealTitle: '', dealDetails: '', dealCode: '', dealCodeEnabled: false, featuredPriority: '0',
+}
+
+function cafeToForm(cafe: CafeRow): CafeForm {
+  return {
+    slug: cafe.slug, name: cafe.name, venueType: cafe.venue_type, address: cafe.address ?? '', city: cafe.city,
+    area: cafe.area ?? '', description: cafe.description ?? '', perkText: cafe.perk_text ?? '', photoUrl: cafe.photo_url ?? '',
+    hoursText: cafe.hours_text ?? '', lat: cafe.lat == null ? '' : String(cafe.lat), lng: cafe.lng == null ? '' : String(cafe.lng),
+    isPartnered: cafe.is_partnered, isActive: cafe.is_active, dealTitle: cafe.deal_title ?? '', dealDetails: cafe.deal_details ?? '',
+    dealCode: cafe.deal_code ?? '', dealCodeEnabled: cafe.deal_code_enabled, featuredPriority: String(cafe.featured_priority ?? 0),
+  }
+}
+
+function cafePayload(form: CafeForm) {
+  return { ...form, lat: form.lat === '' ? null : Number(form.lat), lng: form.lng === '' ? null : Number(form.lng), featuredPriority: Math.max(0, Number(form.featuredPriority) || 0) }
+}
+
+export function CafesAdmin() {
+  const [cafes, setCafes] = useState<CafeRow[]>([])
+  const [form, setForm] = useState<CafeForm>(emptyCafe)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const load = useCallback(async () => {
+    try { setCafes((await api.cafes()).cafes ?? []); setErr('') } catch (e: any) { setErr(e.message) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const set = (key: keyof CafeForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm(prev => ({ ...prev, [key]: e.target.value }))
+  function startEdit(cafe: CafeRow) { setEditId(cafe.id); setForm(cafeToForm(cafe)); setErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  function cancelEdit() { setEditId(null); setForm(emptyCafe) }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setErr('')
+    try {
+      if (editId) await api.updateCafe(editId, cafePayload(form)); else await api.createCafe(cafePayload(form))
+      cancelEdit(); await load()
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+  async function archive(cafe: CafeRow) {
+    if (!confirm(`Archive ${cafe.name}?`)) return
+    try { await api.archiveCafe(cafe.id); await load() } catch (e: any) { setErr(e.message) }
+  }
+  async function restore(cafe: CafeRow) {
+    try { await api.updateCafe(cafe.id, { isArchived: false, isActive: true }); await load() } catch (e: any) { setErr(e.message) }
+  }
+  async function remove(cafe: CafeRow) {
+    if (!confirm(`Permanently delete ${cafe.name}? Check-ins will be deleted and past meetings will no longer link to this cafe.`)) return
+    try { await api.deleteCafe(cafe.id); if (editId === cafe.id) cancelEdit(); await load() } catch (e: any) { setErr(e.message) }
+  }
+
+  return (
+    <div>
+      <BulkImport kind="cafes" onImport={async (rows, mode) => { const result = await api.importCafes(rows, mode); await load(); return result }} />
+      <h2 style={h2}>{editId ? 'Edit place' : 'Create place'}</h2>
+      <form onSubmit={submit} style={{ ...cardWrap, display: 'grid', gap: 12 }}>
+        {editId && <div style={{ fontSize: 12, color: C.ochre }}>Editing an existing listing. <button type="button" onClick={cancelEdit} style={{ ...ghostBtn, marginLeft: 8 }}>Cancel</button></div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+          <div style={fieldGroup}><label style={fieldLabel}>Name *</label><input required style={inp} value={form.name} onChange={set('name')} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Slug *</label><input required pattern="[a-z0-9-]+" style={inp} value={form.slug} onChange={e => setForm(prev => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Type</label><select style={inp} value={form.venueType} onChange={set('venueType')}><option value="cafe">Cafe</option><option value="restaurant">Restaurant</option><option value="bar">Bar</option></select></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Area</label><input style={inp} value={form.area} onChange={set('area')} placeholder="Maxvorstadt" /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>City</label><input style={inp} value={form.city} onChange={set('city')} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Hours</label><input style={inp} value={form.hoursText} onChange={set('hoursText')} /></div>
+        </div>
+        <div style={fieldGroup}><label style={fieldLabel}>Address</label><input style={inp} value={form.address} onChange={set('address')} /></div>
+        <div style={fieldGroup}><label style={fieldLabel}>Description</label><textarea rows={3} style={{ ...inp, resize: 'vertical' }} value={form.description} onChange={set('description')} /></div>
+        <div style={fieldGroup}><label style={fieldLabel}>Image / logo</label><ImageUploader value={form.photoUrl} onChange={photoUrl => setForm(prev => ({ ...prev, photoUrl }))} /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <div style={fieldGroup}><label style={fieldLabel}>Latitude</label><input type="number" step="any" style={inp} value={form.lat} onChange={set('lat')} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Longitude</label><input type="number" step="any" style={inp} value={form.lng} onChange={set('lng')} /></div>
+          <div style={fieldGroup}><label style={fieldLabel}>Featured priority</label><input type="number" min={0} style={inp} value={form.featuredPriority} onChange={set('featuredPriority')} /></div>
+        </div>
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 13 }}><input type="checkbox" checked={form.isActive} onChange={e => setForm(prev => ({ ...prev, isActive: e.target.checked }))} /> Active / visible</label>
+          <label style={{ fontSize: 13 }}><input type="checkbox" checked={form.isPartnered} onChange={e => setForm(prev => ({ ...prev, isPartnered: e.target.checked, dealCodeEnabled: e.target.checked ? prev.dealCodeEnabled : false }))} /> Partnered</label>
+        </div>
+        {form.isPartnered && <div style={{ padding: 14, borderRadius: 10, background: C.paperSoft, display: 'grid', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+            <div style={fieldGroup}><label style={fieldLabel}>Deal title</label><input style={inp} value={form.dealTitle} onChange={set('dealTitle')} /></div>
+            <div style={fieldGroup}><label style={fieldLabel}>Short perk label</label><input style={inp} value={form.perkText} onChange={set('perkText')} /></div>
+          </div>
+          <div style={fieldGroup}><label style={fieldLabel}>Deal details</label><textarea rows={3} style={{ ...inp, resize: 'vertical' }} value={form.dealDetails} onChange={set('dealDetails')} /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 12, alignItems: 'end' }}>
+            <div style={fieldGroup}><label style={fieldLabel}>Deal code</label><input style={inp} value={form.dealCode} onChange={set('dealCode')} /></div>
+            <label style={{ fontSize: 13, paddingBottom: 9 }}><input type="checkbox" disabled={!form.dealCode.trim()} checked={form.dealCodeEnabled} onChange={e => setForm(prev => ({ ...prev, dealCodeEnabled: e.target.checked }))} /> Show code</label>
+          </div>
+        </div>}
+        {err && <div style={{ color: C.signal, fontSize: 13 }}>{err}</div>}
+        <div><button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Saving…' : editId ? 'Save changes' : 'Create place'}</button></div>
+      </form>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {cafes.map(cafe => <div key={cafe.id} style={{ ...rowCard, opacity: cafe.archived_at ? 0.55 : 1 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {cafe.photo_url ? <img src={cafe.photo_url} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover' }} /> : <div style={{ width: 44, height: 44, borderRadius: 8, background: C.paperSoft }} />}
+            <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 600 }}>{cafe.name} {cafe.is_partnered ? '· Partner' : ''}</div><div style={{ fontSize: 12, color: C.inkMuted }}>{cafe.venue_type} · {[cafe.area, cafe.city, cafe.address].filter(Boolean).join(' · ')}{cafe.archived_at ? ' · archived' : !cafe.is_active ? ' · hidden' : ''}</div></div>
+            <button style={editBtn} onClick={() => startEdit(cafe)}>Edit</button>
+            {cafe.archived_at ? <button style={ghostBtn} onClick={() => restore(cafe)}>Restore</button> : <button style={ghostBtn} onClick={() => archive(cafe)}>Archive</button>}
+            <button style={{ ...ghostBtn, color: C.signal }} onClick={() => void remove(cafe)}>Delete</button>
+          </div>
+        </div>)}
+        {!cafes.length && !err && <div style={{ color: C.inkFaint, fontSize: 13 }}>No places yet.</div>}
+      </div>
+    </div>
+  )
+}
 
 type EventForm = {
-  title: string; description: string; location: string; startsAt: string; endsAt: string
+  title: string; description: string; location: string; startDate: string; startTime: string; endDate: string; endTime: string
   url: string; hostLabel: string; imageUrl: string; eventType: string
   capacity: string; priceEur: string
 }
 
 const emptyEvent: EventForm = {
-  title: '', description: '', location: '', startsAt: '', endsAt: '',
+  title: '', description: '', location: '', startDate: '', startTime: '', endDate: '', endTime: '',
   url: '', hostLabel: '', imageUrl: '', eventType: '', capacity: '', priceEur: '',
 }
 
@@ -106,8 +235,8 @@ function eventToForm(ev: any): EventForm {
     title: ev.title ?? '',
     description: ev.description ?? '',
     location: ev.location ?? '',
-    startsAt: toLocal(ev.starts_at),
-    endsAt: toLocal(ev.ends_at),
+    startDate: toDate(ev.starts_at), startTime: ev.time_tba ? '' : toTime(ev.starts_at),
+    endDate: toDate(ev.ends_at), endTime: ev.time_tba ? '' : toTime(ev.ends_at),
     url: ev.url ?? '',
     hostLabel: ev.host_label ?? '',
     imageUrl: ev.image_url ?? '',
@@ -122,8 +251,9 @@ function formToEventPayload(f: EventForm) {
     title: f.title,
     description: f.description || undefined,
     location: f.location || undefined,
-    startsAt: f.startsAt,
-    endsAt: f.endsAt || undefined,
+    startsAt: f.startDate ? `${f.startDate}T${f.startTime || '00:00'}:00` : '',
+    endsAt: f.endDate ? `${f.endDate}T${f.endTime || '00:00'}:00` : undefined,
+    timeTba: !f.startTime && !f.endTime,
     url: f.url || undefined,
     hostLabel: f.hostLabel || undefined,
     imageUrl: f.imageUrl || undefined,
@@ -135,6 +265,10 @@ function formToEventPayload(f: EventForm) {
 
 export function EventsAdmin() {
   const [events, setEvents] = useState<any[]>([])
+  const [eventTypes, setEventTypes] = useState<string[]>(DEFAULT_EVENT_TYPES)
+  const [newEventType, setNewEventType] = useState('')
+  const [eventFilter, setEventFilter] = useState<'all' | 'upcoming' | 'past' | 'tba'>('all')
+  const [eventSearch, setEventSearch] = useState('')
   const [form, setForm] = useState<EventForm>(emptyEvent)
   const [editId, setEditId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -144,6 +278,7 @@ export function EventsAdmin() {
     try { setEvents((await api.events()).events) } catch (e: any) { setErr(e.message) }
   }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => { api.eventTypes().then(data => setEventTypes(data.types?.length ? data.types : DEFAULT_EVENT_TYPES)).catch(() => {}) }, [])
 
   function startEdit(ev: any) {
     setEditId(ev.id)
@@ -172,11 +307,20 @@ export function EventsAdmin() {
   }
 
   const f = form
+  const visibleEvents = events.filter((event) => {
+    const matchesSearch = !eventSearch.trim() || [event.title, event.location, event.host_label, event.event_type].filter(Boolean).some((value: string) => value.toLowerCase().includes(eventSearch.trim().toLowerCase()))
+    if (!matchesSearch) return false
+    if (eventFilter === 'tba') return Boolean(event.time_tba)
+    if (eventFilter === 'upcoming') return new Date(event.starts_at) >= new Date()
+    if (eventFilter === 'past') return new Date(event.starts_at) < new Date()
+    return true
+  })
   const set = (k: keyof EventForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
 
   return (
     <div>
+      <BulkImport kind="events" onImport={async (rows, mode) => { const result = await api.importEvents(rows, mode); await load(); return result }} />
       <h2 style={h2}>{editId ? 'Edit event' : 'Create event'}</h2>
 
       <form onSubmit={submit} style={{ ...cardWrap, display: 'grid', gap: 12 }}>
@@ -193,15 +337,23 @@ export function EventsAdmin() {
           <input required style={inp} placeholder="TUM x Industry Night" value={f.title} onChange={set('title')} />
         </div>
 
-        {/* Row 2: starts / ends */}
+        {/* Row 2: dates / optional times */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div style={fieldGroup}>
-            <label style={fieldLabel}>Starts *</label>
-            <input required type="datetime-local" style={inp} value={f.startsAt} onChange={set('startsAt')} />
+            <label style={fieldLabel}>Start date *</label>
+            <input required type="date" style={inp} value={f.startDate} onChange={set('startDate')} />
           </div>
           <div style={fieldGroup}>
-            <label style={fieldLabel}>Ends</label>
-            <input type="datetime-local" style={inp} value={f.endsAt} onChange={set('endsAt')} />
+            <label style={fieldLabel}>Start time (optional / TBA)</label>
+            <input type="time" style={inp} value={f.startTime} onChange={set('startTime')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>End date (optional)</label>
+            <input type="date" style={inp} value={f.endDate} onChange={set('endDate')} />
+          </div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>End time (optional)</label>
+            <input type="time" style={inp} value={f.endTime} onChange={set('endTime')} />
           </div>
         </div>
 
@@ -215,7 +367,7 @@ export function EventsAdmin() {
             <label style={fieldLabel}>Event type</label>
             <select style={inp} value={f.eventType} onChange={set('eventType')}>
               <option value="">— select —</option>
-              {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
         </div>
@@ -263,8 +415,13 @@ export function EventsAdmin() {
         </div>
       </form>
 
+      <div style={{ display: 'flex', gap: 8, margin: '20px 0 10px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <input aria-label="Search events" style={{ ...inp, width: 220 }} placeholder="Search events" value={eventSearch} onChange={e => setEventSearch(e.target.value)} />
+        <select aria-label="Filter events" style={{ ...inp, width: 150 }} value={eventFilter} onChange={e => setEventFilter(e.target.value as typeof eventFilter)}><option value="all">All events</option><option value="upcoming">Upcoming</option><option value="past">Past</option><option value="tba">Time TBA</option></select>
+        <span style={{ fontSize: 12, color: C.inkMuted }}>{visibleEvents.length} shown</span>
+      </div>
       <div style={{ display: 'grid', gap: 10 }}>
-        {events.map(ev => (
+        {visibleEvents.map(ev => (
           <div key={ev.id} style={rowCard}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               {ev.image_url && (
@@ -287,6 +444,12 @@ export function EventsAdmin() {
           </div>
         ))}
         {events.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No events yet.</div>}
+        {events.length > 0 && visibleEvents.length === 0 && <div style={{ color: C.inkFaint, fontSize: 13 }}>No events match this filter.</div>}
+      </div>
+      <div style={{ ...cardWrap, marginTop: 20 }}>
+        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Manage event types</h3>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}><input style={{ ...inp, flex: 1, minWidth: 180 }} placeholder="Add a type" value={newEventType} onChange={e => setNewEventType(e.target.value)} /><button type="button" style={primaryBtn} onClick={async () => { const result = await api.addEventType(newEventType); setEventTypes(result.types); setNewEventType('') }}>Add type</button></div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{eventTypes.map(type => <span key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 7px', borderRadius: 7, background: C.paperSoft, fontSize: 12 }}><button type="button" title="Rename" style={{ border: 0, background: 'transparent', cursor: 'pointer', color: C.ink }} onClick={async () => { const next = prompt('Rename event type', type)?.trim(); if (next && next !== type) { const result = await api.renameEventType(type, next); setEventTypes(result.types); setForm(prev => prev.eventType === type ? { ...prev, eventType: next } : prev) } }}>{type}</button><button type="button" title="Delete" style={{ border: 0, background: 'transparent', cursor: 'pointer', color: C.signal }} onClick={async () => { if (confirm(`Remove “${type}” from future choices? Existing events keep their type.`)) { const result = await api.deleteEventType(type); setEventTypes(result.types); setForm(prev => prev.eventType === type ? { ...prev, eventType: '' } : prev) } }}>×</button></span>)}</div>
       </div>
     </div>
   )
@@ -861,21 +1024,21 @@ export function FeedbackAdmin() {
 // ── Cafés ─────────────────────────────────────────────────────────────────────
 const VENUE_TYPES = ['cafe', 'restaurant', 'bar']
 
-type CafeForm = {
+type LegacyCafeForm = {
   slug: string; name: string; venueType: string; address: string; city: string; area: string
   description: string; photoUrl: string; hoursText: string; lat: string; lng: string
   isPartnered: boolean; isActive: boolean; dealTitle: string; dealDetails: string; dealCode: string
   dealCodeEnabled: boolean; featuredPriority: string
 }
 
-const emptyCafe: CafeForm = {
+const legacyEmptyCafe: LegacyCafeForm = {
   slug: '', name: '', venueType: 'cafe', address: '', city: 'Munich', area: '',
   description: '', photoUrl: '', hoursText: '', lat: '', lng: '',
   isPartnered: false, isActive: true, dealTitle: '', dealDetails: '', dealCode: '',
   dealCodeEnabled: false, featuredPriority: '0',
 }
 
-function cafeToForm(c: any): CafeForm {
+function legacyCafeToForm(c: any): LegacyCafeForm {
   return {
     slug: c.slug ?? '',
     name: c.name ?? '',
@@ -898,7 +1061,7 @@ function cafeToForm(c: any): CafeForm {
   }
 }
 
-function formToCafePayload(f: CafeForm) {
+function legacyCafePayload(f: LegacyCafeForm) {
   return {
     slug: f.slug.trim(),
     name: f.name.trim(),
@@ -921,9 +1084,9 @@ function formToCafePayload(f: CafeForm) {
   }
 }
 
-export function CafesAdmin() {
+function LegacyCafesAdmin() {
   const [cafes, setCafes] = useState<any[]>([])
-  const [form, setForm] = useState<CafeForm>(emptyCafe)
+  const [form, setForm] = useState<LegacyCafeForm>(legacyEmptyCafe)
   const [editId, setEditId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -935,37 +1098,37 @@ export function CafesAdmin() {
 
   function startEdit(c: any) {
     setEditId(c.id)
-    setForm(cafeToForm(c))
+    setForm(legacyCafeToForm(c))
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
-  function cancelEdit() { setEditId(null); setForm(emptyCafe) }
+  function cancelEdit() { setEditId(null); setForm(legacyEmptyCafe) }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setErr('')
     try {
       if (editId) {
-        await api.updateCafe(editId, formToCafePayload(form))
+        await api.updateCafe(editId, legacyCafePayload(form))
         setEditId(null)
       } else {
-        await api.createCafe(formToCafePayload(form))
+        await api.createCafe(legacyCafePayload(form))
       }
-      setForm(emptyCafe)
+      setForm(legacyEmptyCafe)
       await load()
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
 
   async function archive(id: string) {
     if (!confirm('Archive this café? It disappears from the member Cafés page.')) return
-    await api.deleteCafe(id); await load()
+    await api.archiveCafe(id); await load()
   }
   async function restore(c: any) {
     await api.updateCafe(c.id, { isArchived: false, isActive: true }); await load()
   }
 
   const f = form
-  const set = (k: keyof CafeForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+  const set = (k: keyof LegacyCafeForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
-  const setBool = (k: keyof CafeForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const setBool = (k: keyof LegacyCafeForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.checked }))
 
   return (

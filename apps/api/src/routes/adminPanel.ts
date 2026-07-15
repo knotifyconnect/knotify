@@ -49,6 +49,225 @@ adminPanelRouter.post('/upload', upload.single('image'), async (req: any, res: a
   }
 })
 
+// ── Places (admin.knotify.pro only) ─────────────────────────────────────────
+const placeFields = z.object({
+  slug: z.string().min(2).max(64).regex(/^[a-z0-9-]+$/),
+  name: z.string().min(2).max(120),
+  venueType: z.enum(['cafe', 'restaurant', 'bar']).default('cafe'),
+  address: z.string().max(240).optional().nullable(),
+  city: z.string().max(80).default('Munich'),
+  area: z.string().max(120).optional().nullable(),
+  description: z.string().max(1200).optional().nullable(),
+  perkText: z.string().max(240).optional().nullable(),
+  photoUrl: z.string().max(2048).optional().nullable(),
+  hoursText: z.string().max(120).optional().nullable(),
+  lat: z.number().min(-90).max(90).optional().nullable(),
+  lng: z.number().min(-180).max(180).optional().nullable(),
+  isPartnered: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+  dealTitle: z.string().max(160).optional().nullable(),
+  dealDetails: z.string().max(1000).optional().nullable(),
+  dealCode: z.string().max(120).optional().nullable(),
+  dealCodeEnabled: z.boolean().optional(),
+  featuredPriority: z.number().int().min(0).max(100000).optional(),
+  isArchived: z.boolean().optional(),
+})
+
+const dateTimeInput = z.string().refine((value) => !Number.isNaN(Date.parse(value)), { message: 'must be a valid ISO date or date-time' })
+const httpUrl = z.string().url().max(2048).refine((value) => /^https?:\/\//i.test(value), { message: 'must be an http(s) URL' })
+
+const eventFieldsBase = z.object({
+  title: z.string().trim().min(2).max(160),
+  description: z.string().trim().max(4000).nullable().optional(),
+  location: z.string().trim().max(240).nullable().optional(),
+  startsAt: dateTimeInput,
+  endsAt: dateTimeInput.nullable().optional(),
+  timeTba: z.boolean().optional(),
+  url: httpUrl.nullable().optional(),
+  hostLabel: z.string().trim().max(160).nullable().optional(),
+  imageUrl: httpUrl.nullable().optional(),
+  eventType: z.string().trim().min(2).max(80).nullable().optional(),
+  capacity: z.number().int().min(0).max(100000).nullable().optional(),
+  priceEur: z.number().int().min(0).max(100000).nullable().optional(),
+  interests: z.array(z.string().trim().min(1).max(60)).max(10).optional(),
+})
+const eventFields = eventFieldsBase.superRefine((value, ctx) => {
+  if (value.endsAt && new Date(value.endsAt) < new Date(value.startsAt)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endsAt'], message: 'must not be before startsAt' })
+  }
+})
+
+function nullableText(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function parseEventBody(b: z.infer<typeof eventFields>) {
+  const startsAt = new Date(b.startsAt)
+  const endsAt = b.endsAt ? new Date(b.endsAt) : null
+  return {
+    title: b.title,
+    description: nullableText(b.description),
+    location: nullableText(b.location),
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt?.toISOString() ?? null,
+    time_tba: b.timeTba ?? false,
+    url: nullableText(b.url),
+    host_label: nullableText(b.hostLabel) ?? 'Munich',
+    image_url: nullableText(b.imageUrl),
+    event_type: b.eventType ?? null,
+    capacity: b.capacity ?? null,
+    price_eur: b.priceEur ?? null,
+    interests: b.interests ?? [],
+  }
+}
+
+function eventSchemaError(res: any, message: string) {
+  if (message.includes('time_tba')) return res.status(503).json({ error: 'Migration 057 must be applied before saving events with Time TBA.' })
+  return res.status(500).json({ error: message })
+}
+
+const adminEventFields = 'id, title, description, location, starts_at, ends_at, time_tba, source, url, host_label, image_url, event_type, capacity, price_eur, interests, created_at'
+const legacyAdminEventFields = 'id, title, description, location, starts_at, ends_at, source, url, host_label, image_url, event_type, capacity, price_eur, interests, created_at'
+const defaultEventTypes = ['Business & Networking', 'Career & Jobs', 'Conference', 'Seminar', 'Lecture & Talk', 'Workshop & Training', 'Class & Course', 'Meetup', 'Community & Social', 'Education & Academic', 'Technology', 'Science', 'Health & Medical', 'Wellness', 'Sports', 'Fitness', 'Outdoor & Adventure', 'Travel & Excursion', 'Music', 'Concert', 'Dance', 'Theatre', 'Comedy', 'Film Screening', 'Arts & Culture', 'Exhibition', 'Literature & Poetry', 'Festival', 'Party & Nightlife', 'Food & Drink', 'Market', 'Fair & Expo', 'Trade Show', 'Competition & Contest', 'Gaming & Esports', 'Hobby & Leisure', 'Family & Children', 'Dating & Singles', 'Religion & Spirituality', 'Charity & Fundraising', 'Volunteering', 'Environment & Sustainability', 'Government & Civic', 'Politics & Public Affairs', 'Fashion & Beauty', 'Parade & Procession', 'Awards & Ceremony', 'Wedding', 'Private Celebration', 'Holiday & Seasonal', 'Online & Virtual', 'Hybrid', 'Other']
+
+async function getEventTypes() {
+  const result = await supabase.from('app_settings').select('value').eq('key', 'event_types').maybeSingle()
+  const types = Array.isArray(result.data?.value) ? result.data.value.filter((value): value is string => typeof value === 'string' && value.trim().length > 1).map(value => value.trim()) : defaultEventTypes
+  return { types: [...new Set(types)].sort((a, b) => a.localeCompare(b)), error: result.error }
+}
+async function saveEventTypes(types: string[]) {
+  return supabase.from('app_settings').upsert({ key: 'event_types', value: types, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+}
+
+function isMissingTimeTba(message: string) { return message.includes('time_tba') }
+
+type TimeTbaAvailability = { available: true } | { available: false } | { available: null; error: string }
+async function timeTbaAvailability(): Promise<TimeTbaAvailability> {
+  const result = await supabase.from('events').select('time_tba').limit(1)
+  if (!result.error) return { available: true }
+  if (isMissingTimeTba(result.error.message)) return { available: false }
+  return { available: null, error: result.error.message }
+}
+
+// Some installations predate migration 057. A normal event does not need the
+// column, so retry without it rather than rejecting an otherwise valid import.
+// A true Time-TBA event must still be rejected: silently dropping that state
+// would change what users see.
+async function insertEvent(fields: ReturnType<typeof parseEventBody>) {
+  const insert = (payload: Record<string, unknown>) => supabase.from('events').insert(payload).select('id').single()
+  let result: any = await insert({ ...fields, source: 'curated' })
+  if (result.error && isMissingTimeTba(result.error.message) && fields.time_tba === false) {
+    const { time_tba: _timeTba, ...legacyFields } = fields
+    result = await insert({ ...legacyFields, source: 'curated' })
+  }
+  return result
+}
+
+async function updateEvent(id: string, fields: Record<string, unknown>) {
+  const update = (payload: Record<string, unknown>) => supabase.from('events').update(payload).eq('id', id)
+  let result: any = await update(fields)
+  if (result.error && isMissingTimeTba(result.error.message) && fields.time_tba === false) {
+    const { time_tba: _timeTba, ...legacyFields } = fields
+    result = await update(legacyFields)
+  }
+  return result
+}
+
+const placeSchema = placeFields.superRefine((value, ctx) => {
+  if (value.dealCodeEnabled && (!value.isPartnered || !value.dealCode?.trim())) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dealCodeEnabled'], message: 'A visible code requires a partnered listing and a code.' })
+  }
+})
+
+function placePatch(value: z.infer<typeof placeFields>) {
+  const patch: Record<string, unknown> = {}
+  if (value.slug !== undefined) patch.slug = value.slug
+  if (value.name !== undefined) patch.name = value.name
+  if (value.venueType !== undefined) patch.venue_type = value.venueType
+  if (value.address !== undefined) patch.address = value.address || null
+  if (value.city !== undefined) patch.city = value.city
+  if (value.area !== undefined) patch.area = value.area || null
+  if (value.description !== undefined) patch.description = value.description || null
+  if (value.perkText !== undefined) patch.perk_text = value.perkText || null
+  if (value.photoUrl !== undefined) patch.photo_url = value.photoUrl || null
+  if (value.hoursText !== undefined) patch.hours_text = value.hoursText || null
+  if (value.lat !== undefined) patch.lat = value.lat
+  if (value.lng !== undefined) patch.lng = value.lng
+  if (value.isPartnered !== undefined) patch.is_partnered = value.isPartnered
+  if (value.isActive !== undefined) patch.is_active = value.isActive
+  if (value.dealTitle !== undefined) patch.deal_title = value.dealTitle || null
+  if (value.dealDetails !== undefined) patch.deal_details = value.dealDetails || null
+  if (value.dealCode !== undefined) patch.deal_code = value.dealCode || null
+  if (value.dealCodeEnabled !== undefined) patch.deal_code_enabled = value.dealCodeEnabled
+  if (value.featuredPriority !== undefined) patch.featured_priority = value.featuredPriority
+  if (value.isArchived !== undefined) patch.archived_at = value.isArchived ? new Date().toISOString() : null
+  return patch
+}
+
+function placeSchemaError(res: any, message: string) {
+  if (message.includes('venue_type') || message.includes('archived_at')) {
+    return res.status(503).json({ error: 'Cafe listing migration 054 must be applied before managing places.' })
+  }
+  return res.status(500).json({ error: message })
+}
+
+adminPanelRouter.get('/cafes', async (_req, res) => {
+  const result = await supabase
+    .from('cafes')
+    .select('id, slug, name, venue_type, address, city, area, description, perk_text, photo_url, hours_text, lat, lng, is_partnered, is_active, deal_title, deal_details, deal_code, deal_code_enabled, featured_priority, archived_at')
+    .order('archived_at', { ascending: true })
+    .order('is_partnered', { ascending: false })
+    .order('featured_priority', { ascending: false })
+    .order('name', { ascending: true })
+  if (result.error) return placeSchemaError(res, result.error.message)
+  return res.json({ cafes: result.data ?? [] })
+})
+
+adminPanelRouter.post('/cafes', async (req, res) => {
+  const parsed = placeSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid place', fields: parsed.error.flatten() })
+  const insert = await supabase.from('cafes').insert(placePatch(parsed.data)).select('*').single()
+  if (insert.error) return placeSchemaError(res, insert.error.message)
+  return res.status(201).json({ cafe: insert.data })
+})
+
+adminPanelRouter.patch('/cafes/:id', async (req, res) => {
+  const parsed = placeFields.partial().safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid place', fields: parsed.error.flatten() })
+
+  const current = await supabase.from('cafes').select('is_partnered, deal_code, deal_code_enabled').eq('id', req.params.id).maybeSingle()
+  if (current.error) return placeSchemaError(res, current.error.message)
+  if (!current.data) return res.status(404).json({ error: 'Place not found.' })
+  const partnered = parsed.data.isPartnered ?? current.data.is_partnered
+  const code = parsed.data.dealCode ?? current.data.deal_code
+  const enabled = parsed.data.dealCodeEnabled ?? current.data.deal_code_enabled
+  if (enabled && (!partnered || !code?.trim())) return res.status(422).json({ error: 'A visible code requires a partnered listing and a code.' })
+
+  const patch = { ...placePatch(parsed.data as z.infer<typeof placeFields>), updated_at: new Date().toISOString() }
+  const update = await supabase.from('cafes').update(patch).eq('id', req.params.id).select('*').maybeSingle()
+  if (update.error) return placeSchemaError(res, update.error.message)
+  if (!update.data) return res.status(404).json({ error: 'Place not found.' })
+  return res.json({ cafe: update.data })
+})
+
+adminPanelRouter.delete('/cafes/:id', async (req, res) => {
+  if (req.query.permanent === 'true') {
+    const deleted = await supabase.from('cafes').delete().eq('id', req.params.id).select('id').maybeSingle()
+    if (deleted.error) return res.status(409).json({ error: `Could not delete place: ${deleted.error.message}` })
+    if (!deleted.data) return res.status(404).json({ error: 'Place not found.' })
+    return res.json({ ok: true, deleted: true })
+  }
+  const archived = await supabase
+    .from('cafes')
+    .update({ is_active: false, archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .select('id')
+    .maybeSingle()
+  if (archived.error) return placeSchemaError(res, archived.error.message)
+  if (!archived.data) return res.status(404).json({ error: 'Place not found.' })
+  return res.json({ ok: true })
+})
+
 // ── Beta signups ──────────────────────────────────────────────────────────────
 adminPanelRouter.get('/beta-signups', async (req, res) => {
   const status = req.query.status as string | undefined
@@ -82,48 +301,82 @@ adminPanelRouter.patch('/beta-signups/:id', async (req, res) => {
 
 // ── Events ────────────────────────────────────────────────────────────────────
 adminPanelRouter.get('/events', async (_req, res) => {
-  const { data, error } = await supabase
+  const result = await supabase
     .from('events')
-    .select('id, title, description, location, starts_at, ends_at, source, url, host_label, image_url, event_type, capacity, price_eur, interests, created_at')
+    .select(adminEventFields)
     .order('starts_at', { ascending: true })
-  if (error) return res.status(500).json({ error: error.message })
-  return res.json({ events: data ?? [] })
+  if (result.error && isMissingTimeTba(result.error.message)) {
+    const legacy = await supabase.from('events').select(legacyAdminEventFields).order('starts_at', { ascending: true })
+    if (legacy.error) return eventSchemaError(res, legacy.error.message)
+    return res.json({ events: (legacy.data ?? []).map(event => ({ ...event, time_tba: false })) })
+  }
+  if (result.error) return eventSchemaError(res, result.error.message)
+  return res.json({ events: result.data ?? [] })
 })
 
-function parseEventBody(b: any) {
-  const patch: Record<string, unknown> = {}
-  if (b.title !== undefined)       patch.title       = String(b.title).trim()
-  if (b.description !== undefined) patch.description = b.description ? String(b.description).trim() : null
-  if (b.location !== undefined)    patch.location    = b.location ? String(b.location).trim() : null
-  if (b.startsAt !== undefined)    patch.starts_at   = b.startsAt ? new Date(b.startsAt).toISOString() : null
-  if (b.endsAt !== undefined)      patch.ends_at     = b.endsAt ? new Date(b.endsAt).toISOString() : null
-  if (b.url !== undefined)         patch.url         = b.url ? String(b.url).trim() : null
-  if (b.hostLabel !== undefined)   patch.host_label  = b.hostLabel ? String(b.hostLabel).trim() : null
-  if (b.imageUrl !== undefined)    patch.image_url   = b.imageUrl ? String(b.imageUrl).trim() : null
-  if (b.eventType !== undefined)   patch.event_type  = b.eventType || null
-  if (b.capacity !== undefined)    patch.capacity    = b.capacity != null ? Number(b.capacity) : null
-  if (b.priceEur !== undefined)    patch.price_eur   = b.priceEur != null ? Number(b.priceEur) : null
-  if (b.interests !== undefined)   patch.interests   = Array.isArray(b.interests) ? b.interests : []
-  return patch
-}
+adminPanelRouter.get('/event-types', async (_req, res) => {
+  const { types, error } = await getEventTypes()
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json({ types })
+})
+adminPanelRouter.post('/event-types', async (req, res) => {
+  const label = typeof req.body?.label === 'string' ? req.body.label.trim().replace(/\s+/g, ' ') : ''
+  if (label.length < 2 || label.length > 80) return res.status(422).json({ error: 'Type must be 2–80 characters.' })
+  const current = await getEventTypes(); if (current.error) return res.status(500).json({ error: current.error.message })
+  const types = [...current.types, label].filter((value, index, all) => all.findIndex(item => item.toLowerCase() === value.toLowerCase()) === index)
+  const saved = await saveEventTypes(types); if (saved.error) return res.status(500).json({ error: saved.error.message })
+  return res.status(201).json({ types })
+})
+adminPanelRouter.patch('/event-types', async (req, res) => {
+  const label = typeof req.body?.label === 'string' ? req.body.label.trim() : ''
+  const nextLabel = typeof req.body?.nextLabel === 'string' ? req.body.nextLabel.trim().replace(/\s+/g, ' ') : ''
+  if (!label || nextLabel.length < 2 || nextLabel.length > 80) return res.status(422).json({ error: 'Invalid event type.' })
+  const current = await getEventTypes(); if (current.error) return res.status(500).json({ error: current.error.message })
+  if (!current.types.includes(label)) return res.status(404).json({ error: 'Event type not found.' })
+  const types = current.types.map(type => type === label ? nextLabel : type)
+  const saved = await saveEventTypes(types); if (saved.error) return res.status(500).json({ error: saved.error.message })
+  const events = await supabase.from('events').update({ event_type: nextLabel }).eq('event_type', label)
+  if (events.error) return res.status(500).json({ error: events.error.message })
+  return res.json({ types })
+})
+adminPanelRouter.delete('/event-types', async (req, res) => {
+  const label = typeof req.body?.label === 'string' ? req.body.label.trim() : ''
+  const current = await getEventTypes(); if (current.error) return res.status(500).json({ error: current.error.message })
+  const types = current.types.filter(type => type !== label)
+  if (types.length === current.types.length) return res.status(404).json({ error: 'Event type not found.' })
+  const saved = await saveEventTypes(types); if (saved.error) return res.status(500).json({ error: saved.error.message })
+  return res.json({ types })
+})
 
 adminPanelRouter.post('/events', async (req, res) => {
-  const b = req.body
-  if (!b.title || !b.startsAt) return res.status(422).json({ error: 'Title and start time are required.' })
-  const fields = parseEventBody(b)
-  const { data, error } = await supabase
-    .from('events')
-    .insert({ ...fields, source: 'curated', host_label: fields.host_label ?? 'Munich' })
-    .select('id').single()
-  if (error) return res.status(500).json({ error: error.message })
+  const parsed = eventFields.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid event', fields: parsed.error.flatten() })
+  const fields = parseEventBody(parsed.data)
+  const { data, error } = await insertEvent(fields)
+  if (error) return eventSchemaError(res, error.message)
   return res.status(201).json({ id: data.id })
 })
 
 adminPanelRouter.patch('/events/:id', async (req, res) => {
-  const fields = parseEventBody(req.body)
-  if (Object.keys(fields).length === 0) return res.status(400).json({ error: 'No fields provided.' })
-  const { error } = await supabase.from('events').update(fields).eq('id', req.params.id)
-  if (error) return res.status(500).json({ error: error.message })
+  const parsed = eventFieldsBase.partial().safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid event', fields: parsed.error.flatten() })
+  if (Object.keys(parsed.data).length === 0) return res.status(400).json({ error: 'No fields provided.' })
+  const fields: Record<string, unknown> = parseEventBody({ title: '', startsAt: '1970-01-01', ...parsed.data } as z.infer<typeof eventFields>)
+  if (parsed.data.title === undefined) delete fields.title
+  if (parsed.data.startsAt === undefined) delete fields.starts_at
+  if (parsed.data.endsAt === undefined) delete fields.ends_at
+  if (parsed.data.timeTba === undefined) delete fields.time_tba
+  if (parsed.data.description === undefined) delete fields.description
+  if (parsed.data.location === undefined) delete fields.location
+  if (parsed.data.url === undefined) delete fields.url
+  if (parsed.data.hostLabel === undefined) delete fields.host_label
+  if (parsed.data.imageUrl === undefined) delete fields.image_url
+  if (parsed.data.eventType === undefined) delete fields.event_type
+  if (parsed.data.capacity === undefined) delete fields.capacity
+  if (parsed.data.priceEur === undefined) delete fields.price_eur
+  if (parsed.data.interests === undefined) delete fields.interests
+  const { error } = await updateEvent(req.params.id, fields)
+  if (error) return eventSchemaError(res, error.message)
   return res.json({ ok: true })
 })
 
@@ -131,6 +384,83 @@ adminPanelRouter.delete('/events/:id', async (req, res) => {
   const { error } = await supabase.from('events').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   return res.json({ ok: true })
+})
+
+// Bulk imports are intentionally row-isolated: one failed insert never rolls back or corrupts a valid row.
+// The browser previews validation first; this endpoint revalidates every row under the existing panel secret.
+adminPanelRouter.post('/events/import', async (req, res) => {
+  const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : []
+  const updateExisting = req.body?.mode === 'update'
+  if (!rows.length || rows.length > 500) return res.status(422).json({ error: 'Import must contain 1–500 rows.' })
+  const includesTimeTba = rows.some(item => item?.data?.timeTba === true)
+  const timeTba: TimeTbaAvailability = includesTimeTba ? await timeTbaAvailability() : { available: true }
+  if (timeTba.available === null) return res.status(500).json({ error: timeTba.error })
+  const results: Array<{ row: number; status: 'created' | 'updated' | 'skipped' | 'error'; error?: string }> = []
+  const timeTbaUnavailableRows: number[] = []
+  const seen = new Set<string>()
+  for (const item of rows) {
+    const row = Number(item?.row) || 0
+    const parsed = eventFields.safeParse(item?.data)
+    if (!parsed.success) { results.push({ row, status: 'error', error: parsed.error.issues.map(i => `${i.path.join('.') || 'row'}: ${i.message}`).join('; ') }); continue }
+    if (timeTba.available === false && parsed.data.timeTba) {
+      timeTbaUnavailableRows.push(row)
+      results.push({ row, status: 'skipped', error: 'Time TBA is unavailable in this database.' })
+      continue
+    }
+    const fields = parseEventBody(parsed.data)
+    const key = `${fields.title.toLowerCase()}|${fields.starts_at.slice(0, 10)}|${(fields.location ?? '').toLowerCase()}`
+    if (seen.has(key)) { results.push({ row, status: 'skipped', error: 'Duplicate row in this import.' }); continue }
+    seen.add(key)
+    const candidates = await supabase.from('events').select('id, starts_at, location').ilike('title', fields.title)
+    if (candidates.error) { results.push({ row, status: 'error', error: candidates.error.message }); continue }
+    const existing = (candidates.data ?? []).find(event =>
+      event.starts_at.slice(0, 10) === fields.starts_at.slice(0, 10) &&
+      (event.location ?? '').trim().toLowerCase() === (fields.location ?? '').trim().toLowerCase(),
+    )
+    if (existing && !updateExisting) { results.push({ row, status: 'skipped', error: 'Likely duplicate exists; choose update mode to update it.' }); continue }
+    const write = existing ? await updateEvent(existing.id, fields) : await insertEvent(fields)
+    if (write.error) {
+      const error = isMissingTimeTba(write.error.message) && fields.time_tba
+        ? 'Time TBA requires event migration 057. Apply it before importing Time-TBA events.'
+        : write.error.message
+      results.push({ row, status: 'error', error })
+    }
+    else results.push({ row, status: existing ? 'updated' : 'created' })
+  }
+  return res.json({ results, timeTbaUnavailableRows })
+})
+
+adminPanelRouter.post('/cafes/import', async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : []
+  const updateExisting = req.body?.mode === 'update'
+  if (!rows.length || rows.length > 500) return res.status(422).json({ error: 'Import must contain 1–500 rows.' })
+  const results: Array<{ row: number; status: 'created' | 'updated' | 'skipped' | 'error'; error?: string }> = []
+  const seen = new Set<string>()
+  for (const item of rows) {
+    const row = Number(item?.row) || 0
+    const parsed = placeSchema.safeParse(item?.data)
+    if (!parsed.success) { results.push({ row, status: 'error', error: parsed.error.issues.map(i => `${i.path.join('.') || 'row'}: ${i.message}`).join('; ') }); continue }
+    const fields = placePatch(parsed.data)
+    const key = `${String(fields.slug).toLowerCase()}|${String(fields.name).toLowerCase()}|${String(fields.address ?? '').toLowerCase()}|${String(fields.area ?? '').toLowerCase()}`
+    if (seen.has(key)) { results.push({ row, status: 'skipped', error: 'Duplicate row in this import.' }); continue }
+    seen.add(key)
+    const bySlug = await supabase.from('cafes').select('id, slug, name, address, area').eq('slug', String(fields.slug)).maybeSingle()
+    if (bySlug.error) { results.push({ row, status: 'error', error: bySlug.error.message }); continue }
+    const byName = bySlug.data ? { data: [], error: null } : await supabase.from('cafes').select('id, slug, name, address, area').ilike('name', String(fields.name))
+    if (byName.error) { results.push({ row, status: 'error', error: byName.error.message }); continue }
+    const existing = [bySlug.data, ...(byName.data ?? [])].filter(Boolean).find(cafe => cafe!.slug === fields.slug || (
+      cafe!.name.trim().toLowerCase() === String(fields.name).trim().toLowerCase() &&
+      (cafe!.address ?? '').trim().toLowerCase() === String(fields.address ?? '').trim().toLowerCase() &&
+      (cafe!.area ?? '').trim().toLowerCase() === String(fields.area ?? '').trim().toLowerCase()
+    ))
+    if (existing && !updateExisting) { results.push({ row, status: 'skipped', error: 'Likely duplicate exists; choose update mode to update it.' }); continue }
+    const write = existing
+      ? await supabase.from('cafes').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', existing.id)
+      : await supabase.from('cafes').insert(fields)
+    if (write.error) results.push({ row, status: 'error', error: write.error.message })
+    else results.push({ row, status: existing ? 'updated' : 'created' })
+  }
+  return res.json({ results })
 })
 
 // ── Gigs ──────────────────────────────────────────────────────────────────────

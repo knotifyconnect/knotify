@@ -233,8 +233,9 @@ function timeAgo(iso: string) {
   return `${Math.floor(d / 365)}y ago`
 }
 
-function shortWhen(iso: string) {
+function shortWhen(iso: string, timeTba = false) {
   const d = new Date(iso)
+  if (timeTba) return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · Time TBA'
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
@@ -375,7 +376,7 @@ export function RelationshipHomePage() {
   })
   const [referralPeer, setReferralPeer] = useState<Peer | null>(null)
   const [askMenuPeer, setAskMenuPeer] = useState<Peer | null>(null)
-  const [railEvents, setRailEvents] = useState<Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }>>([])
+  const [railEvents, setRailEvents] = useState<Array<{ id: string; title: string; starts_at: string; time_tba?: boolean; location: string | null; rsvp_count: number }>>([])
   const [credMini, setCredMini] = useState<{ score: number; tier: string } | null>(null)
   const [sideQuests, setSideQuests] = useState<Array<{ key: string; title: string; points: number; description?: string }>>([])
   const [myAsks, setMyAsks] = useState<Ask[]>([])
@@ -390,7 +391,7 @@ export function RelationshipHomePage() {
 
   useEffect(() => {
     return runWhenIdle(() => {
-      apiGetCached<{ events: Array<{ id: string; title: string; starts_at: string; location: string | null; rsvp_count: number }> }>('/api/events?limit=3', { ttlMs: 30_000 })
+      apiGetCached<{ events: Array<{ id: string; title: string; starts_at: string; time_tba?: boolean; location: string | null; rsvp_count: number }> }>('/api/events?limit=3', { ttlMs: 30_000 })
         .then((r) => setRailEvents(r.events ?? [])).catch(() => {})
     })
   }, [])
@@ -858,7 +859,7 @@ export function RelationshipHomePage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {railEvents.map((ev, i) => (
               <button key={ev.id} type="button" onClick={() => navigate('/events')} style={{ textAlign: 'left', cursor: 'pointer', padding: 14, borderRadius: 12, background: i === 0 ? T.signal : T.paper, color: i === 0 ? '#fff' : T.ink, border: i === 0 ? 'none' : `0.5px solid ${T.rule}` }}>
-                <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: i === 0 ? 'rgba(255,255,255,0.85)' : T.inkMuted }}>{shortWhen(ev.starts_at)}{ev.location ? ` · ${ev.location}` : ''}</div>
+                <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: i === 0 ? 'rgba(255,255,255,0.85)' : T.inkMuted }}>{shortWhen(ev.starts_at, ev.time_tba)}{ev.location ? ` · ${ev.location}` : ''}</div>
                 <div style={{ fontFamily: T.display, fontSize: 16, fontWeight: 400, marginTop: 3, lineHeight: 1.15 }}>{ev.title}</div>
                 <div style={{ fontSize: 11, color: i === 0 ? 'rgba(255,255,255,0.85)' : T.inkMuted, marginTop: 4 }}>{ev.rsvp_count} going</div>
               </button>

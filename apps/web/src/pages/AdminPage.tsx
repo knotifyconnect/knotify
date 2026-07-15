@@ -112,7 +112,7 @@ export function AdminPage() {
           Operations console.
         </h1>
         <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0 }}>
-          Approve roles, manage partner cafés, toggle access.
+          Approve roles and toggle member access. Listing management lives on admin.knotify.pro.
         </p>
       </div>
 

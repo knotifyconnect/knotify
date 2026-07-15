@@ -19,10 +19,12 @@ type EventItem = {
   image_url?: string | null
   url?: string | null
   source?: string
+  time_tba?: boolean
 }
 
-function whenLabel(iso: string) {
+function whenLabel(iso: string, timeTba = false) {
   const d = new Date(iso)
+  if (timeTba) return `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · Time TBA`
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) +
     ' · ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
@@ -118,7 +120,7 @@ export function EventsPage() {
                 <div style={{ width: 34, height: 34, borderRadius: 8, background: gradientFor(accentFor(e.id)), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{dayBadge(e.starts_at)}</div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 500, color: T.paperSoft, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</div>
-                  <div style={{ fontSize: 10.5, color: T.inkFaint }}>{whenLabel(e.starts_at)}</div>
+                  <div style={{ fontSize: 10.5, color: T.inkFaint }}>{whenLabel(e.starts_at, e.time_tba)}</div>
                 </div>
               </div>
             ))}
@@ -186,7 +188,7 @@ export function EventsPage() {
                   <div style={{ fontFamily: T.display, fontSize: 'clamp(26px, 4vw, 38px)', fontWeight: 400, letterSpacing: '-0.02em', lineHeight: 1.04 }}>{featured.title}</div>
                   {featured.description && <div style={{ fontSize: 13, color: 'rgba(250,246,238,0.8)', marginTop: 8, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{featured.description}</div>}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 14, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 12.5, color: T.inkFaint }}>{whenLabel(featured.starts_at)}{featured.location ? ` · ${featured.location}` : ''} · {featured.rsvp_count} going</span>
+                    <span style={{ fontSize: 12.5, color: T.inkFaint }}>{whenLabel(featured.starts_at, featured.time_tba)}{featured.location ? ` · ${featured.location}` : ''} · {featured.rsvp_count} going</span>
                     <RsvpButton e={featured} dark />
                   </div>
                 </div>
@@ -202,7 +204,7 @@ export function EventsPage() {
                 return (
                   <div key={e.id} style={{ borderRadius: 14, overflow: 'hidden', background: T.paper, border: `0.5px solid ${T.rule}`, display: 'flex', flexDirection: 'column' }}>
                     <div style={{ position: 'relative', height: 120, background: e.image_url ? `center/cover no-repeat url(${e.image_url})` : gradientFor(color) }}>
-                      <div style={{ position: 'absolute', top: 10, left: 10 }}><Chip color="signal" style={{ background: 'rgba(0,0,0,0.25)', color: '#fff', border: 'none' }}>{whenLabel(e.starts_at)}</Chip></div>
+                      <div style={{ position: 'absolute', top: 10, left: 10 }}><Chip color="signal" style={{ background: 'rgba(0,0,0,0.25)', color: '#fff', border: 'none' }}>{whenLabel(e.starts_at, e.time_tba)}</Chip></div>
                     </div>
                     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
                       <div style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em', lineHeight: 1.1 }}>{e.title}</div>

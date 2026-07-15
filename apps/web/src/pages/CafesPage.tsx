@@ -246,7 +246,7 @@ function CafeCard({ cafe, onInvite, onOpen }: { cafe: Cafe; onInvite: () => void
         </div>}
         <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <KBtn variant="signal" size="sm" onClick={onInvite}><Users size={13} style={{ marginRight: 5 }} />Plan here</KBtn>
-          {cafe.lat && cafe.lng && <a href={`https://www.google.com/maps?q=${cafe.lat},${cafe.lng}`} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 12.5, textDecoration: 'none' }}><MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Map</a>}
+          {cafe.lat != null && cafe.lng != null && <a href={`https://www.google.com/maps?q=${cafe.lat},${cafe.lng}`} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 12.5, textDecoration: 'none' }}><MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Map</a>}
           {!cafe.is_partnered && <KPill color="default">Listed place</KPill>}
         </div>
       </div>

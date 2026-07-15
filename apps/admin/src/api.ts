@@ -44,11 +44,24 @@ export const api = {
   // Image upload
   uploadImage: (file: File) => uploadRequest('/api/admin-panel/upload', file),
 
+  // Cafes, restaurants, and bars
+  cafes: () => request('/api/admin-panel/cafes'),
+  createCafe: (body: unknown) => request('/api/admin-panel/cafes', { method: 'POST', body: JSON.stringify(body) }),
+  updateCafe: (id: string, body: unknown) => request(`/api/admin-panel/cafes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  archiveCafe: (id: string) => request(`/api/admin-panel/cafes/${id}`, { method: 'DELETE' }),
+  deleteCafe: (id: string) => request(`/api/admin-panel/cafes/${id}?permanent=true`, { method: 'DELETE' }),
+  importCafes: (rows: unknown[], mode: 'create' | 'update') => request('/api/admin-panel/cafes/import', { method: 'POST', body: JSON.stringify({ rows, mode }) }),
+
   // Events
   events: () => request('/api/admin-panel/events'),
   createEvent: (body: unknown) => request('/api/admin-panel/events', { method: 'POST', body: JSON.stringify(body) }),
   updateEvent: (id: string, body: unknown) => request(`/api/admin-panel/events/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteEvent: (id: string) => request(`/api/admin-panel/events/${id}`, { method: 'DELETE' }),
+  importEvents: (rows: unknown[], mode: 'create' | 'update') => request('/api/admin-panel/events/import', { method: 'POST', body: JSON.stringify({ rows, mode }) }),
+  eventTypes: () => request('/api/admin-panel/event-types'),
+  addEventType: (label: string) => request('/api/admin-panel/event-types', { method: 'POST', body: JSON.stringify({ label }) }),
+  renameEventType: (label: string, nextLabel: string) => request('/api/admin-panel/event-types', { method: 'PATCH', body: JSON.stringify({ label, nextLabel }) }),
+  deleteEventType: (label: string) => request('/api/admin-panel/event-types', { method: 'DELETE', body: JSON.stringify({ label }) }),
 
   // Gigs
   gigs: () => request('/api/admin-panel/gigs'),
@@ -64,10 +77,6 @@ export const api = {
   deleteQuest: (id: string) => request(`/api/admin-panel/quests/${id}`, { method: 'DELETE' }),
 
   // Cafés
-  cafes: () => request('/api/admin-panel/cafes'),
-  createCafe: (body: unknown) => request('/api/admin-panel/cafes', { method: 'POST', body: JSON.stringify(body) }),
-  updateCafe: (id: string, body: unknown) => request(`/api/admin-panel/cafes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  deleteCafe: (id: string) => request(`/api/admin-panel/cafes/${id}`, { method: 'DELETE' }),
   pendingCafes: (status?: string) => request(`/api/admin-panel/pending-cafes${status ? `?status=${status}` : ''}`),
   updatePendingCafe: (id: string, status: 'approved' | 'rejected' | 'pending') =>
     request(`/api/admin-panel/pending-cafes/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
