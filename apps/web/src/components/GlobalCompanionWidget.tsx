@@ -9,28 +9,55 @@ import { useIsMobile } from '../hooks/useIsMobile'
 const CompanionHero = lazy(() => import('./CompanionHero').then((m) => ({ default: m.CompanionHero })))
 
 const STORAGE_KEY_DESKTOP = 'knotify_companion_pos_desktop_v2'
+const STORAGE_KEY_MOBILE_Y = 'knotify_companion_pos_mobile_y_v1'
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 // A touch naturally jitters a few pixels even on a plain tap — anything under
 // this counts as "didn't drag" so the button still opens. Without this,
 // mobile taps were frequently misread as micro-drags and silently did nothing.
 const DRAG_THRESHOLD_PX = 8
+// Keep the tab clear of any top status/notch chrome and the bottom tab bar
+// (~64px min-height + safe-area inset) with a comfortable margin either side.
+const MOBILE_Y_TOP_MARGIN = 90
+const MOBILE_Y_BOTTOM_MARGIN = 140
+const clampMobileY = (y: number) => clamp(y, MOBILE_Y_TOP_MARGIN, Math.max(MOBILE_Y_TOP_MARGIN, window.innerHeight - MOBILE_Y_BOTTOM_MARGIN))
 
-// A compact tab docked to the left edge of the screen, vertically centered —
-// deliberately off the bottom tab bar entirely (an earlier version sat on
-// top of the bar and collided with the feedback bug-report button in the
-// same corner) and away from any other fixed UI, so there's nothing left for
-// it to compete with. Fixed position, plain tap, no drag on mobile.
-function CompanionEdgeTab({ onOpen }: { onOpen: () => void }) {
+// A compact tab docked to the left edge of the screen — deliberately off the
+// bottom tab bar entirely (an earlier version sat on top of the bar and
+// collided with the feedback bug-report button in the same corner) and away
+// from any other fixed UI, so there's nothing left for it to compete with.
+// Draggable vertically only (pinned to the left edge, x never changes) using
+// the same move-threshold-before-drag trick as the desktop button, so a plain
+// tap still reliably opens it instead of being swallowed as a micro-drag.
+function CompanionEdgeTab({ y, onOpen, onDragTo }: { y: number; onOpen: () => void; onDragTo: (y: number) => void }) {
+  const dragRef = useRef<{ startY: number; originY: number; moved: boolean } | null>(null)
+
   return (
     <button
       type="button"
       aria-label="Open Knotify Companion"
-      onClick={onOpen}
+      onPointerDown={(e) => {
+        dragRef.current = { startY: e.clientY, originY: y, moved: false }
+        e.currentTarget.setPointerCapture(e.pointerId)
+      }}
+      onPointerMove={(e) => {
+        const drag = dragRef.current
+        if (!drag) return
+        const delta = e.clientY - drag.startY
+        if (!drag.moved) {
+          if (Math.abs(delta) < DRAG_THRESHOLD_PX) return
+          drag.moved = true
+        }
+        onDragTo(clampMobileY(drag.originY + delta))
+      }}
+      onPointerUp={() => {
+        const moved = dragRef.current?.moved
+        dragRef.current = null
+        if (!moved) onOpen()
+      }}
       style={{
         position: 'fixed',
         left: 0,
-        top: '50%',
-        transform: 'translateY(-50%)',
+        top: y,
         zIndex: 9992,
         width: 34,
         height: 44,
@@ -43,7 +70,8 @@ function CompanionEdgeTab({ onOpen }: { onOpen: () => void }) {
         boxShadow: '2px 4px 14px rgba(26,24,21,0.18)',
         display: 'grid',
         placeItems: 'center',
-        cursor: 'pointer',
+        cursor: 'grab',
+        touchAction: 'none',
       }}
     >
       <KnotifyMark size={17} color="var(--paper)" />
@@ -55,12 +83,12 @@ export function GlobalCompanionWidget() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const [open, setOpen] = useState(false)
-  // Draggable positioning is a desktop-only convenience (repositioning to
-  // avoid overlapping content with a mouse is easy and low-risk). On mobile
-  // it was the actual cause of the flakiness: touch drag-to-reposition and
-  // tap-to-open share the same pointer events, so a real tap easily got
-  // misread as a micro-drag and silently failed to open anything. Mobile now
-  // gets one fixed, reliable spot, no dragging, above the bottom tab bar.
+  // Desktop can drag the button anywhere (x and y) to dodge content under the
+  // mouse. Mobile deliberately stays pinned to the left edge and only moves
+  // vertically — earlier free-drag on mobile shared pointer events with
+  // tap-to-open and easily misread a real tap as a micro-drag; the fixed x
+  // plus the same move-threshold-before-drag trick keeps taps reliable while
+  // still letting people slide the tab out from behind content underneath it.
   const [pos, setPos] = useState(() => {
     if (typeof window === 'undefined') return { x: 18, y: 180 }
     try {
@@ -68,6 +96,14 @@ export function GlobalCompanionWidget() {
       if (saved) return saved
     } catch { /* ignore */ }
     return { x: window.innerWidth - 74, y: window.innerHeight - 214 }
+  })
+  const [mobileY, setMobileY] = useState(() => {
+    if (typeof window === 'undefined') return 180
+    try {
+      const saved = Number(localStorage.getItem(STORAGE_KEY_MOBILE_Y))
+      if (Number.isFinite(saved) && saved > 0) return saved
+    } catch { /* ignore */ }
+    return window.innerHeight / 2
   })
   const dragRef = useRef<{ dx: number; dy: number; moved: boolean } | null>(null)
   const peers = useMemo(() => new Map<string, PeerLite>(), [])
@@ -90,6 +126,19 @@ export function GlobalCompanionWidget() {
     try { localStorage.setItem(STORAGE_KEY_DESKTOP, JSON.stringify(pos)) } catch { /* ignore */ }
   }, [pos, isMobile])
 
+  useEffect(() => {
+    if (!isMobile) return
+    const keepInView = () => setMobileY((y) => clampMobileY(y))
+    keepInView()
+    window.addEventListener('resize', keepInView)
+    return () => window.removeEventListener('resize', keepInView)
+  }, [isMobile])
+
+  useEffect(() => {
+    if (!isMobile) return
+    try { localStorage.setItem(STORAGE_KEY_MOBILE_Y, String(mobileY)) } catch { /* ignore */ }
+  }, [mobileY, isMobile])
+
   function onSuggestion(s: Suggestion) {
     if (s.action === 'open_profile' && s.peerId) navigate(`/profile/${s.peerId}`)
     if (s.action === 'open_message' && s.peerId) navigate(`/messages?to=${s.peerId}${s.draft ? `&draft=${encodeURIComponent(s.draft)}` : ''}`)
@@ -103,7 +152,7 @@ export function GlobalCompanionWidget() {
 
   return createPortal(
     <>
-      {!open && isMobile && <CompanionEdgeTab onOpen={() => setOpen(true)} />}
+      {!open && isMobile && <CompanionEdgeTab y={mobileY} onOpen={() => setOpen(true)} onDragTo={setMobileY} />}
 
       {!open && !isMobile && (
         <button
