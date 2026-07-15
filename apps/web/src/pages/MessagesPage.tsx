@@ -1476,7 +1476,7 @@ export function MessagesPage() {
           minHeight: 0,
           width: 'min(100%, 1440px)',
           margin: '0 auto',
-          borderRadius: 24,
+          borderRadius: isMobile ? 20 : 24,
           overflow: 'hidden',
           background: 'rgba(255,252,246,0.92)',
           border: '0.5px solid rgba(26,24,21,0.07)',
@@ -1490,11 +1490,11 @@ export function MessagesPage() {
           style={{ flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid rgba(26,24,21,0.08)', background: 'linear-gradient(180deg, rgba(255,252,246,0.96) 0%, rgba(244,239,230,0.82) 100%)' }}
         >
           {/* List header + search */}
-          <div style={{ padding: '22px 20px 14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+          <div style={{ padding: isMobile ? '16px 16px 12px' : '22px 20px 14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: isMobile ? 12 : 16 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                  <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 25, fontWeight: 500, letterSpacing: '-0.02em', margin: 0 }}>Messages</h1>
+                  <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 25, lineHeight: 1.08, fontWeight: 500, letterSpacing: '-0.02em', margin: 0 }}>Messages</h1>
                   {unreadTotal > 0 && (
                     <span style={{ fontSize: 11, fontWeight: 700, color: 'white', background: 'var(--signal)', borderRadius: 999, padding: '2px 8px', boxShadow: '0 5px 12px rgba(216,68,43,0.18)' }}>
                       {unreadTotal}
@@ -1514,7 +1514,7 @@ export function MessagesPage() {
                 placeholder="Search threads or start a new chat"
                 style={{
                   width: '100%',
-                  padding: '11px 42px 11px 15px',
+                  padding: isMobile ? '10px 40px 10px 14px' : '11px 42px 11px 15px',
                   borderRadius: 999,
                   border: '0.5px solid rgba(26,24,21,0.06)',
                   background: 'rgba(238,231,216,0.72)',

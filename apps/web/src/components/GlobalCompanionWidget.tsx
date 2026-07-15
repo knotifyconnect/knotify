@@ -57,18 +57,18 @@ function CompanionEdgeTab({ y, onOpen, onDragTo }: { y: number; onOpen: () => vo
       }}
       style={{
         position: 'fixed',
-        left: 0,
+        right: 0,
         top: y,
         zIndex: 9992,
         width: 34,
         height: 44,
         padding: 0,
         border: '1px solid var(--rule)',
-        borderLeft: 'none',
-        borderRadius: '0 14px 14px 0',
+        borderRight: 'none',
+        borderRadius: '14px 0 0 14px',
         background: 'var(--ink)',
         color: 'var(--paper)',
-        boxShadow: '2px 4px 14px rgba(26,24,21,0.18)',
+        boxShadow: '-2px 4px 14px rgba(26,24,21,0.18)',
         display: 'grid',
         placeItems: 'center',
         cursor: 'grab',
@@ -207,7 +207,7 @@ export function GlobalCompanionWidget() {
       )}
 
       {open && (
-        <div style={{ position: 'fixed', ...(isMobile ? { left: 10, bottom: 'max(74px, calc(62px + env(safe-area-inset-bottom)))', width: 'min(100vw - 20px, 430px)' } : { left: clamp(pos.x, 12, window.innerWidth - 442), top: clamp(pos.y - 10, 12, window.innerHeight - 560), width: 'min(430px, calc(100vw - 24px))' }), zIndex: 10002 }}>
+        <div style={{ position: 'fixed', ...(isMobile ? { right: 10, bottom: 'max(74px, calc(62px + env(safe-area-inset-bottom)))', width: 'min(100vw - 20px, 430px)' } : { left: clamp(pos.x, 12, window.innerWidth - 442), top: clamp(pos.y - 10, 12, window.innerHeight - 560), width: 'min(430px, calc(100vw - 24px))' }), zIndex: 10002 }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <button type="button" onClick={() => setOpen(false)} aria-label="Minimize Companion" style={{ width: 34, height: 34, borderRadius: 999, border: '0.5px solid var(--rule)', background: 'var(--paper)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'grid', placeItems: 'center', boxShadow: '0 8px 22px rgba(26,24,21,0.12)' }}>
               <X size={16} />

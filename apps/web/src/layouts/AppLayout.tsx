@@ -1,4 +1,4 @@
-import type { PropsWithChildren } from 'react'
+import { useEffect, type PropsWithChildren } from 'react'
 import { useLocation } from 'react-router-dom'
 import { AppSidebar } from '../components/layout/AppSidebar'
 import { FeedbackWidget } from '../components/FeedbackWidget'
@@ -14,6 +14,18 @@ export function AppLayout({ children }: PropsWithChildren) {
   const lockViewport = isMapPage || isMessagesPage
   const isMobile = useIsMobile()
   const topClearance = isMobile ? 'var(--mobile-topbar-height)' : '0px'
+
+  useEffect(() => {
+    if (!lockViewport || !isMobile) return
+    const previousBodyOverflow = document.body.style.overflow
+    const previousHtmlOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousBodyOverflow
+      document.documentElement.style.overflow = previousHtmlOverflow
+    }
+  }, [isMobile, lockViewport])
 
   return (
     <TourProvider>
@@ -33,7 +45,9 @@ export function AppLayout({ children }: PropsWithChildren) {
         // to clear (topClearance resolves to 0 there) and no extra bottom space.
         style={
           lockViewport
-            ? { height: `calc(100dvh - ${topClearance})`, marginTop: topClearance, overflow: 'hidden', paddingBottom: 0 }
+            ? isMobile
+              ? { position: 'fixed', inset: `${topClearance} 0 0`, overflow: 'hidden', overscrollBehavior: 'none', paddingBottom: 0 }
+              : { height: '100dvh', overflow: 'hidden', paddingBottom: 0 }
             : { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))', paddingTop: isMobile ? `calc(${topClearance} + 16px)` : 32 }
         }
         className={

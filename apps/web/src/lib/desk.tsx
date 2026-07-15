@@ -47,15 +47,15 @@ export function DeskPage({ children, rail, maxWidth = 1100 }: { children: ReactN
 // signature; the kicker is a quiet supporting label.
 export function DeskHeader({ kicker, title, right }: { kicker: ReactNode; title: ReactNode; right?: ReactNode }) {
   return (
-    <div style={{ marginBottom: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
+    <div className="k-desk-header">
+      <div className="k-desk-header-row">
+        <div className="k-desk-header-copy">
           {kicker != null && kicker !== '' && (
-            <div style={{ fontSize: 12.5, color: T.inkFaint, fontFamily: T.text, marginBottom: 3 }}>{kicker}</div>
+            <div className="k-desk-header-kicker">{kicker}</div>
           )}
-          <div style={{ fontFamily: T.display, fontSize: 'clamp(26px, 3.2vw, 34px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{title}</div>
+          <div className="k-desk-header-title">{title}</div>
         </div>
-        {right && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>{right}</div>}
+        {right && <div className="k-desk-header-actions">{right}</div>}
       </div>
     </div>
   )

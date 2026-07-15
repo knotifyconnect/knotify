@@ -641,7 +641,7 @@ export function JobsPage() {
         kicker="Jobs & Gigs · peer to peer"
         title={<><span style={{ fontStyle: 'italic' }}>Through people,</span> not job boards.</>}
       />
-      <div style={{ padding: '0 clamp(16px,4vw,40px)', marginBottom: 20 }}><SectionToggle /></div>
+      <div style={{ marginBottom: 18 }}><SectionToggle /></div>
 
       {/* ── Global error / success ──────────────────────────────────────────── */}
       {(error || requestError) && (
@@ -928,8 +928,8 @@ export function JobsPage() {
       )}
 
       {/* ── Jobs board ─────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+      <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ order: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
           <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
             Open positions · warm referral required
           </div>
@@ -939,7 +939,7 @@ export function JobsPage() {
         </div>
 
         {/* Search + Filters */}
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ order: 2, marginBottom: 14 }}>
           <input
             type="text"
             placeholder="Search jobs by title or description…"
@@ -974,7 +974,7 @@ export function JobsPage() {
         </div>
 
         {showShareForm && (
-          <KCard style={{ padding: '18px 20px', marginBottom: 14 }}>
+          <KCard style={{ order: 1, padding: '18px 20px', marginBottom: 14 }}>
             <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginBottom: 4 }}>
               Share a job you found
             </div>
@@ -1096,6 +1096,7 @@ export function JobsPage() {
           </KCard>
         )}
 
+        <div style={{ order: 3 }}>
         {loading ? (
           <KCard style={{ padding: 32 }}>
             <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink-muted)', textAlign: 'center', margin: 0 }}>
@@ -1221,6 +1222,7 @@ export function JobsPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       {/* ── Referral Outcomes (as referrer) ────────────────────────────────── */}
