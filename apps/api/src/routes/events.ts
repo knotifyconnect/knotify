@@ -6,7 +6,8 @@ import { supabase } from '../lib.js'
 
 export const eventsRouter = Router()
 
-const publicEventFields = 'id, title, description, location, starts_at, ends_at, time_tba, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)'
+const publicEventFields = 'id, title, description, location, starts_at, ends_at, time_tba, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, archived_at, created_at, users:host_id(full_name, username, avatar_url)'
+const publicEventFieldsWithoutArchive = 'id, title, description, location, starts_at, ends_at, time_tba, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)'
 const legacyPublicEventFields = 'id, title, description, location, starts_at, ends_at, capacity, price_eur, event_type, interests, host_id, source, url, host_label, image_url, created_at, users:host_id(full_name, username, avatar_url)'
 
 const upload = multer({
@@ -42,20 +43,25 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
   const limit = Math.min(Number(req.query.limit) || 50, 100)
 
-  const events = await supabase
+  let events: any = await supabase
     .from('events')
     .select(publicEventFields)
     .gte('starts_at', new Date(Date.now() - 6 * 3600 * 1000).toISOString())
+    .is('archived_at', null)
     .order('starts_at', { ascending: true })
     .limit(limit)
 
-  const legacyEvents = events.error?.message.includes('time_tba')
-    ? await supabase.from('events').select(legacyPublicEventFields).gte('starts_at', new Date(Date.now() - 6 * 3600 * 1000).toISOString()).order('starts_at', { ascending: true }).limit(limit)
-    : null
+  if (events.error?.message.includes('archived_at')) {
+    events = await supabase.from('events').select(publicEventFieldsWithoutArchive).gte('starts_at', new Date(Date.now() - 6 * 3600 * 1000).toISOString()).order('starts_at', { ascending: true }).limit(limit)
+  }
+  let legacyEvents: any = null
+  if (events.error?.message.includes('time_tba')) {
+    legacyEvents = await supabase.from('events').select(legacyPublicEventFields).gte('starts_at', new Date(Date.now() - 6 * 3600 * 1000).toISOString()).order('starts_at', { ascending: true }).limit(limit)
+  }
   if (events.error && !legacyEvents) return res.status(500).json({ error: events.error.message })
   if (legacyEvents?.error) return res.status(500).json({ error: legacyEvents.error.message })
-  const rows = (legacyEvents?.data ?? events.data ?? []).map(event => legacyEvents ? { ...event, time_tba: false } : event)
-  const ids = rows.map((e) => e.id)
+  const rows = (legacyEvents?.data ?? events.data ?? []).map((event: any) => legacyEvents ? { ...event, time_tba: false } : event)
+  const ids = rows.map((e: any) => e.id)
 
   // rsvp counts + my rsvps
   const counts = new Map<string, number>()
@@ -68,7 +74,7 @@ eventsRouter.get('/', requireAuth, async (req, res) => {
     }
   }
 
-  const out = rows.map((e) => {
+  const out = rows.map((e: any) => {
     const host = Array.isArray((e as any).users) ? (e as any).users[0] : (e as any).users
     const curated = (e as any).source === 'curated'
     return {

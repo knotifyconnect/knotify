@@ -156,13 +156,14 @@ async function decorateMeetingForUser<T extends {
   initiator_id: string
   invitee_id: string
   cafe_id: string | null
+  status: string
 }>(meeting: T, appUserId: string) {
   const peerId = meeting.initiator_id === appUserId ? meeting.invitee_id : meeting.initiator_id
 
   const [peer, cafe] = await Promise.all([
     supabase.from('users').select('id, full_name, username, avatar_url').eq('id', peerId).maybeSingle(),
     meeting.cafe_id
-      ? supabase.from('cafes').select('id, name, slug, address').eq('id', meeting.cafe_id).maybeSingle()
+      ? supabase.from('cafes').select('id, name, slug, address, is_partnered, deal_code, deal_code_enabled').eq('id', meeting.cafe_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ])
 
@@ -172,8 +173,30 @@ async function decorateMeetingForUser<T extends {
   return {
     ...meeting,
     peer: peer.data ?? null,
-    cafe: meeting.cafe_id ? cafe.data ?? null : null,
+    cafe: meeting.cafe_id ? meetingCafeForUser(cafe.data, meeting, appUserId) : null,
     am_initiator: meeting.initiator_id === appUserId,
+  }
+}
+
+function meetingCafeForUser(
+  cafe: Record<string, any> | null,
+  meeting: { initiator_id: string; status: string },
+  appUserId: string,
+) {
+  if (!cafe) return null
+  const canSeeDealCode =
+    meeting.initiator_id === appUserId &&
+    meeting.status === 'confirmed' &&
+    cafe.is_partnered === true &&
+    cafe.deal_code_enabled === true &&
+    Boolean(cafe.deal_code?.trim())
+
+  return {
+    id: cafe.id,
+    name: cafe.name,
+    slug: cafe.slug,
+    address: cafe.address,
+    deal_code: canSeeDealCode ? cafe.deal_code : null,
   }
 }
 
@@ -345,7 +368,7 @@ meetingsRouter.get('/upcoming', requireAuth, async (req, res) => {
       ? supabase.from('users').select('id, full_name, username, avatar_url').in('id', peerIds)
       : Promise.resolve({ data: [], error: null }),
     cafeIds.length
-      ? supabase.from('cafes').select('id, name, slug, address').in('id', cafeIds)
+      ? supabase.from('cafes').select('id, name, slug, address, is_partnered, deal_code, deal_code_enabled').in('id', cafeIds)
       : Promise.resolve({ data: [], error: null }),
   ])
 
@@ -362,7 +385,7 @@ meetingsRouter.get('/upcoming', requireAuth, async (req, res) => {
   const meetings = rows.map((m) => ({
     ...m,
     peer: peersMap.get(m.initiator_id === req.appUserId ? m.invitee_id : m.initiator_id) ?? null,
-    cafe: m.cafe_id ? cafesMap.get(m.cafe_id) ?? null : null,
+    cafe: m.cafe_id ? meetingCafeForUser((cafesMap.get(m.cafe_id) as Record<string, any> | undefined) ?? null, m, req.appUserId!) : null,
     am_initiator: m.initiator_id === req.appUserId,
   }))
 
@@ -392,7 +415,7 @@ meetingsRouter.get('/', requireAuth, async (req, res) => {
       ? supabase.from('users').select('id, full_name, username, avatar_url').in('id', peerIds)
       : Promise.resolve({ data: [], error: null }),
     cafeIds.length
-      ? supabase.from('cafes').select('id, name, slug, address').in('id', cafeIds)
+      ? supabase.from('cafes').select('id, name, slug, address, is_partnered, deal_code, deal_code_enabled').in('id', cafeIds)
       : Promise.resolve({ data: [], error: null }),
   ])
 
@@ -409,7 +432,7 @@ meetingsRouter.get('/', requireAuth, async (req, res) => {
   const meetings = rows.map((m) => ({
     ...m,
     peer: peersMap.get(m.initiator_id === req.appUserId ? m.invitee_id : m.initiator_id) ?? null,
-    cafe: m.cafe_id ? cafesMap.get(m.cafe_id) ?? null : null,
+    cafe: m.cafe_id ? meetingCafeForUser((cafesMap.get(m.cafe_id) as Record<string, any> | undefined) ?? null, m, req.appUserId!) : null,
     am_initiator: m.initiator_id === req.appUserId,
   }))
 

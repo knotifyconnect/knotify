@@ -3,7 +3,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, CalendarClock, Copy, MapPin, Users } from 'lucide-react'
+import { ArrowLeft, CalendarClock, MapPin, Users } from 'lucide-react'
 import { KBtn, KPill } from '@/lib/knotify'
 import { apiGet, apiPost } from '@/lib/api'
 import { T, DeskPage, RailCard } from '@/lib/desk'
@@ -55,7 +55,6 @@ export function CafeDetailPage() {
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
 
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteeId, setInviteeId] = useState('')
@@ -127,7 +126,8 @@ export function CafeDetailPage() {
     )
   }
 
-  const codeVisible = cafe.is_partnered && cafe.deal_code_enabled && Boolean(cafe.deal_code?.trim())
+  const mapsQuery = [cafe.name, cafe.address, cafe.city].filter(Boolean).join(', ')
+  const mapsUrl = mapsQuery ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}` : null
 
   const rail = (
     <RailCard tone="signal">
@@ -168,7 +168,7 @@ export function CafeDetailPage() {
                 <div><MapPin size={13} style={{ verticalAlign: 'text-bottom', marginRight: 5 }} />{[cafe.area, cafe.address].filter(Boolean).join(' · ')}</div>
               )}
               {cafe.hours_text && (
-                <div><CalendarClock size={13} style={{ verticalAlign: 'text-bottom', marginRight: 5 }} />{cafe.hours_text}</div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><CalendarClock size={13} style={{ marginTop: 3, flexShrink: 0 }} /><span>{cafe.hours_text.split(';').map((hours) => <span key={hours} style={{ display: 'block' }}>{hours.trim()}</span>)}</span></div>
               )}
             </div>
             {cafe.description && <p style={{ margin: '16px 0 0', color: T.inkSoft, fontSize: 14, lineHeight: 1.6 }}>{cafe.description}</p>}
@@ -177,21 +177,14 @@ export function CafeDetailPage() {
               <div style={{ marginTop: 18, padding: 16, borderRadius: 12, background: T.ochreSoft }}>
                 <div style={{ color: T.ochre, fontSize: 14, fontWeight: 700 }}>{cafe.deal_title || cafe.perk_text || 'Partner deal'}</div>
                 {cafe.deal_details && <div style={{ marginTop: 4, color: T.inkMuted, fontSize: 13, lineHeight: 1.5 }}>{cafe.deal_details}</div>}
-                {codeVisible && (
-                  <button
-                    onClick={async () => { await navigator.clipboard.writeText(cafe.deal_code!); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-                    style={{ marginTop: 10, border: `0.5px solid ${T.ochre}`, background: T.paper, color: T.ochre, borderRadius: 8, padding: '7px 11px', fontFamily: 'monospace', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    <Copy size={12} style={{ marginRight: 5, verticalAlign: 'text-bottom' }} />{copied ? 'Copied' : cafe.deal_code}
-                  </button>
-                )}
+                {cafe.deal_code_enabled && <div style={{ marginTop: 8, color: T.inkMuted, fontSize: 12 }}>The organiser receives the deal code in Messages after an invitee accepts.</div>}
               </div>
             )}
 
             <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <KBtn variant="signal" size="sm" onClick={openInvite}><Users size={13} style={{ marginRight: 5 }} />Plan here</KBtn>
-              {cafe.lat && cafe.lng && (
-                <a href={`https://www.google.com/maps?q=${cafe.lat},${cafe.lng}`} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 13, textDecoration: 'none' }}>
+              {mapsUrl && (
+                <a href={mapsUrl} target="_blank" rel="noopener noreferrer" style={{ color: T.signal, fontSize: 13, textDecoration: 'none' }}>
                   <MapPin size={13} style={{ verticalAlign: 'text-bottom' }} /> Open in Maps
                 </a>
               )}
