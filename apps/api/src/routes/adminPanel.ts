@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { supabase } from '../lib.js'
 import { ADMIN_EMAILS, invalidateAccessCache } from '../lib/access.js'
 import { sendBetaApprovalEmail } from '../lib/email.js'
-import { deleteAuthUser, describeAdminAuthError, getAuthUser, listAuthUsers, setAuthUserBan } from '../lib/supabaseAdminAuth.js'
+import { deleteAuthUser, describeAdminAuthError, getAuthUser, getAuthUsersByIds, setAuthUserBan } from '../lib/supabaseAdminAuth.js'
 
 export const adminPanelRouter = Router()
 
@@ -100,7 +100,7 @@ function serializeAccount(authUser: any | null, profile: any | null) {
     isSso: Boolean(authUser?.is_sso_user),
     isAnonymous: Boolean(authUser?.is_anonymous),
     bannedUntil: banned ? authUser?.banned_until : null,
-    accountStatus: banned ? 'deactivated' : 'active',
+    accountStatus: !authUser ? 'profile_only' : banned ? 'deactivated' : 'active',
     authAvailable: Boolean(authUser),
     profileCompletion: accountProfileCompletion(profile),
     onboardingComplete: Boolean(
@@ -124,18 +124,26 @@ adminPanelRouter.get('/accounts', async (req, res) => {
   if (profileResult.error) return res.status(500).json({ error: profileResult.error.message })
 
   const profiles = (profileResult.data ?? []) as any[]
-  const profileByAuthId = new Map(profiles.filter((profile) => profile.auth_id).map((profile) => [profile.auth_id, profile]))
-  let authUsers: any[] = []
-  let authTotal = 0
+  let authById = new Map<string, any>()
   let authAvailable = true
   let warning: string | null = null
-  let authPagination = { nextPage: null as number | null, lastPage: parsed.data.page }
 
   try {
-    const authPage = await listAuthUsers(parsed.data.page, parsed.data.perPage)
-    authUsers = authPage.users
-    authTotal = authPage.total
-    authPagination = { nextPage: authPage.nextPage, lastPage: authPage.lastPage }
+    // This Supabase project intermittently returns "Database error finding
+    // users" from the bulk Auth list endpoint. Application profiles are the
+    // authoritative index, and individual Auth lookups are reliable, so enrich
+    // them in small concurrent batches and isolate any corrupt identity row.
+    const authLookup = await getAuthUsersByIds(profiles.map((profile) => profile.auth_id).filter(Boolean), 8)
+    authById = authLookup.users
+    if (authLookup.failures.length) {
+      // Missing/corrupt identities are isolated to their own profile rows. The
+      // rest of the account panel and verified lifecycle controls stay active.
+      console.warn(`[admin-panel/accounts] ${authLookup.failures.length} profile-only account(s): ${authLookup.failures.map((failure) => `${failure.authId}:${failure.code}:${failure.message}`).join(',')}`)
+      if (authLookup.users.size === 0 && authLookup.checked > 0) {
+        authAvailable = false
+        warning = 'Supabase Auth metadata is unavailable. Profile data is shown, but lifecycle controls are temporarily disabled.'
+      }
+    }
   } catch (error) {
     const detail = describeAdminAuthError(error)
     authAvailable = false
@@ -143,14 +151,10 @@ adminPanelRouter.get('/accounts', async (req, res) => {
     console.error(`[admin-panel/accounts] ${detail.code}: ${detail.message}`)
   }
 
-  const authById = new Map(authUsers.map((user) => [user.id, user]))
   const accounts = profiles
     .filter((profile) => profile.auth_id)
     .map((profile) => serializeAccount(authById.get(profile.auth_id) ?? null, profile))
-  for (const authUser of authUsers) {
-    if (!profileByAuthId.has(authUser.id)) accounts.push(serializeAccount(authUser, null))
-  }
-  const total = authAvailable ? Math.max(authTotal, profileResult.count ?? 0) : (profileResult.count ?? accounts.length)
+  const total = profileResult.count ?? accounts.length
   return res.json({
     accounts,
     authAvailable,
@@ -160,13 +164,14 @@ adminPanelRouter.get('/accounts', async (req, res) => {
       perPage: parsed.data.perPage,
       total,
       loaded: accounts.length,
-      nextPage: authAvailable ? authPagination.nextPage : (to + 1 < total ? parsed.data.page + 1 : null),
-      lastPage: authAvailable ? authPagination.lastPage : Math.max(1, Math.ceil(total / parsed.data.perPage)),
+      nextPage: to + 1 < total ? parsed.data.page + 1 : null,
+      lastPage: Math.max(1, Math.ceil(total / parsed.data.perPage)),
     },
     stats: {
       total,
       active: accounts.filter((account) => account.accountStatus === 'active').length,
       deactivated: accounts.filter((account) => account.accountStatus === 'deactivated').length,
+      profileOnly: accounts.filter((account) => account.accountStatus === 'profile_only').length,
       unverified: accounts.filter((account) => !account.emailConfirmedAt && !account.phoneConfirmedAt).length,
       admins: accounts.filter((account) => account.isAdmin).length,
       hr: accounts.filter((account) => account.isHr).length,

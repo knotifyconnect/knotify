@@ -9,7 +9,7 @@ const C = {
   blue: '#2563a8', blueSoft: 'rgba(37,99,168,0.09)', plum: '#71406f', plumSoft: 'rgba(113,64,111,0.10)',
 }
 
-type AccountStatus = 'active' | 'deactivated'
+type AccountStatus = 'active' | 'deactivated' | 'profile_only'
 type Account = {
   id: string
   authId: string
@@ -54,7 +54,7 @@ type Account = {
   onboardingComplete: boolean
 }
 
-type AccountStats = { total: number; active: number; deactivated: number; unverified: number; admins: number; hr: number }
+type AccountStats = { total: number; active: number; deactivated: number; profileOnly: number; unverified: number; admins: number; hr: number }
 type Activity = { connections: number; posts: number; messages: number; eventRsvps: number; gigs: number }
 type AccountsResponse = {
   accounts: Account[]
@@ -180,7 +180,7 @@ function exportAccounts(accounts: Account[]) {
 
 export function AccountsAdmin() {
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [stats, setStats] = useState<AccountStats>({ total: 0, active: 0, deactivated: 0, unverified: 0, admins: 0, hr: 0 })
+  const [stats, setStats] = useState<AccountStats>({ total: 0, active: 0, deactivated: 0, profileOnly: 0, unverified: 0, admins: 0, hr: 0 })
   const [loaded, setLoaded] = useState(0)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -289,6 +289,7 @@ export function AccountsAdmin() {
           total: Math.max(0, current.total - 1),
           active: Math.max(0, current.active - (selected.accountStatus === 'active' ? 1 : 0)),
           deactivated: Math.max(0, current.deactivated - (selected.accountStatus === 'deactivated' ? 1 : 0)),
+          profileOnly: Math.max(0, current.profileOnly - (selected.accountStatus === 'profile_only' ? 1 : 0)),
           unverified: Math.max(0, current.unverified - (!selected.emailConfirmedAt && !selected.phoneConfirmedAt ? 1 : 0)),
           admins: Math.max(0, current.admins - (selected.isAdmin ? 1 : 0)),
           hr: Math.max(0, current.hr - (selected.isHr ? 1 : 0)),
@@ -362,7 +363,7 @@ export function AccountsAdmin() {
       <div className="account-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 10, marginBottom: 18 }}>
         <StatCard label="Total accounts" value={stats.total} sub={`${loaded} loaded`} />
         <StatCard label="Active" value={stats.active} sub="Can sign in" tone={C.verd} />
-        <StatCard label="Deactivated" value={stats.deactivated} sub="Sign-in blocked" tone={C.signal} />
+        <StatCard label="Deactivated" value={stats.deactivated} sub={stats.profileOnly ? `${stats.profileOnly} profile only` : 'Sign-in blocked'} tone={C.signal} />
         <StatCard label="Unverified" value={stats.unverified} sub="Email or phone" tone={C.amber} />
         <StatCard label="Access grants" value={stats.admins + stats.hr} sub={`${stats.admins} admin · ${stats.hr} HR`} tone={C.plum} />
       </div>
