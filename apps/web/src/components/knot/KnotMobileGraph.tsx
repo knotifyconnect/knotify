@@ -232,6 +232,10 @@ const VW = 390
 const VH = 600
 const CX = VW / 2
 const CY = VH / 2
+// The mobile tab bar and graph controls occupy slightly more room below the
+// canvas than the search field does above it. Center the knot in the usable
+// graph area rather than the raw SVG rectangle.
+const VISUAL_CY = CY - 10
 const MIN_ZOOM = 0.6
 const MAX_ZOOM = 3
 
@@ -342,7 +346,7 @@ export function KnotMobileGraph({
     setScale(nextScale)
     setPan({
       x: CX - nextScale * focusX - (1 - nextScale) * CX,
-      y: (options?.targetY ?? CY) - nextScale * focusY - (1 - nextScale) * CY,
+      y: (options?.targetY ?? VISUAL_CY) - nextScale * focusY - (1 - nextScale) * CY,
     })
   }
 
@@ -401,7 +405,10 @@ export function KnotMobileGraph({
     const focusX = (minX + maxX) / 2
     const focusY = (minY + maxY) / 2
 
-    setPan({ x: -scale * (focusX - CX), y: -scale * (focusY - CY) })
+    setPan({
+      x: -scale * (focusX - CX),
+      y: VISUAL_CY - scale * focusY - (1 - scale) * CY,
+    })
     // Refit only when expansion or container shape changes; user pan remains free afterward.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedRootId, expandedSignature, layoutRevision])
@@ -599,6 +606,8 @@ export function KnotMobileGraph({
     <svg
       ref={svgRef}
       viewBox={`0 0 ${VW} ${VH}`}
+      preserveAspectRatio="xMidYMid meet"
+      aria-label="Your relationship graph"
       style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
       onPointerDown={onBgDown}
       onPointerMove={onBgMove}

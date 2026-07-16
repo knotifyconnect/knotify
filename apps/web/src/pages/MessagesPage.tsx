@@ -1497,8 +1497,8 @@ export function MessagesPage() {
           style={{ flexDirection: 'column', overflow: 'hidden', borderRight: '0.5px solid rgba(26,24,21,0.08)', background: 'linear-gradient(180deg, rgba(255,252,246,0.96) 0%, rgba(244,239,230,0.82) 100%)' }}
         >
           {/* List header + search */}
-          <div style={{ padding: isMobile ? '16px 16px 12px' : '22px 20px 14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: isMobile ? 12 : 16 }}>
+          <div style={{ padding: isMobile ? '9px 12px 8px' : '22px 20px 14px' }}>
+            {!isMobile && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                   <h1 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 25, lineHeight: 1.08, fontWeight: 500, letterSpacing: '-0.02em', margin: 0 }}>Messages</h1>
@@ -1512,7 +1512,7 @@ export function MessagesPage() {
                   Warm intros, thoughtful asks, coffee plans.
                 </div>
               </div>
-            </div>
+            </div>}
             <div style={{ position: 'relative' }}>
               <input
                 ref={searchInputRef}
@@ -1521,7 +1521,7 @@ export function MessagesPage() {
                 placeholder="Search threads or start a new chat"
                 style={{
                   width: '100%',
-                  padding: isMobile ? '10px 40px 10px 14px' : '11px 42px 11px 15px',
+                  padding: isMobile ? '9px 40px 9px 14px' : '11px 42px 11px 15px',
                   borderRadius: 999,
                   border: '0.5px solid rgba(26,24,21,0.06)',
                   background: 'rgba(238,231,216,0.72)',
@@ -1565,7 +1565,7 @@ export function MessagesPage() {
           </div>
 
           {/* List */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px 14px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '3px 8px 12px' : '8px 10px 14px' }}>
             {loadingConvs && !conversations.length && (
               <p style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '8px 4px', fontFamily: "'IBM Plex Sans', sans-serif" }}>
                 Loading…

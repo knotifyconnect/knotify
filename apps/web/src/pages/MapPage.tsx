@@ -942,16 +942,17 @@ function TopCommandBar({
   if (compact) {
     return (
       <KCard
+        className="k-knot-command-mobile"
         style={{
-          padding: '14px 14px 12px',
+          padding: '10px 12px 9px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 10,
+          gap: 7,
           background: 'rgba(244,239,230,0.66)',
           backdropFilter: 'blur(10px)',
         }}
       >
-        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 'clamp(26px, 3.2vw, 34px)', fontWeight: 500, fontStyle: 'italic', letterSpacing: '-0.02em', lineHeight: 1.05, color: 'var(--ink)' }}>
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 22, fontWeight: 500, fontStyle: 'italic', letterSpacing: '-0.02em', lineHeight: 1.04, color: 'var(--ink)' }}>
           Keep your <span style={{ color: 'var(--signal, #D8442B)' }}>knot</span> warm.
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>

@@ -636,7 +636,7 @@ export function JobsPage() {
   }
 
   return (
-    <div>
+    <div className="k-jobs-page">
       <DeskHeader
         kicker="Jobs & Gigs · peer to peer"
         title={<><span style={{ fontStyle: 'italic' }}>Through people,</span> not job boards.</>}
@@ -659,8 +659,8 @@ export function JobsPage() {
 
       {/* ── Referral Inbox ─────────────────────────────────────────────────── */}
       <div data-tour="referral-inbox">
-      <KCard style={{ padding: '18px 20px', marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+      <KCard className="k-referral-inbox-card" style={{ padding: '18px 20px', marginBottom: 14 }}>
+        <div className="k-referral-inbox-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
             Referral inbox {pendingReferrals.length > 0 && `· ${pendingReferrals.length}`}
           </div>
@@ -672,7 +672,7 @@ export function JobsPage() {
         {pendingLoading ? (
           <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: "'Fraunces'" }}>Loading…</p>
         ) : pendingReferrals.length === 0 ? (
-          <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', fontStyle: 'italic' }}>No pending referral requests for you.</p>
+          <p className="k-referral-inbox-empty" style={{ fontSize: 13.5, color: 'var(--ink-muted)', fontStyle: 'italic' }}>No pending referral requests for you.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {pendingReferrals.map((ref) => (
@@ -952,7 +952,7 @@ export function JobsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--rule)', background: 'var(--paper-soft)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 14, color: 'var(--ink)', outline: 'none', marginBottom: 8, boxSizing: 'border-box' }}
           />
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="k-jobs-filter-grid" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ padding: '7px 11px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--paper-soft)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 13, color: 'var(--ink)', cursor: 'pointer' }}>
               <option value="">All types</option>
               <option value="full_time">Full-time</option>
