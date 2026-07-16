@@ -157,7 +157,7 @@ export function CafesPage() {
   )
 
   return (
-    <div style={{ paddingBottom: 40, fontFamily: T.text }}>
+    <div className="k-cafes-page" style={{ paddingBottom: 40, fontFamily: T.text }}>
       <DeskHeader
         kicker="Cafés · Restaurants · Bars · Munich"
         title={<span style={{ fontStyle: 'italic' }}>Rooms to meet in.</span>}
@@ -166,7 +166,7 @@ export function CafesPage() {
 
       {error && <div role="alert" style={{ padding: '10px 14px', borderRadius: 10, background: T.signalSoft, border: '0.5px solid rgba(216,68,43,0.2)', color: T.signal, fontSize: 13, marginBottom: 14 }}>{error}</div>}
 
-      <div style={{ position: 'relative', marginBottom: 18 }}>
+      <div className="k-cafes-search" style={{ position: 'relative', marginBottom: 18 }}>
         <Search size={16} style={{ position: 'absolute', left: 13, top: 12, color: T.inkFaint }} />
         <input aria-label="Search places" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, type, or area" style={{ width: '100%', boxSizing: 'border-box', padding: '10px 14px 10px 38px', borderRadius: 12, border: `0.5px solid ${T.rule}`, background: T.paperSoft, color: T.ink, fontSize: 13.5, outline: 'none' }} />
       </div>

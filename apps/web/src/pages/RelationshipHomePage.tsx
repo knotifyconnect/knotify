@@ -891,7 +891,7 @@ export function RelationshipHomePage() {
   )
 
   return (
-    <div style={{ paddingBottom: 60 }}>
+    <div className="k-relationship-home-page" style={{ paddingBottom: 60 }}>
       {referralPeer && (
         <ReferralAskModal peer={referralPeer} onClose={() => setReferralPeer(null)} />
       )}

@@ -893,7 +893,7 @@ export function DiscoverPage() {
   function DiscoverContent() {
     return (
       <>
-        <div style={{ position: 'relative', marginBottom: 14 }}>
+        <div className="k-discover-search" style={{ position: 'relative', marginBottom: 14 }}>
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
             <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
             <path d="M10 10l3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -928,7 +928,7 @@ export function DiscoverPage() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 7, marginBottom: 18, overflowX: 'auto', scrollbarWidth: 'none' }}>
+        <div className="k-discover-tabs" style={{ display: 'flex', gap: 7, marginBottom: 18, overflowX: 'auto', scrollbarWidth: 'none' }}>
 
             {DISCOVER_TABS.map((tab) => (
               <button
@@ -954,7 +954,7 @@ export function DiscoverPage() {
 
           </div>
 
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+        <div className="k-discover-summary" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
           <div>
             <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink-faint)', marginBottom: 4 }}>
               {showResults ? 'Search results' : 'Recommended'}
@@ -1034,7 +1034,7 @@ export function DiscoverPage() {
   ) : undefined
 
   return (
-    <div style={{ paddingBottom: 40 }}>
+    <div className="k-discover-page" style={{ paddingBottom: 40 }}>
       <DeskHeader
         kicker="Discover · Munich"
         title={<span style={{ fontStyle: 'italic' }}>People worth knowing.</span>}
