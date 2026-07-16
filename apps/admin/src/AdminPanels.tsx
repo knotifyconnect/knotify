@@ -1388,7 +1388,7 @@ interface Kpis {
   generatedAt: string
   users: { total: number; newToday: number; new7d: number; new30d: number; active7d: number; activeToday: number; onlineNow: number; premium: number; hr: number }
   betaFunnel: { total: number; pending: number; approved: number; rejected: number }
-  growth: { usersPerDay: { date: string; count: number }[]; signupsPerDay: { date: string; count: number }[] }
+  growth: { rangeDays: number; usersPerDay: { date: string; count: number }[]; signupsPerDay: { date: string; count: number }[] }
   engagement: { connectionsTotal: number; connectionsAccepted: number; conversationsTotal: number; messagesTotal: number; messagesToday: number }
   content: {
     eventsTotal: number; eventsUpcoming: number; eventRsvpsTotal: number
@@ -1400,44 +1400,176 @@ interface Kpis {
   invites: { total: number }
 }
 
-function KpiCard({ label, value, sub, color }: { label: string; value: number | string; sub?: string; color?: string }) {
+const KPI_RANGES = [7, 14, 30, 90] as const
+
+function InfoTip({ text }: { text: string }) {
+  const [show, setShow] = useState(false)
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      <span style={{
+        width: 13, height: 13, borderRadius: '50%', border: `1px solid ${C.inkFaint}`,
+        color: C.inkFaint, fontSize: 9, fontWeight: 700, display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center', cursor: 'help', lineHeight: 1, fontStyle: 'normal',
+      }}>i</span>
+      {show && (
+        <span style={{
+          position: 'absolute', bottom: '135%', left: '50%', transform: 'translateX(-50%)',
+          background: C.ink, color: C.paper, fontSize: 11.5, lineHeight: 1.45, padding: '8px 10px',
+          borderRadius: 8, width: 195, zIndex: 30, boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
+          fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: 400, textTransform: 'none', letterSpacing: 'normal',
+          pointerEvents: 'none',
+        }}>{text}</span>
+      )}
+    </span>
+  )
+}
+
+function Sparkline({ data, color }: { data: number[]; color: string }) {
+  if (data.length < 2) return null
+  const max = Math.max(1, ...data)
+  const min = Math.min(...data)
+  const w = 60, h = 26
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w
+    const y = h - ((v - min) / (max - min || 1)) * (h - 4) - 2
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+  return (
+    <svg width={w} height={h} style={{ flexShrink: 0 }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" opacity={0.8} />
+    </svg>
+  )
+}
+
+function KpiCard({ label, value, sub, color, info, trend }: {
+  label: string; value: number | string; sub?: string; color?: string; info?: string; trend?: number[]
+}) {
   return (
     <div style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 14, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ fontSize: 10.5, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 30, fontWeight: 400, color: color ?? C.ink, letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+        <span>{label}</span>
+        {info && <InfoTip text={info} />}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 30, fontWeight: 400, color: color ?? C.ink, letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</div>
+        {trend && <Sparkline data={trend} color={color ?? C.signal} />}
+      </div>
       {sub && <div style={{ fontSize: 11.5, color: C.inkFaint }}>{sub}</div>}
     </div>
   )
 }
 
-function KpiSection({ title, children }: { title: string; children: React.ReactNode }) {
+function KpiSection({ title, accent, children }: { title: string; accent?: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 28 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: C.inkMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>{title}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+        {accent && <span style={{ width: 7, height: 7, borderRadius: '50%', background: accent }} />}
+        <span style={{ fontSize: 12, fontWeight: 700, color: C.inkMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</span>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>{children}</div>
     </div>
   )
 }
 
-function GrowthChart({ series, label }: { series: { date: string; count: number }[]; label: string }) {
-  const max = Math.max(1, ...series.map(d => d.count))
+function RangePicker({ range, onChange }: { range: number; onChange: (r: number) => void }) {
   return (
-    <div style={cardWrap}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, marginBottom: 14 }}>{label}</div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 90 }}>
-        {series.map(d => (
-          <div key={d.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }} title={`${d.date}: ${d.count}`}>
-            <div style={{
-              width: '100%', minHeight: 2, height: `${Math.round((d.count / max) * 70)}px`,
-              background: d.count > 0 ? C.signal : C.paperSoft, borderRadius: 3,
-            }} />
-          </div>
-        ))}
+    <div style={{ display: 'flex', gap: 4 }}>
+      {KPI_RANGES.map(r => (
+        <button key={r} onClick={() => onChange(r)} style={{
+          padding: '4px 11px', borderRadius: 999, fontSize: 11.5, cursor: 'pointer', fontWeight: 600,
+          border: `0.5px solid ${range === r ? C.signal : C.rule}`,
+          background: range === r ? C.signal : 'transparent',
+          color: range === r ? '#fff' : C.inkMuted, fontFamily: 'IBM Plex Sans, sans-serif',
+        }}>{r}d</button>
+      ))}
+    </div>
+  )
+}
+
+function AreaChart({ series, label, color }: { series: { date: string; count: number }[]; label: string; color: string }) {
+  const [hover, setHover] = useState<number | null>(null)
+  const w = 640, h = 130, pad = 6
+  const max = Math.max(1, ...series.map(d => d.count))
+  const stepX = series.length > 1 ? (w - pad * 2) / (series.length - 1) : 0
+  const pts = series.map((d, i) => [
+    pad + i * stepX,
+    pad + (1 - d.count / max) * (h - pad * 2),
+  ])
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
+  const areaPath = pts.length
+    ? `${linePath} L${pts[pts.length - 1][0].toFixed(1)},${h - pad} L${pts[0][0].toFixed(1)},${h - pad} Z`
+    : ''
+  const gradId = `kpi-grad-${label.replace(/[^a-z0-9]/gi, '')}`
+  const total = series.reduce((s, d) => s + d.count, 0)
+
+  return (
+    <div style={{ ...cardWrap, marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{label}</div>
+        <div style={{ fontSize: 11.5, color: C.inkFaint }}>{total} total in range</div>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-        {series.map((d, i) => (
-          <div key={d.date} style={{ flex: 1, textAlign: 'center', fontSize: 9.5, color: C.inkFaint }}>
-            {i % 2 === 0 ? d.date.slice(5) : ''}
+      <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 110, overflow: 'visible', display: 'block' }} onMouseLeave={() => setHover(null)}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        {areaPath && <path d={areaPath} fill={`url(#${gradId})`} stroke="none" />}
+        {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth={2} />}
+        {pts.map((p, i) => (
+          <g key={i} onMouseEnter={() => setHover(i)}>
+            <rect x={p[0] - Math.max(stepX, 8) / 2} y={0} width={Math.max(stepX, 8)} height={h} fill="transparent" />
+            {hover === i && (
+              <>
+                <line x1={p[0]} x2={p[0]} y1={pad} y2={h - pad} stroke={color} strokeWidth={1} strokeDasharray="2 3" opacity={0.5} />
+                <circle cx={p[0]} cy={p[1]} r={4} fill={color} stroke="#fff" strokeWidth={1.5} />
+              </>
+            )}
+          </g>
+        ))}
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: C.inkFaint, marginTop: 4 }}>
+        <span>{series[0]?.date.slice(5)}</span>
+        <span style={{ fontWeight: 600, color: hover !== null ? C.ink : 'transparent' }}>
+          {hover !== null ? `${series[hover].date}: ${series[hover].count}` : '—'}
+        </span>
+        <span>{series[series.length - 1]?.date.slice(5)}</span>
+      </div>
+    </div>
+  )
+}
+
+function Donut({ segments, size = 100 }: { segments: { value: number; color: string; label: string }[]; size?: number }) {
+  const total = Math.max(1, segments.reduce((s, x) => s + x.value, 0))
+  const r = size / 2 - 10
+  const c = 2 * Math.PI * r
+  let offset = 0
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={C.paperSoft} strokeWidth={12} />
+        {segments.filter(s => s.value > 0).map((s, i) => {
+          const frac = s.value / total
+          const dash = frac * c
+          const el = (
+            <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={s.color} strokeWidth={12}
+              strokeDasharray={`${dash.toFixed(1)} ${(c - dash).toFixed(1)}`} strokeDashoffset={-offset} strokeLinecap="butt" />
+          )
+          offset += dash
+          return el
+        })}
+      </svg>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {segments.map(s => (
+          <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+            <span style={{ color: C.inkMuted }}>{s.label}</span>
+            <span style={{ color: C.ink, fontWeight: 700 }}>{s.value}</span>
           </div>
         ))}
       </div>
@@ -1445,78 +1577,153 @@ function GrowthChart({ series, label }: { series: { date: string; count: number 
   )
 }
 
+function exportKpisCsv(kpis: Kpis) {
+  const rows: string[] = ['section,metric,value']
+  const flat: [string, string, number | string][] = [
+    ['Users', 'Total users', kpis.users.total],
+    ['Users', 'New today', kpis.users.newToday],
+    ['Users', 'New, 7 days', kpis.users.new7d],
+    ['Users', 'New, 30 days', kpis.users.new30d],
+    ['Users', 'Active, 7 days', kpis.users.active7d],
+    ['Users', 'Active today', kpis.users.activeToday],
+    ['Users', 'Online now', kpis.users.onlineNow],
+    ['Users', 'Premium', kpis.users.premium],
+    ['Beta waitlist', 'Total signups', kpis.betaFunnel.total],
+    ['Beta waitlist', 'Pending review', kpis.betaFunnel.pending],
+    ['Beta waitlist', 'Approved', kpis.betaFunnel.approved],
+    ['Beta waitlist', 'Rejected', kpis.betaFunnel.rejected],
+    ['Engagement', 'Connections', kpis.engagement.connectionsTotal],
+    ['Engagement', 'Connections accepted', kpis.engagement.connectionsAccepted],
+    ['Engagement', 'Conversations', kpis.engagement.conversationsTotal],
+    ['Engagement', 'Messages sent (total)', kpis.engagement.messagesTotal],
+    ['Engagement', 'Messages sent (today)', kpis.engagement.messagesToday],
+    ['Content', 'Events (total)', kpis.content.eventsTotal],
+    ['Content', 'Events (upcoming)', kpis.content.eventsUpcoming],
+    ['Content', 'Event RSVPs', kpis.content.eventRsvpsTotal],
+    ['Content', 'Gigs open', kpis.content.gigsOpen],
+    ['Content', 'Gigs closed', kpis.content.gigsClosed],
+    ['Content', 'Gig requests (total)', kpis.content.gigRequestsTotal],
+    ['Content', 'Gig requests (pending)', kpis.content.gigRequestsPending],
+    ['Content', 'Active cafés', kpis.content.cafesActive],
+    ['Content', 'Café check-ins', kpis.content.cafeCheckinsTotal],
+    ['Content', 'Quests published', kpis.content.questsPublished],
+    ['Content', 'Quest completions', kpis.content.questCompletionsTotal],
+    ['Content', 'Unique quest completers', kpis.content.questCompletersUnique],
+    ['Content', 'Successful invites', kpis.invites.total],
+    ['Feedback', 'Total', kpis.feedback.total],
+    ['Feedback', 'Open', kpis.feedback.open],
+    ['Feedback', 'Bug reports', kpis.feedback.bugs],
+  ]
+  for (const [section, metric, value] of flat) rows.push(`${section},"${metric}",${value}`)
+
+  rows.push('')
+  rows.push(`date,new users,beta signups (last ${kpis.growth.rangeDays}d)`)
+  const byDate = new Map<string, { u: number; s: number }>()
+  for (const d of kpis.growth.usersPerDay) byDate.set(d.date, { u: d.count, s: 0 })
+  for (const d of kpis.growth.signupsPerDay) byDate.set(d.date, { u: byDate.get(d.date)?.u ?? 0, s: d.count })
+  for (const [date, v] of [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b))) rows.push(`${date},${v.u},${v.s}`)
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `knotify-kpis-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function DashboardAdmin() {
   const [kpis, setKpis] = useState<Kpis | null>(null)
+  const [range, setRange] = useState(14)
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(true)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (r: number) => {
     setErr('')
     try {
-      const r = await api.kpis()
-      setKpis(r)
+      const res = await api.kpis(r)
+      setKpis(res)
     } catch (e: any) { setErr(e.message) }
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(range) }, [load, range])
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: C.inkFaint, fontSize: 13 }}>Loading…</div>
+  if (loading && !kpis) return <div style={{ padding: 40, textAlign: 'center', color: C.inkFaint, fontSize: 13 }}>Loading…</div>
   if (err) return <div style={{ color: C.signal, fontSize: 13 }}>{err}</div>
   if (!kpis) return null
 
   const { users, betaFunnel, growth, engagement, content, feedback, invites } = kpis
+  const usersTrend = growth.usersPerDay.map(d => d.count)
+  const signupsTrend = growth.signupsPerDay.map(d => d.count)
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={h2}>Dashboard</h2>
-        <button onClick={() => { setLoading(true); void load() }} style={ghostBtn}>Refresh</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={() => exportKpisCsv(kpis)} style={ghostBtn}>Export CSV</button>
+          <button onClick={() => { setLoading(true); void load(range) }} style={ghostBtn}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+        </div>
       </div>
       <div style={{ fontSize: 12, color: C.inkFaint, marginBottom: 20 }}>
         Updated {new Date(kpis.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
       </div>
 
-      <KpiSection title="Users">
-        <KpiCard label="Total users" value={users.total} />
-        <KpiCard label="New today" value={users.newToday} color={C.verd} />
-        <KpiCard label="New, 7 days" value={users.new7d} sub={`${users.new30d} in 30d`} />
-        <KpiCard label="Active, 7 days" value={users.active7d} sub={`${users.activeToday} today`} />
-        <KpiCard label="Online now" value={users.onlineNow} />
-        <KpiCard label="Premium" value={users.premium} />
+      <KpiSection title="Users" accent={C.signal}>
+        <KpiCard label="Total users" value={users.total} info="All accounts ever created, regardless of activity." trend={usersTrend} />
+        <KpiCard label="New today" value={users.newToday} color={C.verd} info="Accounts created since midnight UTC." />
+        <KpiCard label="New, 7 days" value={users.new7d} sub={`${users.new30d} in 30d`} info="Accounts created in the last 7 days. Subtext shows the 30-day count." />
+        <KpiCard label="Active, 7 days" value={users.active7d} sub={`${users.activeToday} today`} info="Users with any activity (last_seen_at) in the last 7 days." />
+        <KpiCard label="Online now" value={users.onlineNow} info="Users currently marked online in real time." />
+        <KpiCard label="Premium" value={users.premium} info="Users with an active premium subscription." />
       </KpiSection>
 
-      <GrowthChart series={growth.usersPerDay} label="New users per day (14d)" />
-      <GrowthChart series={growth.signupsPerDay} label="Beta signups per day (14d)" />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.verd }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.inkMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Growth</span>
+        </div>
+        <RangePicker range={range} onChange={r => { setLoading(true); setRange(r) }} />
+      </div>
+      <AreaChart series={growth.usersPerDay} label={`New users per day`} color={C.verd} />
+      <AreaChart series={growth.signupsPerDay} label={`Beta signups per day`} color={C.signal} />
 
-      <KpiSection title="Beta waitlist">
-        <KpiCard label="Total signups" value={betaFunnel.total} />
-        <KpiCard label="Pending review" value={betaFunnel.pending} color={C.ochre} />
-        <KpiCard label="Approved" value={betaFunnel.approved} color={C.verd} />
-        <KpiCard label="Rejected" value={betaFunnel.rejected} color={C.signal} />
+      <KpiSection title="Beta waitlist" accent={C.ochre}>
+        <div style={{ gridColumn: '1 / -1', ...cardWrap, margin: 0 }}>
+          <Donut segments={[
+            { label: 'Approved', value: betaFunnel.approved, color: C.verd },
+            { label: 'Pending review', value: betaFunnel.pending, color: C.ochre },
+            { label: 'Rejected', value: betaFunnel.rejected, color: C.signal },
+          ]} />
+        </div>
+        <KpiCard label="Total signups" value={betaFunnel.total} info="Everyone who has ever joined the beta waitlist." trend={signupsTrend} />
+        <KpiCard label="Pending review" value={betaFunnel.pending} color={C.ochre} info="Signups awaiting an admin approve/reject decision." />
+        <KpiCard label="Approved" value={betaFunnel.approved} color={C.verd} info="Signups approved for access to the beta." />
+        <KpiCard label="Rejected" value={betaFunnel.rejected} color={C.signal} info="Signups declined access to the beta." />
       </KpiSection>
 
-      <KpiSection title="Engagement">
-        <KpiCard label="Connections" value={engagement.connectionsTotal} sub={`${engagement.connectionsAccepted} accepted`} />
-        <KpiCard label="Conversations" value={engagement.conversationsTotal} />
-        <KpiCard label="Messages sent" value={engagement.messagesTotal} sub={`${engagement.messagesToday} today`} />
+      <KpiSection title="Engagement" accent={C.verd}>
+        <KpiCard label="Connections" value={engagement.connectionsTotal} sub={`${engagement.connectionsAccepted} accepted`} info="Total connection requests sent between users, and how many were accepted." />
+        <KpiCard label="Conversations" value={engagement.conversationsTotal} info="Total 1:1 conversation threads started." />
+        <KpiCard label="Messages sent" value={engagement.messagesTotal} sub={`${engagement.messagesToday} today`} info="Total chat messages sent across the app." />
       </KpiSection>
 
-      <KpiSection title="Content & activity">
-        <KpiCard label="Events" value={content.eventsTotal} sub={`${content.eventsUpcoming} upcoming`} />
-        <KpiCard label="Event RSVPs" value={content.eventRsvpsTotal} />
-        <KpiCard label="Gigs open" value={content.gigsOpen} sub={`${content.gigsClosed} closed`} />
-        <KpiCard label="Gig requests" value={content.gigRequestsTotal} sub={`${content.gigRequestsPending} pending`} />
-        <KpiCard label="Active cafés" value={content.cafesActive} sub={`${content.cafeCheckinsTotal} check-ins`} />
-        <KpiCard label="Quests published" value={content.questsPublished} />
-        <KpiCard label="Quest completions" value={content.questCompletionsTotal} sub={`${content.questCompletersUnique} unique members`} />
-        <KpiCard label="Successful invites" value={invites.total} />
+      <KpiSection title="Content & activity" accent={C.ochre}>
+        <KpiCard label="Events" value={content.eventsTotal} sub={`${content.eventsUpcoming} upcoming`} info="Total events ever created, and how many are still upcoming." />
+        <KpiCard label="Event RSVPs" value={content.eventRsvpsTotal} info="Total RSVPs across all events." />
+        <KpiCard label="Gigs open" value={content.gigsOpen} sub={`${content.gigsClosed} closed`} info="Open job/gig postings, and how many have closed." />
+        <KpiCard label="Gig requests" value={content.gigRequestsTotal} sub={`${content.gigRequestsPending} pending`} info="Applications sent to gigs, and how many are still pending review." />
+        <KpiCard label="Active cafés" value={content.cafesActive} sub={`${content.cafeCheckinsTotal} check-ins`} info="Currently active café locations, and total check-ins logged there." />
+        <KpiCard label="Quests published" value={content.questsPublished} info="Quests currently live for users to complete." />
+        <KpiCard label="Quest completions" value={content.questCompletionsTotal} sub={`${content.questCompletersUnique} unique members`} info="Total quest completions logged, and how many distinct users completed at least one." />
+        <KpiCard label="Successful invites" value={invites.total} info="Invites that resulted in a new user joining." />
       </KpiSection>
 
-      <KpiSection title="Feedback">
-        <KpiCard label="Total" value={feedback.total} />
-        <KpiCard label="Open" value={feedback.open} color={C.ochre} />
-        <KpiCard label="Bug reports" value={feedback.bugs} color={C.signal} />
+      <KpiSection title="Feedback" accent={C.signal}>
+        <KpiCard label="Total" value={feedback.total} info="All feedback submissions ever received." />
+        <KpiCard label="Open" value={feedback.open} color={C.ochre} info="Feedback not yet marked resolved." />
+        <KpiCard label="Bug reports" value={feedback.bugs} color={C.signal} info="Submissions specifically tagged as bug reports." />
       </KpiSection>
     </div>
   )

@@ -728,11 +728,16 @@ function bucketByDay(rows: { created_at: string }[], days: number) {
   return [...buckets.entries()].map(([date, count]) => ({ date, count }))
 }
 
-adminPanelRouter.get('/kpis', async (_req, res) => {
+const KPI_RANGES = [7, 14, 30, 90] as const
+
+adminPanelRouter.get('/kpis', async (req, res) => {
   const now = new Date()
   const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0)
+  const rangeDays = (KPI_RANGES as readonly number[]).includes(Number(req.query.range))
+    ? Number(req.query.range)
+    : 14
   const d7 = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString()
-  const d14 = new Date(now.getTime() - 14 * 24 * 3600 * 1000).toISOString()
+  const dRange = new Date(now.getTime() - rangeDays * 24 * 3600 * 1000).toISOString()
   const d30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString()
   const todayIso = todayStart.toISOString()
 
@@ -787,8 +792,8 @@ adminPanelRouter.get('/kpis', async (_req, res) => {
     count('feedback'),
     count('feedback', q => q.eq('status', 'open')),
     count('feedback', q => q.eq('type', 'bug')),
-    supabase.from('users').select('created_at').gte('created_at', d14),
-    supabase.from('beta_signups').select('created_at').gte('created_at', d14),
+    supabase.from('users').select('created_at').gte('created_at', dRange),
+    supabase.from('beta_signups').select('created_at').gte('created_at', dRange),
     supabase.from('user_quests').select('user_id'),
   ])
 
@@ -812,8 +817,9 @@ adminPanelRouter.get('/kpis', async (_req, res) => {
       rejected: betaRejected.count ?? 0,
     },
     growth: {
-      usersPerDay: bucketByDay((usersSeries.data ?? []) as any, 14),
-      signupsPerDay: bucketByDay((betaSeries.data ?? []) as any, 14),
+      rangeDays,
+      usersPerDay: bucketByDay((usersSeries.data ?? []) as any, rangeDays),
+      signupsPerDay: bucketByDay((betaSeries.data ?? []) as any, rangeDays),
     },
     engagement: {
       connectionsTotal: connectionsTotal.count ?? 0,

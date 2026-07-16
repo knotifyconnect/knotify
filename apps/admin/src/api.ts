@@ -35,7 +35,7 @@ async function uploadRequest(path: string, file: File) {
 
 export const api = {
   stats: () => request('/api/admin-panel/stats'),
-  kpis: () => request('/api/admin-panel/kpis'),
+  kpis: (range?: number) => request(`/api/admin-panel/kpis${range ? `?range=${range}` : ''}`),
 
   betaSignups: (status?: string) =>
     request(`/api/admin-panel/beta-signups${status ? `?status=${status}` : ''}`),
