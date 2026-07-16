@@ -123,7 +123,8 @@ app.get('/health/db', async (_req, res) => {
 })
 
 // Read-only deployment probe for the separate Supabase Auth Admin boundary.
-// Database health alone cannot catch a missing/invalid secret-key permission.
+// It validates every current profile independently, matching the account panel
+// workload while tolerating and reporting isolated profile-only records.
 app.get('/health/admin-auth', async (_req, res) => {
   try {
     const profiles = await supabase.from('users').select('auth_id').not('auth_id', 'is', null).limit(1000)
