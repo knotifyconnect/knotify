@@ -2,10 +2,11 @@
 import type { FormEvent } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { apiPost } from '../lib/api'
+import { apiPost, ApiError } from '../lib/api'
 import { SignInCard2 } from '../components/ui/sign-in-card-2'
 import { useSeo } from '../lib/seo'
 import { readPendingInvite, writePendingInvite } from '../lib/invite'
+import { useSessionStore } from '../store/session'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -103,6 +104,16 @@ export function AuthPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [messageTone, setMessageTone] = useState<MessageTone>('error')
+  const setProfileSetupBlocking = useSessionStore((s) => s.setProfileSetupBlocking)
+
+  // Set when the username chosen at signup was already taken and the profile
+  // row couldn't be created. The session stays alive so the user can pick a
+  // different one here, instead of the app silently falling back to an
+  // auto-generated username.
+  const [usernameConflict, setUsernameConflict] = useState<{ fullName: string; termsAccepted: boolean } | null>(null)
+  const [retryUsername, setRetryUsername] = useState('')
+  const [retrySubmitting, setRetrySubmitting] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
 
   function showError(value: string) {
     setMessage(value)
@@ -179,9 +190,61 @@ export function AuthPage() {
     })
   }
 
+  // Enters username-conflict recovery mode: the session stays alive (so the
+  // retry form below can call complete-profile again) but App.tsx is told to
+  // withhold routing into the authenticated app until it's resolved.
+  function enterUsernameConflict(nameForConflict: string, termsAcceptedForConflict: boolean) {
+    setUsernameConflict({ fullName: nameForConflict, termsAccepted: termsAcceptedForConflict })
+    setRetryUsername('')
+    setRetryError(null)
+  }
+
+  async function submitUsernameRetry(e: FormEvent) {
+    e.preventDefault()
+    if (!usernameConflict) return
+
+    const nextUsername = retryUsername.trim()
+    if (!nextUsername) {
+      setRetryError('Enter a username.')
+      return
+    }
+
+    setRetrySubmitting(true)
+    setRetryError(null)
+    try {
+      await apiPost('/api/auth/complete-profile', {
+        fullName: usernameConflict.fullName,
+        username: nextUsername,
+        locationCity: 'Munich',
+        status: 'open_to_work',
+        termsAccepted: usernameConflict.termsAccepted,
+      })
+      setUsernameConflict(null)
+      setProfileSetupBlocking(false)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setRetryError('That username is taken too — try another.')
+      } else {
+        setRetryError(err instanceof Error ? err.message : 'Could not save username. Please try again.')
+      }
+    } finally {
+      setRetrySubmitting(false)
+    }
+  }
+
+  async function cancelUsernameConflict() {
+    await supabase.auth.signOut()
+    setUsernameConflict(null)
+    setProfileSetupBlocking(false)
+    setMode('login')
+    setPassword('')
+  }
+
   async function login() {
     setLoading(true)
     setMessage(null)
+    setProfileSetupBlocking(true)
+    let enteredConflict = false
 
     try {
       const normalizedEmail = email.trim().toLowerCase()
@@ -205,7 +268,24 @@ export function AuthPage() {
         throw new Error('Email not confirmed. Check your inbox and verify your email before logging in.')
       }
 
-      await completeProfileFromMetadata(data.user).catch(() => undefined)
+      try {
+        await completeProfileFromMetadata(data.user)
+      } catch (profileErr) {
+        // The chosen username lost a race (someone already has it) or the
+        // profile otherwise failed to save. Keep the session alive so the
+        // recovery form can retry with a different username, instead of
+        // letting the user continue into the app where /api/users/me would
+        // silently create their account under a random fallback username.
+        if (profileErr instanceof ApiError && profileErr.status === 409) {
+          const metadata = data.user?.user_metadata ?? {}
+          const metadataFullName = typeof metadata.fullName === 'string' ? metadata.fullName.trim() : ''
+          enterUsernameConflict(metadataFullName, metadata.termsAccepted === true)
+          enteredConflict = true
+          return
+        }
+        await supabase.auth.signOut()
+        throw new Error('We could not finish setting up your profile. Please try again, or contact support if this keeps happening.')
+      }
     } catch (err) {
       const value = err instanceof Error ? err.message : 'Login failed'
 
@@ -218,12 +298,15 @@ export function AuthPage() {
       }
     } finally {
       setLoading(false)
+      if (!enteredConflict) setProfileSetupBlocking(false)
     }
   }
 
   async function signup() {
     setLoading(true)
     setMessage(null)
+    setProfileSetupBlocking(true)
+    let enteredConflict = false
 
     try {
       const normalizedEmail = email.trim().toLowerCase()
@@ -260,7 +343,17 @@ export function AuthPage() {
       if (signUpError) throw signUpError
 
       if (data.session && isEmailConfirmed(data.user)) {
-        await completeProfileFromForm()
+        try {
+          await completeProfileFromForm()
+        } catch (profileErr) {
+          if (profileErr instanceof ApiError && profileErr.status === 409) {
+            enterUsernameConflict(cleanedFullName, true)
+            enteredConflict = true
+            return
+          }
+          await supabase.auth.signOut()
+          throw new Error('We could not finish setting up your profile. Please try again, or contact support if this keeps happening.')
+        }
         return
       }
 
@@ -278,6 +371,7 @@ export function AuthPage() {
       }
     } finally {
       setLoading(false)
+      if (!enteredConflict) setProfileSetupBlocking(false)
     }
   }
 
@@ -331,6 +425,51 @@ export function AuthPage() {
 
   if (accessMode === null) {
     return <div style={{ minHeight: '100vh', background: '#f5f0e8' }} />
+  }
+
+  if (usernameConflict) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f5f0e8', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        <div style={{ maxWidth: 420, width: '100%' }}>
+          <div style={{ marginBottom: 28, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#a09287', fontWeight: 500 }}>knotify</div>
+          <h1 style={{ fontFamily: "'Fraunces', serif", fontSize: 30, fontWeight: 700, color: '#1a1410', letterSpacing: '-0.02em', margin: '0 0 14px', lineHeight: 1.15 }}>
+            That username is taken.
+          </h1>
+          <p style={{ fontSize: 15, color: '#6b5f55', lineHeight: 1.7, margin: '0 0 28px' }}>
+            Someone already has that handle, {usernameConflict.fullName || 'there'}. Pick another one to finish setting up your account.
+          </p>
+
+          <form onSubmit={submitUsernameRetry} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <input
+              type="text"
+              required
+              autoFocus
+              placeholder="anna_m"
+              value={retryUsername}
+              onChange={e => setRetryUsername(e.target.value)}
+              style={{ padding: '13px 14px', borderRadius: 10, border: '0.5px solid rgba(84,72,58,0.2)', background: '#fff', fontSize: 14, color: '#1a1410', outline: 'none', fontFamily: 'inherit' }}
+            />
+            {retryError && <div style={{ fontSize: 13, color: '#D8442B' }}>{retryError}</div>}
+            <button
+              type="submit"
+              disabled={retrySubmitting}
+              style={{ padding: '13px', borderRadius: 10, border: 'none', background: '#1a1410', color: '#fff', fontSize: 14, fontWeight: 600, cursor: retrySubmitting ? 'not-allowed' : 'pointer', opacity: retrySubmitting ? 0.6 : 1 }}
+            >
+              {retrySubmitting ? 'Saving…' : 'Save username'}
+            </button>
+          </form>
+
+          <div style={{ marginTop: 32, paddingTop: 24, borderTop: '0.5px solid rgba(84,72,58,0.12)' }}>
+            <button
+              onClick={() => { void cancelUsernameConflict() }}
+              style={{ background: 'none', border: 'none', fontSize: 13, color: '#a09287', cursor: 'pointer', padding: 0 }}
+            >
+              Cancel and sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // Invite-only, no valid invite, and the visitor hasn't chosen to sign in:

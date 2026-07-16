@@ -367,6 +367,7 @@ function AnimatedRoutes({
 export default function App() {
   const token = useSessionStore((s) => s.token)
   const setToken = useSessionStore((s) => s.setToken)
+  const profileSetupBlocking = useSessionStore((s) => s.profileSetupBlocking)
   const [hydrating, setHydrating] = useState(true)
   const [showNonCriticalLayers, setShowNonCriticalLayers] = useState(false)
   const [reentryState, setReentryState] = useState<ReentryState>({
@@ -503,7 +504,10 @@ export default function App() {
     <AppErrorBoundary>
       <BrowserRouter>
         <AnimatedRoutes
-          token={token}
+          // Withhold the authenticated route tree while AuthPage is still
+          // resolving profile setup (see useSessionStore.profileSetupBlocking),
+          // even though the Supabase session/token already exists.
+          token={profileSetupBlocking ? null : token}
           showReentryLanding={reentryState.showLanding}
           onReentryContinue={onReentryContinue}
         />

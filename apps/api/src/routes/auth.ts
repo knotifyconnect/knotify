@@ -73,6 +73,9 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
     .single()
 
   if (upsert.error) {
+    if (upsert.error.code === '23505') {
+      return res.status(409).json({ error: 'That username is already taken.' })
+    }
     return res.status(500).json({ error: upsert.error.message })
   }
 
