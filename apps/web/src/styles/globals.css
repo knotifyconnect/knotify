@@ -69,9 +69,6 @@ body {
   gap: 16px;
   flex-wrap: wrap;
 }
-.k-desk-header-copy {
-  min-width: 0;
-}
 .k-desk-header-kicker {
   margin-bottom: 3px;
   color: var(--ink-faint);
@@ -94,6 +91,9 @@ body {
 }
 
 @media (max-width: 767px) {
+  .k-desk-header-copy {
+    min-width: 0;
+  }
   .k-desk-header {
     margin-bottom: 16px;
   }
@@ -122,31 +122,79 @@ body {
   }
 }
 
+.k-jobs-toggle-row {
+  padding: 0 clamp(16px, 4vw, 40px);
+  margin-bottom: 20px;
+}
+
+.k-job-share-close-mobile {
+  display: none;
+}
+
 .k-job-share-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
   gap: 10px;
 }
 
 .k-job-share-row-with-check {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  align-items: end;
+  align-items: stretch;
+}
+
+.k-job-share-remote {
+  padding-top: 18px;
 }
 
 .k-job-share-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
   gap: 8px;
 }
 
 @media (max-width: 767px) {
+  .k-jobs-toggle-row {
+    padding: 0;
+    margin-bottom: 18px;
+  }
+
+  .k-jobs-board {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .k-jobs-board-heading { order: 0; }
+  .k-jobs-share-card { order: 1; }
+  .k-jobs-search { order: 2; }
+  .k-jobs-results { order: 3; }
+
+  .k-job-share-toggle {
+    min-width: 104px;
+  }
+
+  .k-job-share-close-desktop {
+    display: none;
+  }
+
+  .k-job-share-close-mobile {
+    display: inline;
+  }
+
   .k-job-share-row,
   .k-job-share-row-with-check {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
 
   .k-job-share-row-with-check {
     align-items: start;
+  }
+
+  .k-job-share-remote {
+    min-height: 36px;
+    padding-top: 0;
+  }
+
+  .k-job-share-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -372,22 +420,18 @@ body::before {
   margin-bottom: 20px;
 }
 
-.k-home-asks-group {
-  display: grid;
-  gap: 12px;
-}
-
-.k-home-rail-section {
-  padding: 14px;
-  border: 0.5px solid var(--rule-soft);
-  border-radius: 14px;
-  background: rgba(255, 252, 246, 0.82);
-  box-shadow: 0 7px 18px rgba(26, 24, 21, 0.045);
-}
-
 @media (max-width: 767px) {
+  .k-home-asks-group {
+    display: grid;
+    gap: 12px;
+  }
+
   .k-home-rail-section {
     padding: 12px;
+    border: 0.5px solid var(--rule-soft);
+    border-radius: 14px;
+    background: rgba(255, 252, 246, 0.82);
+    box-shadow: 0 7px 18px rgba(26, 24, 21, 0.045);
   }
 }
 @media (min-width: 1024px) {

@@ -641,7 +641,7 @@ export function JobsPage() {
         kicker="Jobs & Gigs · peer to peer"
         title={<><span style={{ fontStyle: 'italic' }}>Through people,</span> not job boards.</>}
       />
-      <div style={{ marginBottom: 18 }}><SectionToggle /></div>
+      <div className="k-jobs-toggle-row"><SectionToggle /></div>
 
       {/* ── Global error / success ──────────────────────────────────────────── */}
       {(error || requestError) && (
@@ -928,23 +928,23 @@ export function JobsPage() {
       )}
 
       {/* ── Jobs board ─────────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ order: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+      <div className="k-jobs-board" style={{ marginBottom: 14 }}>
+        <div className="k-jobs-board-heading" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
           <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'" }}>
             Open positions · warm referral required
           </div>
           <KBtn
+            className="k-job-share-toggle"
             variant="signal"
             size="sm"
             onClick={() => setShowShareForm((p) => !p)}
-            style={{ minWidth: 104 }}
           >
-            {showShareForm ? 'Close form' : 'Share a job'}
+            {showShareForm ? <><span className="k-job-share-close-desktop">Close</span><span className="k-job-share-close-mobile">Close form</span></> : 'Share a job'}
           </KBtn>
         </div>
 
         {/* Search + Filters */}
-        <div style={{ order: 2, marginBottom: 14 }}>
+        <div className="k-jobs-search" style={{ marginBottom: 14 }}>
           <input
             type="text"
             placeholder="Search jobs by title or description…"
@@ -979,7 +979,7 @@ export function JobsPage() {
         </div>
 
         {showShareForm && (
-          <KCard style={{ order: 1, padding: '18px 20px', marginBottom: 14 }}>
+          <KCard className="k-jobs-share-card" style={{ padding: '18px 20px', marginBottom: 14 }}>
             <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-faint)', fontFamily: "'IBM Plex Sans'", marginBottom: 4 }}>
               Share a job you found
             </div>
@@ -1047,7 +1047,7 @@ export function JobsPage() {
                       <option value="freelance">Freelance</option>
                     </select>
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap', minHeight: 36 }}>
+                  <label className="k-job-share-remote" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap' }}>
                     <input type="checkbox" checked={shareDraft.isRemote} onChange={(e) => updateShareDraft({ isRemote: e.target.checked })} />
                     Remote
                   </label>
@@ -1101,7 +1101,7 @@ export function JobsPage() {
           </KCard>
         )}
 
-        <div style={{ order: 3 }}>
+        <div className="k-jobs-results">
         {loading ? (
           <KCard style={{ padding: 32 }}>
             <p style={{ fontFamily: "'Fraunces', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink-muted)', textAlign: 'center', margin: 0 }}>
