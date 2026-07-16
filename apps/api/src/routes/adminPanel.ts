@@ -2,7 +2,7 @@ import { Router } from 'express'
 import multer from 'multer'
 import { z } from 'zod'
 import { supabase } from '../lib.js'
-import { invalidateAccessCache } from '../lib/access.js'
+import { ADMIN_EMAILS, invalidateAccessCache } from '../lib/access.js'
 import { sendBetaApprovalEmail } from '../lib/email.js'
 
 export const adminPanelRouter = Router()
@@ -16,6 +16,254 @@ function requirePanelSecret(req: any, res: any, next: any) {
 }
 
 adminPanelRouter.use(requirePanelSecret)
+
+// Account lifecycle lives in the dedicated admin panel because this router is
+// protected by a separate secret and the Supabase service key stays server-side.
+const accountQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+  perPage: z.coerce.number().int().min(1).max(1000).default(1000),
+})
+const accountIdSchema = z.string().uuid()
+const accountRoleSchema = z.object({
+  isAdmin: z.boolean().optional(),
+  isHr: z.boolean().optional(),
+  isPremium: z.boolean().optional(),
+}).refine((value) => Object.values(value).some((item) => item !== undefined), {
+  message: 'At least one role must be provided.',
+})
+const accountActionSchema = z.object({
+  action: z.enum(['deactivate', 'reactivate', 'delete']),
+  confirmation: z.string().trim().max(320).optional(),
+})
+
+const accountProfileFields = [
+  'id', 'auth_id', 'email', 'full_name', 'username', 'avatar_url', 'headline',
+  'location_city', 'university', 'current_company', 'status', 'persona',
+  'interests', 'goals', 'is_international', 'home_country', 'is_admin', 'is_hr',
+  'is_premium', 'is_online', 'last_seen_at', 'terms_accepted_at', 'terms_version',
+  'created_at', 'updated_at',
+].join(', ')
+
+function isAccountBanned(bannedUntil?: string | null) {
+  return Boolean(bannedUntil && new Date(bannedUntil).getTime() > Date.now())
+}
+
+function accountProfileCompletion(profile: any) {
+  if (!profile) return 0
+  const checks = [
+    profile.full_name,
+    profile.username,
+    profile.persona,
+    profile.avatar_url,
+    profile.headline,
+    profile.location_city,
+    Array.isArray(profile.interests) && profile.interests.length >= 3,
+    Array.isArray(profile.goals) && profile.goals.length >= 1,
+  ]
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100)
+}
+
+function serializeAccount(authUser: any, profile: any) {
+  const providers = Array.isArray(authUser.app_metadata?.providers)
+    ? authUser.app_metadata.providers
+    : [...new Set((authUser.identities ?? []).map((identity: any) => identity.provider).filter(Boolean))]
+  const banned = isAccountBanned(authUser.banned_until)
+  return {
+    id: authUser.id,
+    authId: authUser.id,
+    profileId: profile?.id ?? null,
+    email: authUser.email ?? profile?.email ?? null,
+    phone: authUser.phone ?? null,
+    fullName: profile?.full_name ?? authUser.user_metadata?.full_name ?? authUser.user_metadata?.name ?? null,
+    username: profile?.username ?? null,
+    avatarUrl: profile?.avatar_url ?? authUser.user_metadata?.avatar_url ?? null,
+    headline: profile?.headline ?? null,
+    locationCity: profile?.location_city ?? null,
+    university: profile?.university ?? null,
+    currentCompany: profile?.current_company ?? null,
+    memberStatus: profile?.status ?? null,
+    persona: profile?.persona ?? null,
+    interests: Array.isArray(profile?.interests) ? profile.interests : [],
+    goals: Array.isArray(profile?.goals) ? profile.goals : [],
+    isInternational: Boolean(profile?.is_international),
+    homeCountry: profile?.home_country ?? null,
+    isAdmin: Boolean(profile?.is_admin),
+    isHr: Boolean(profile?.is_hr),
+    isPremium: Boolean(profile?.is_premium),
+    isOnline: Boolean(profile?.is_online),
+    lastSeenAt: profile?.last_seen_at ?? null,
+    termsAcceptedAt: profile?.terms_accepted_at ?? null,
+    termsVersion: profile?.terms_version ?? null,
+    profileCreatedAt: profile?.created_at ?? null,
+    profileUpdatedAt: profile?.updated_at ?? null,
+    authCreatedAt: authUser.created_at,
+    authUpdatedAt: authUser.updated_at ?? null,
+    lastSignInAt: authUser.last_sign_in_at ?? null,
+    emailConfirmedAt: authUser.email_confirmed_at ?? authUser.confirmed_at ?? null,
+    phoneConfirmedAt: authUser.phone_confirmed_at ?? null,
+    invitedAt: authUser.invited_at ?? null,
+    providers,
+    isSso: Boolean(authUser.is_sso_user),
+    isAnonymous: Boolean(authUser.is_anonymous),
+    bannedUntil: banned ? authUser.banned_until : null,
+    accountStatus: banned ? 'deactivated' : 'active',
+    profileCompletion: accountProfileCompletion(profile),
+    onboardingComplete: Boolean(
+      profile?.persona &&
+      Array.isArray(profile?.interests) && profile.interests.length >= 3 &&
+      Array.isArray(profile?.goals) && profile.goals.length >= 1
+    ),
+  }
+}
+
+adminPanelRouter.get('/accounts', async (req, res) => {
+  const parsed = accountQuerySchema.safeParse(req.query)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid pagination.' })
+  const authResult = await supabase.auth.admin.listUsers({ page: parsed.data.page, perPage: parsed.data.perPage })
+  if (authResult.error) return res.status(500).json({ error: authResult.error.message })
+
+  const authUsers = authResult.data.users ?? []
+  const authIds = authUsers.map((user) => user.id)
+  const profileResult = authIds.length
+    ? await supabase.from('users').select(accountProfileFields).in('auth_id', authIds)
+    : { data: [], error: null }
+  if (profileResult.error) return res.status(500).json({ error: profileResult.error.message })
+
+  const profileByAuthId = new Map((profileResult.data ?? []).map((profile: any) => [profile.auth_id, profile]))
+  const accounts = authUsers.map((user) => serializeAccount(user, profileByAuthId.get(user.id)))
+  const total = authResult.data.total || accounts.length
+  return res.json({
+    accounts,
+    pagination: {
+      page: parsed.data.page,
+      perPage: parsed.data.perPage,
+      total,
+      loaded: accounts.length,
+      nextPage: authResult.data.nextPage ?? null,
+      lastPage: authResult.data.lastPage ?? parsed.data.page,
+    },
+    stats: {
+      total,
+      active: accounts.filter((account) => account.accountStatus === 'active').length,
+      deactivated: accounts.filter((account) => account.accountStatus === 'deactivated').length,
+      unverified: accounts.filter((account) => !account.emailConfirmedAt && !account.phoneConfirmedAt).length,
+      admins: accounts.filter((account) => account.isAdmin).length,
+      hr: accounts.filter((account) => account.isHr).length,
+    },
+  })
+})
+
+adminPanelRouter.get('/accounts/:authId', async (req, res) => {
+  const authId = accountIdSchema.safeParse(req.params.authId)
+  if (!authId.success) return res.status(422).json({ error: 'Invalid account ID.' })
+  const authResult = await supabase.auth.admin.getUserById(authId.data)
+  if (authResult.error || !authResult.data.user) {
+    return res.status(authResult.error?.status === 404 ? 404 : 500).json({ error: authResult.error?.message ?? 'Account not found.' })
+  }
+  const profileResult = await supabase.from('users').select(accountProfileFields).eq('auth_id', authId.data).maybeSingle()
+  if (profileResult.error) return res.status(500).json({ error: profileResult.error.message })
+  const profile = profileResult.data as any
+
+  let activity = { connections: 0, posts: 0, messages: 0, eventRsvps: 0, gigs: 0 }
+  if (profile?.id) {
+    const profileId = profile.id
+    const [connections, posts, messages, eventRsvps, gigs] = await Promise.all([
+      supabase.from('connections').select('id', { count: 'exact', head: true }).or(`requester_id.eq.${profileId},addressee_id.eq.${profileId}`),
+      supabase.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', profileId),
+      supabase.from('messages').select('id', { count: 'exact', head: true }).eq('sender_id', profileId),
+      supabase.from('event_rsvps').select('id', { count: 'exact', head: true }).eq('user_id', profileId),
+      supabase.from('gigs').select('id', { count: 'exact', head: true }).eq('provider_id', profileId),
+    ])
+    activity = {
+      connections: connections.count ?? 0,
+      posts: posts.count ?? 0,
+      messages: messages.count ?? 0,
+      eventRsvps: eventRsvps.count ?? 0,
+      gigs: gigs.count ?? 0,
+    }
+  }
+  return res.json({ account: serializeAccount(authResult.data.user, profile), activity })
+})
+
+adminPanelRouter.patch('/accounts/:authId/roles', async (req, res) => {
+  const authId = accountIdSchema.safeParse(req.params.authId)
+  if (!authId.success) return res.status(422).json({ error: 'Invalid account ID.' })
+  const parsed = accountRoleSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: parsed.error.issues[0]?.message ?? 'Invalid roles.' })
+
+  const target = await supabase.from('users').select('id, email, is_admin').eq('auth_id', authId.data).maybeSingle()
+  if (target.error) return res.status(500).json({ error: target.error.message })
+  if (!target.data) return res.status(404).json({ error: 'This Auth account does not have a knotify profile yet.' })
+
+  if (parsed.data.isAdmin === false && target.data.is_admin) {
+    if (target.data.email && ADMIN_EMAILS.includes(target.data.email.toLowerCase())) {
+      return res.status(409).json({ error: 'Core team accounts are automatically restored as admins and cannot be demoted here.' })
+    }
+    const adminCount = await supabase.from('users').select('id', { count: 'exact', head: true }).eq('is_admin', true)
+    if (adminCount.error) return res.status(500).json({ error: adminCount.error.message })
+    if ((adminCount.count ?? 0) <= 1) return res.status(409).json({ error: 'The last admin cannot be demoted.' })
+  }
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (parsed.data.isAdmin !== undefined) patch.is_admin = parsed.data.isAdmin
+  if (parsed.data.isHr !== undefined) patch.is_hr = parsed.data.isHr
+  if (parsed.data.isPremium !== undefined) patch.is_premium = parsed.data.isPremium
+  const update = await supabase.from('users').update(patch).eq('id', target.data.id).select('id, is_admin, is_hr, is_premium').single()
+  if (update.error) return res.status(500).json({ error: update.error.message })
+
+  console.info(`[admin-panel] roles updated for auth account ${authId.data}`)
+  return res.json({ roles: { isAdmin: update.data.is_admin, isHr: update.data.is_hr, isPremium: update.data.is_premium } })
+})
+
+adminPanelRouter.post('/accounts/:authId/action', async (req, res) => {
+  const authId = accountIdSchema.safeParse(req.params.authId)
+  if (!authId.success) return res.status(422).json({ error: 'Invalid account ID.' })
+  const parsed = accountActionSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid account action.' })
+
+  const authResult = await supabase.auth.admin.getUserById(authId.data)
+  if (authResult.error || !authResult.data.user) {
+    return res.status(authResult.error?.status === 404 ? 404 : 500).json({ error: authResult.error?.message ?? 'Account not found.' })
+  }
+
+  if (parsed.data.action === 'deactivate' || parsed.data.action === 'reactivate') {
+    const banDuration = parsed.data.action === 'deactivate' ? '876000h' : 'none'
+    const update = await supabase.auth.admin.updateUserById(authId.data, { ban_duration: banDuration })
+    if (update.error) return res.status(500).json({ error: update.error.message })
+    console.info(`[admin-panel] account ${authId.data} ${parsed.data.action}d`)
+    return res.json({
+      ok: true,
+      accountStatus: parsed.data.action === 'deactivate' ? 'deactivated' : 'active',
+      bannedUntil: parsed.data.action === 'deactivate' ? update.data.user?.banned_until ?? null : null,
+    })
+  }
+
+  const expectedConfirmation = (authResult.data.user.email ?? authId.data).toLowerCase()
+  if ((parsed.data.confirmation ?? '').toLowerCase() !== expectedConfirmation) {
+    return res.status(422).json({ error: `Type ${authResult.data.user.email ?? authId.data} to confirm permanent deletion.` })
+  }
+
+  const profile = await supabase.from('users').select('id, is_admin').eq('auth_id', authId.data).maybeSingle()
+  if (profile.error) return res.status(500).json({ error: profile.error.message })
+  if (profile.data?.is_admin) {
+    const adminCount = await supabase.from('users').select('id', { count: 'exact', head: true }).eq('is_admin', true)
+    if (adminCount.error) return res.status(500).json({ error: adminCount.error.message })
+    if ((adminCount.count ?? 0) <= 1) return res.status(409).json({ error: 'The last admin account cannot be deleted.' })
+  }
+
+  const deletion = await supabase.auth.admin.deleteUser(authId.data)
+  if (deletion.error) return res.status(500).json({ error: deletion.error.message })
+  if (profile.data?.id) {
+    const cleanup = await supabase.from('users').delete().eq('id', profile.data.id)
+    if (cleanup.error) {
+      console.warn(`[admin-panel] auth account ${authId.data} deleted, profile cleanup failed: ${cleanup.error.message}`)
+      return res.json({ ok: true, warning: 'The login was deleted, but its profile row needs manual cleanup.' })
+    }
+  }
+
+  console.info(`[admin-panel] account ${authId.data} permanently deleted`)
+  return res.json({ ok: true })
+})
 
 // ── Image upload ──────────────────────────────────────────────────────────────
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } })

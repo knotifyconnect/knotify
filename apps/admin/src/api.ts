@@ -37,6 +37,14 @@ export const api = {
   stats: () => request('/api/admin-panel/stats'),
   kpis: (range?: number) => request(`/api/admin-panel/kpis${range ? `?range=${range}` : ''}`),
 
+  // User accounts and access
+  accounts: () => request('/api/admin-panel/accounts?perPage=1000'),
+  account: (authId: string) => request(`/api/admin-panel/accounts/${authId}`),
+  updateAccountRoles: (authId: string, body: { isAdmin?: boolean; isHr?: boolean; isPremium?: boolean }) =>
+    request(`/api/admin-panel/accounts/${authId}/roles`, { method: 'PATCH', body: JSON.stringify(body) }),
+  accountAction: (authId: string, action: 'deactivate' | 'reactivate' | 'delete', confirmation?: string) =>
+    request(`/api/admin-panel/accounts/${authId}/action`, { method: 'POST', body: JSON.stringify({ action, confirmation }) }),
+
   betaSignups: (status?: string) =>
     request(`/api/admin-panel/beta-signups${status ? `?status=${status}` : ''}`),
   updateSignup: (id: string, status: 'approved' | 'rejected' | 'pending') =>

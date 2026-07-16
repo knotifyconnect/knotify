@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api, getSecret, setSecret, clearSecret } from './api'
 import { EventsAdmin, GigsAdmin, QuestsAdmin, InvitesAdmin, FeedbackAdmin, CafesAdmin, CafeSuggestionsAdmin, DashboardAdmin } from './AdminPanels'
+import { AccountsAdmin } from './AccountsAdmin'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface BetaSignup {
@@ -400,7 +401,7 @@ function SettingsPanel() {
 }
 
 function AdminApp({ onLogout }: { onLogout: () => void }) {
-  const [section, setSection] = useState<'dashboard' | 'signups' | 'events' | 'gigs' | 'quests' | 'cafes' | 'cafeSuggestions' | 'invites' | 'feedback' | 'settings'>('dashboard')
+  const [section, setSection] = useState<'dashboard' | 'accounts' | 'signups' | 'events' | 'gigs' | 'quests' | 'cafes' | 'cafeSuggestions' | 'invites' | 'feedback' | 'settings'>('dashboard')
   const [stats, setStats] = useState<Stats | null>(null)
   const [signups, setSignups] = useState<BetaSignup[]>([])
   const [filter, setFilter] = useState<string>('all')
@@ -485,7 +486,7 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
 
         {/* Section tabs */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 28, flexWrap: 'wrap' }}>
-          {(['dashboard', 'signups', 'events', 'gigs', 'quests', 'cafes', 'cafeSuggestions', 'invites', 'feedback', 'settings'] as const).map(s => (
+          {(['dashboard', 'accounts', 'signups', 'events', 'gigs', 'quests', 'cafes', 'cafeSuggestions', 'invites', 'feedback', 'settings'] as const).map(s => (
             <button key={s} onClick={() => setSection(s)} style={{
               padding: '7px 16px', borderRadius: 999,
               border: `0.5px solid ${section === s ? T.signal : T.rule}`,
@@ -493,11 +494,12 @@ function AdminApp({ onLogout }: { onLogout: () => void }) {
               color: section === s ? '#fff' : T.inkMuted,
               fontSize: 13, fontWeight: 500, cursor: 'pointer', textTransform: 'capitalize',
               fontFamily: 'IBM Plex Sans, sans-serif',
-            }}>{s === 'signups' ? 'Beta signups' : s === 'cafes' ? 'Cafés' : s === 'cafeSuggestions' ? 'Café suggestions' : s.charAt(0).toUpperCase() + s.slice(1)}</button>
+            }}>{s === 'accounts' ? 'Users & accounts' : s === 'signups' ? 'Beta signups' : s === 'cafes' ? 'Cafés' : s === 'cafeSuggestions' ? 'Café suggestions' : s.charAt(0).toUpperCase() + s.slice(1)}</button>
           ))}
         </div>
 
         {section === 'dashboard' && <DashboardAdmin />}
+        {section === 'accounts' && <AccountsAdmin />}
         {section === 'cafes' && <CafesAdmin />}
         {section === 'events' && <EventsAdmin />}
         {section === 'gigs' && <GigsAdmin />}
