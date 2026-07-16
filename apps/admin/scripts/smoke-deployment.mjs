@@ -62,6 +62,12 @@ async function checkApi() {
     fail('API health', `expected {"ok":true}, received ${healthResponse.status} ${health.text.slice(0, 120)}`)
   } else pass('API health', `${healthResponse.status} {"ok":true}`)
 
+  const adminAuthResponse = await request(new URL('/health/admin-auth', apiUrl))
+  const adminAuth = await jsonBody(adminAuthResponse)
+  if (adminAuthResponse.status !== 200 || adminAuth.json?.ok !== true || adminAuth.json?.adminAuth !== 'available') {
+    fail('Supabase Auth Admin', `expected an available Auth transport, received ${adminAuthResponse.status} ${adminAuth.text.slice(0, 160)}`)
+  } else pass('Supabase Auth Admin', 'secret and Auth permissions are valid')
+
   const unauthenticated = await request(new URL('/api/admin-panel/accounts', apiUrl))
   const unauthenticatedBody = await jsonBody(unauthenticated)
   if (unauthenticated.status !== 401 || typeof unauthenticatedBody.json?.error !== 'string') {

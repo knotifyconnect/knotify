@@ -25,6 +25,7 @@ import { relationshipHomeRouter } from './routes/relationshipHome.js'
 import { companionRouter } from './routes/companion.js'
 import { betaRouter } from './routes/beta.js'
 import { adminPanelRouter } from './routes/adminPanel.js'
+import { describeAdminAuthError, listAuthUsers } from './lib/supabaseAdminAuth.js'
 import { questsRouter } from './routes/quests.js'
 import { eventsRouter } from './routes/events.js'
 import { forYouRouter } from './routes/forYou.js'
@@ -118,6 +119,19 @@ app.get('/health/db', async (_req, res) => {
   } catch (error) {
     console.error('[health/db] check failed:', error)
     res.status(500).json({ ok: false, error: 'DB health check failed' })
+  }
+})
+
+// Read-only deployment probe for the separate Supabase Auth Admin boundary.
+// Database health alone cannot catch a missing/invalid secret-key permission.
+app.get('/health/admin-auth', async (_req, res) => {
+  try {
+    await listAuthUsers(1, 1)
+    return res.json({ ok: true, adminAuth: 'available' })
+  } catch (error) {
+    const detail = describeAdminAuthError(error)
+    console.error(`[health/admin-auth] ${detail.code}: ${detail.message}`)
+    return res.status(503).json({ ok: false, adminAuth: 'unavailable', code: detail.code })
   }
 })
 
