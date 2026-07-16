@@ -57,6 +57,18 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The application top bar belongs exclusively to the mobile shell. Keep the
+   desktop contract explicit here so inline layout styles can never expose it. */
+.k-mobile-topbar {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .k-mobile-topbar {
+    display: grid;
+  }
+}
+
 /* Shared page heading rhythm. Every primary tab now starts at the same visual
    baseline and uses the same mobile title scale. */
 .k-desk-header {

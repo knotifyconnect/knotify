@@ -399,7 +399,7 @@ export function AppSidebar() {
 
       {/* ── Mobile top bar: logo + Discover + Profile ─────────────── */}
       <div
-        className="flex md:hidden"
+        className="k-mobile-topbar"
         style={{
           position: 'fixed',
           top: 0,
@@ -411,7 +411,6 @@ export function AppSidebar() {
           WebkitBackdropFilter: 'blur(16px)',
           borderBottom: '0.5px solid var(--rule-soft)',
           zIndex: 45,
-          display: 'grid',
           gridTemplateColumns: '72px minmax(0, 1fr) 72px',
           alignItems: 'center',
           padding: 'env(safe-area-inset-top) 14px 0',
