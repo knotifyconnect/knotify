@@ -85,6 +85,21 @@ function profileContext(user: DiscoverUser | ConnectionUser) {
   return [user.location_city, user.current_company, user.university].filter(Boolean).join(' - ') || 'More context needed'
 }
 
+function primaryProfileLine(user: DiscoverUser) {
+  if (user.headline?.trim()) return user.headline.trim()
+  if (user.current_company?.trim()) return `At ${user.current_company.trim()}`
+  if (user.university?.trim()) return `At ${user.university.trim()}`
+  if (user.status === 'open_to_work') return 'Open to new opportunities'
+  return 'Profile details available'
+}
+
+function supportingProfileLine(user: DiscoverUser, primaryLine: string) {
+  const primary = normalise(primaryLine)
+  return [user.current_company, user.university]
+    .filter((value): value is string => Boolean(value?.trim()) && !primary.includes(normalise(value)))
+    .join(' · ')
+}
+
 function skillKey(skill: Skill) {
   return normalise(skill.name)
 }
@@ -440,104 +455,94 @@ export function DiscoverPage() {
 
   function PersonCard({ user }: { user: DiscoverUser }) {
     const pill = statusPill(user.status)
-    const skills = user.skills ?? []
     const reason = user.match_reason || fallbackReason(user, me, meSkills)
     const shared = sharedSkillNames(user, meSkills)
-    const reasonTags = user.match_reasons?.length ? user.match_reasons : shared
+    const primaryLine = primaryProfileLine(user)
+    const supportingLine = supportingProfileLine(user, primaryLine)
+    const displayedSkills = shared.slice(0, 3)
+    const mutualCount = user.mutual_connections_count ?? 0
+    const reasonAlreadyShowsMutual = /mutual connection/i.test(reason)
 
     return (
       <KCard
-        style={{ padding: '18px 18px 16px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 14 }}
+        style={{ padding: '16px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 11 }}
         onClick={() => navigate(`/profile/${user.id}`)}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13 }}>
-          <KAvatar name={user.full_name} src={user.avatar_url} size={50} style={{ flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <KAvatar name={user.full_name} src={user.avatar_url} size={46} style={{ flexShrink: 0 }} />
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
               <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {user.full_name}
               </span>
               <VerifiedBadge size={13} />
             </div>
 
-            <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 6 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               @{user.username}
             </div>
 
-            <div style={{ fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.35 }}>
-              {user.headline || profileContext(user)}
+            <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.35, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
+              {primaryLine}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 8px', minHeight: 24 }}>
           <KPill color={pill.color}>{pill.label}</KPill>
-          {user.location_city && <KPill>{user.location_city}</KPill>}
-          {typeof user.profile_signal === 'number' && user.profile_signal >= 70 && <KPill color="verd">Strong signal</KPill>}
-          {(user.mutual_connections_count ?? 0) > 0 && <KPill>{user.mutual_connections_count} mutual</KPill>}
-        </div>
-
-        {(user.current_company || user.university) && (
-          <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', borderTop: '0.5px solid var(--rule)', paddingTop: 10 }}>
-            {[user.current_company, user.university].filter(Boolean).join(' - ')}
-          </div>
-        )}
-
-        <div style={{ border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', borderRadius: 12, padding: '10px 11px' }}>
-          <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--ink-faint)', marginBottom: 4 }}>
-            Why this person
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.35 }}>
-            {reason}
-          </div>
-          {reasonTags.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
-              {reasonTags.slice(0, 3).map((tag) => (
-                <span
-                  key={tag}
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--ink-muted)',
-                    background: 'var(--paper)',
-                    border: '0.5px solid var(--rule)',
-                    borderRadius: 999,
-                    padding: '3px 7px',
-                  }}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
+          {user.location_city && <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{user.location_city}</span>}
+          {mutualCount > 0 && !reasonAlreadyShowsMutual && (
+            <span style={{ fontSize: 12, color: 'var(--verd)', fontWeight: 600 }}>
+              {mutualCount} mutual
+            </span>
           )}
         </div>
 
-        {skills.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {skills.slice(0, 3).map((skill) => (
-              <span
-                key={`${user.id}-${skill.skill_id ?? skill.id ?? skill.name}`}
-                style={{
-                  fontSize: 11.5,
-                  color: shared.includes(skill.name) ? 'var(--signal)' : 'var(--ink-muted)',
-                  border: `0.5px solid ${shared.includes(skill.name) ? 'rgba(216,68,43,0.25)' : 'var(--rule)'}`,
-                  background: shared.includes(skill.name) ? 'var(--signal-soft)' : 'transparent',
-                  borderRadius: 999,
-                  padding: '4px 8px',
-                }}
-              >
-                {skill.name}
-              </span>
-            ))}
-            {skills.length > 3 && (
-              <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', padding: '4px 2px' }}>
-                +{skills.length - 3}
-              </span>
-            )}
+        {supportingLine && (
+          <div style={{ fontSize: 12, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {supportingLine}
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingTop: 2 }}>
+        <div style={{ borderLeft: '3px solid var(--verd)', background: 'rgba(31,107,94,0.055)', borderRadius: '0 10px 10px 0', padding: '8px 10px' }}>
+          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--verd)', fontWeight: 600, marginBottom: 3 }}>
+            Connection signal
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.35, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
+            {reason}
+          </div>
+        </div>
+
+        {displayedSkills.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', flexShrink: 0 }}>
+              Shared skills
+            </span>
+            <div style={{ display: 'flex', gap: 5, minWidth: 0, overflow: 'hidden' }}>
+            {displayedSkills.map((skillName) => (
+              <span
+                key={`${user.id}-${skillName}`}
+                style={{
+                  fontSize: 11,
+                  color: 'var(--signal)',
+                  border: '0.5px solid rgba(216,68,43,0.22)',
+                  background: 'rgba(216,68,43,0.06)',
+                  borderRadius: 999,
+                  padding: '3px 7px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {skillName}
+              </span>
+            ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingTop: 1, marginTop: 'auto' }}>
           <KBtn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/profile/${user.id}`) }}>
             View profile
           </KBtn>

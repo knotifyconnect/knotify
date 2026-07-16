@@ -397,36 +397,34 @@ function discoverReasonFor(me: any, mySkills: DiscoverSkill[], candidate: any, c
   if (profileSignal >= 70) score += 1
 
   const tags: string[] = []
-  if (sharedInterests.length) tags.push(...sharedInterests.slice(0, 2))
-  if (bothInternational) tags.push('New to Munich')
-  if (sharedLangs.length) tags.push(sharedLangs[0])
-  if (sameUniversity && candidate.university) tags.push(candidate.university)
   if (mutualCount > 0) tags.push(`${mutualCount} mutual`)
   if (sharedSkills.length) tags.push(sharedSkills[0])
+  if (sameUniversity && candidate.university) tags.push(candidate.university)
+  if (sharedInterests.length) tags.push(...sharedInterests.slice(0, 2))
+  if (sharedLangs.length) tags.push(sharedLangs[0])
+  if (bothInternational) tags.push('New to Munich')
 
   let reason = 'Worth getting to know.'
-  if (iSeekMentor) {
+  if (mutualCount > 0) {
+    reason = `${mutualCount} mutual connection${mutualCount === 1 ? '' : 's'} in your knot.`
+  } else if (iSeekMentor) {
     reason = `Open to mentoring${sharedInterests.length ? ` — also into ${sharedInterests[0]}` : ''}.`
   } else if (mentorMatch) {
     reason = 'Looking for a mentor like you.'
-  } else if (sharedInterests.length >= 2) {
-    reason = `Both into ${sharedInterests.slice(0, 2).join(' and ')}.`
-  } else if (sharedInterests.length === 1 && bothInternational) {
-    reason = `Also new to Munich and into ${sharedInterests[0]}.`
-  } else if (sharedInterests.length === 1) {
-    reason = `Also into ${sharedInterests[0]}.`
-  } else if (bothInternational) {
-    reason = `Also new to Munich${candidate.home_country ? ` (from ${candidate.home_country})` : ''}.`
-  } else if (sharedGoals.length) {
-    reason = `Shares your goal: ${sharedGoals[0].toLowerCase()}.`
-  } else if (sharedLangs.length) {
-    reason = `Also speaks ${sharedLangs[0]}.`
   } else if (sameUniversity) {
     reason = `Also at ${candidate.university}.`
   } else if (sharedSkills.length) {
     reason = `Shares ${sharedSkills[0]} with you.`
-  } else if (mutualCount > 0) {
-    reason = `${mutualCount} mutual connection${mutualCount === 1 ? '' : 's'} in your knot.`
+  } else if (sharedGoals.length) {
+    reason = `Shares your goal: ${sharedGoals[0].toLowerCase()}.`
+  } else if (sharedInterests.length >= 2) {
+    reason = `Both interested in ${sharedInterests.slice(0, 2).join(' and ')}.`
+  } else if (sharedInterests.length === 1) {
+    reason = `Shares your interest in ${sharedInterests[0]}.`
+  } else if (sharedLangs.length) {
+    reason = `Also speaks ${sharedLangs[0]}.`
+  } else if (bothInternational) {
+    reason = `Also new to Munich${candidate.home_country ? ` (from ${candidate.home_country})` : ''}.`
   } else if (sameCity) {
     reason = `Also based in ${candidate.location_city}.`
   }
