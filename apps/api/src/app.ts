@@ -25,7 +25,7 @@ import { relationshipHomeRouter } from './routes/relationshipHome.js'
 import { companionRouter } from './routes/companion.js'
 import { betaRouter } from './routes/beta.js'
 import { adminPanelRouter } from './routes/adminPanel.js'
-import { describeAdminAuthError, listAuthUsers } from './lib/supabaseAdminAuth.js'
+import { describeAdminAuthError, getAuthUsersByIds } from './lib/supabaseAdminAuth.js'
 import { questsRouter } from './routes/quests.js'
 import { eventsRouter } from './routes/events.js'
 import { forYouRouter } from './routes/forYou.js'
@@ -123,11 +123,21 @@ app.get('/health/db', async (_req, res) => {
 })
 
 // Read-only deployment probe for the separate Supabase Auth Admin boundary.
-// Database health alone cannot catch a missing/invalid secret-key permission.
+// It validates every current profile independently, matching the account panel
+// workload while tolerating and reporting isolated profile-only records.
 app.get('/health/admin-auth', async (_req, res) => {
   try {
-    await listAuthUsers(1, 1)
-    return res.json({ ok: true, adminAuth: 'available' })
+    const profiles = await supabase.from('users').select('auth_id').not('auth_id', 'is', null).limit(1000)
+    if (profiles.error) throw profiles.error
+    const authIds = (profiles.data ?? []).map((profile) => profile.auth_id).filter(Boolean)
+    const result = await getAuthUsersByIds(authIds, 8)
+    if (result.failures.length) {
+      console.warn(`[health/admin-auth] ${result.failures.length} profile-only account(s): ${result.failures.map((failure) => `${failure.authId}:${failure.code}:${failure.message}`).join(',')}`)
+      if (result.users.size === 0 && result.checked > 0) {
+        return res.status(503).json({ ok: false, adminAuth: 'unavailable', usersChecked: result.checked, profilesOnly: result.failures.length })
+      }
+    }
+    return res.json({ ok: true, adminAuth: 'available', usersChecked: result.checked, profilesOnly: result.failures.length })
   } catch (error) {
     const detail = describeAdminAuthError(error)
     console.error(`[health/admin-auth] ${detail.code}: ${detail.message}`)

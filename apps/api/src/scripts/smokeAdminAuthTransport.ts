@@ -52,16 +52,19 @@ process.env.SUPABASE_URL = `http://127.0.0.1:${address.port}`
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'sb_secret_transport_smoke'
 
 try {
-  const { deleteAuthUser, getAuthUser, listAuthUsers, setAuthUserBan } = await import('../lib/supabaseAdminAuth.js')
+  const { deleteAuthUser, getAuthUser, getAuthUsersByIds, listAuthUsers, setAuthUserBan } = await import('../lib/supabaseAdminAuth.js')
   const page = await listAuthUsers(1, 2)
   assert.equal(page.users.length, 1)
   assert.equal(page.total, 3)
   assert.equal(page.nextPage, 2)
+  const byId = await getAuthUsersByIds([authId, authId], 2)
+  assert.equal(byId.users.size, 1)
+  assert.equal(byId.failures.length, 0)
   assert.equal((await getAuthUser(authId)).email, user.email)
   assert.equal((await setAuthUserBan(authId, '876000h')).banned_until, '2126-01-01T00:00:00.000Z')
   await deleteAuthUser(authId)
 
-  assert.equal(requests.length, 4)
+  assert.equal(requests.length, 5)
   for (const request of requests) {
     assert.equal(request.apikey, 'sb_secret_transport_smoke')
     assert.equal(request.authorization, undefined, 'sb_secret_* must not be sent as a Bearer JWT')

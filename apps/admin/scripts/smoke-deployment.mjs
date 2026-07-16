@@ -64,9 +64,9 @@ async function checkApi() {
 
   const adminAuthResponse = await request(new URL('/health/admin-auth', apiUrl))
   const adminAuth = await jsonBody(adminAuthResponse)
-  if (adminAuthResponse.status !== 200 || adminAuth.json?.ok !== true || adminAuth.json?.adminAuth !== 'available') {
+  if (adminAuthResponse.status !== 200 || adminAuth.json?.ok !== true || adminAuth.json?.adminAuth !== 'available' || !Number.isFinite(adminAuth.json?.usersChecked)) {
     fail('Supabase Auth Admin', `expected an available Auth transport, received ${adminAuthResponse.status} ${adminAuth.text.slice(0, 160)}`)
-  } else pass('Supabase Auth Admin', 'secret and Auth permissions are valid')
+  } else pass('Supabase Auth Admin', `secret valid; ${adminAuth.json.usersChecked} profiles checked; ${adminAuth.json.profilesOnly ?? 0} profile only`)
 
   const unauthenticated = await request(new URL('/api/admin-panel/accounts', apiUrl))
   const unauthenticatedBody = await jsonBody(unauthenticated)

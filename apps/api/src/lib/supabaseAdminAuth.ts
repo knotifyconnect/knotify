@@ -107,6 +107,30 @@ export async function getAuthUser(authId: string): Promise<User> {
   return user as User
 }
 
+export async function getAuthUsersByIds(authIds: string[], concurrency = 8) {
+  const uniqueIds = [...new Set(authIds.filter(Boolean))]
+  const users = new Map<string, User>()
+  const failures: { authId: string; message: string; code: string }[] = []
+  const batchSize = Math.max(1, Math.min(concurrency, 16))
+
+  for (let start = 0; start < uniqueIds.length; start += batchSize) {
+    const batch = uniqueIds.slice(start, start + batchSize)
+    const results = await Promise.allSettled(batch.map((authId) => getAuthUser(authId)))
+    for (let index = 0; index < results.length; index++) {
+      const result = results[index]
+      const authId = batch[index]
+      if (result.status === 'fulfilled') {
+        users.set(authId, result.value)
+      } else {
+        const detail = describeAdminAuthError(result.reason)
+        failures.push({ authId, message: detail.message, code: detail.code })
+      }
+    }
+  }
+
+  return { users, failures, checked: uniqueIds.length }
+}
+
 export async function setAuthUserBan(authId: string, banDuration: string): Promise<User> {
   const result = await adminAuthRequest(`/admin/users/${encodeURIComponent(authId)}`, {
     method: 'PUT', body: JSON.stringify({ ban_duration: banDuration }),
