@@ -93,13 +93,6 @@ function primaryProfileLine(user: DiscoverUser) {
   return 'Profile details available'
 }
 
-function supportingProfileLine(user: DiscoverUser, primaryLine: string) {
-  const primary = normalise(primaryLine)
-  return [user.current_company, user.university]
-    .filter((value): value is string => Boolean(value?.trim()) && !primary.includes(normalise(value)))
-    .join(' · ')
-}
-
 function skillKey(skill: Skill) {
   return normalise(skill.name)
 }
@@ -456,21 +449,17 @@ export function DiscoverPage() {
   function PersonCard({ user }: { user: DiscoverUser }) {
     const pill = statusPill(user.status)
     const reason = user.match_reason || fallbackReason(user, me, meSkills)
-    const shared = sharedSkillNames(user, meSkills)
     const primaryLine = primaryProfileLine(user)
-    const supportingLine = supportingProfileLine(user, primaryLine)
-    const displayedSkills = shared.slice(0, 3)
     const mutualCount = user.mutual_connections_count ?? 0
     const reasonAlreadyShowsMutual = /mutual connection/i.test(reason)
 
     return (
       <KCard
         className="k-discover-person-card"
-        style={{ padding: '16px', cursor: 'pointer' }}
-        onClick={() => navigate(`/profile/${user.id}`)}
+        style={{ padding: '12px' }}
       >
         <div className="k-discover-person-identity" style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <KAvatar name={user.full_name} src={user.avatar_url} size={46} style={{ flexShrink: 0 }} />
+          <KAvatar name={user.full_name} src={user.avatar_url} size={42} style={{ flexShrink: 0 }} />
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, minWidth: 0 }}>
@@ -484,24 +473,20 @@ export function DiscoverPage() {
               @{user.username}
             </div>
 
-            <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.35, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
+            <div style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {primaryLine}
             </div>
           </div>
         </div>
 
-        <div className="k-discover-person-facts" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 8px' }}>
+        <div className="k-discover-person-facts" style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
           <KPill color={pill.color}>{pill.label}</KPill>
-          {user.location_city && <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{user.location_city}</span>}
+          {user.location_city && <span style={{ minWidth: 0, fontSize: 12, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.location_city}</span>}
           {mutualCount > 0 && !reasonAlreadyShowsMutual && (
-            <span style={{ fontSize: 12, color: 'var(--verd)', fontWeight: 600 }}>
+            <span style={{ flexShrink: 0, fontSize: 12, color: 'var(--verd)', fontWeight: 600 }}>
               {mutualCount} mutual
             </span>
           )}
-        </div>
-
-        <div className="k-discover-person-context" style={{ fontSize: 12, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {supportingLine || '\u00a0'}
         </div>
 
         <div className="k-discover-person-signal" style={{ borderLeft: '3px solid var(--verd)', background: 'rgba(31,107,94,0.055)', borderRadius: '0 10px 10px 0', padding: '8px 10px' }}>
@@ -511,34 +496,6 @@ export function DiscoverPage() {
           <div style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.35, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
             {reason}
           </div>
-        </div>
-
-        <div className="k-discover-person-evidence" style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
-          {displayedSkills.length > 0 && <>
-            <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', flexShrink: 0 }}>
-              Shared skills
-            </span>
-            <div style={{ display: 'flex', gap: 5, minWidth: 0, overflow: 'hidden' }}>
-            {displayedSkills.map((skillName) => (
-              <span
-                key={`${user.id}-${skillName}`}
-                style={{
-                  fontSize: 11,
-                  color: 'var(--signal)',
-                  border: '0.5px solid rgba(216,68,43,0.22)',
-                  background: 'rgba(216,68,43,0.06)',
-                  borderRadius: 999,
-                  padding: '3px 7px',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {skillName}
-              </span>
-            ))}
-            </div>
-          </>}
         </div>
 
         <div className="k-discover-person-actions" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>

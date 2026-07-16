@@ -73,17 +73,15 @@ body {
    identical geometry. Actions and connection signals align across the grid. */
 .k-discover-person-card {
   box-sizing: border-box;
-  height: 320px;
+  height: 220px;
   display: grid;
-  grid-template-rows: 76px 24px 17px 64px 24px 36px;
-  row-gap: 9px;
+  grid-template-rows: 58px 24px 54px 36px;
+  row-gap: 8px;
 }
 
 .k-discover-person-identity,
 .k-discover-person-facts,
-.k-discover-person-context,
 .k-discover-person-signal,
-.k-discover-person-evidence,
 .k-discover-person-actions {
   min-width: 0;
 }
@@ -95,9 +93,9 @@ body {
 
 @media (max-width: 767px) {
   .k-discover-person-card {
-    height: 312px;
-    grid-template-rows: 72px 24px 17px 60px 22px 36px;
-    row-gap: 9px;
+    height: 226px;
+    grid-template-rows: 62px 24px 58px 36px;
+    row-gap: 7px;
   }
 }
 
