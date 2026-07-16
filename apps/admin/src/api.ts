@@ -15,7 +15,15 @@ async function request(path: string, options: RequestInit = {}) {
   })
   if (res.status === 401) throw new Error('UNAUTHORIZED')
   const data = await res.json().catch(() => ({} as Record<string, unknown>))
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`)
+  if (!res.ok) {
+    const error = (data as { error?: unknown }).error
+    const message = typeof error === 'string' && error.trim()
+      ? error
+      : error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+        ? error.message
+        : `Request failed (${res.status})`
+    throw new Error(message)
+  }
   return data
 }
 

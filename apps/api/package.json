@@ -30,6 +30,7 @@
     "smoke:model-gateway": "tsx src/scripts/smokeModelGateway.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke:admin-auth-transport": "tsx src/scripts/smokeAdminAuthTransport.ts",
     "lint": "echo 'No lint configured for api'",
     "start": "node dist/index.js",
     "smoke:cv-model-reconciliation": "tsx src/scripts/smokeCvModelReconciliation.ts",

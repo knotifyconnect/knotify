@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { supabase } from '../lib.js'
 import { ADMIN_EMAILS, invalidateAccessCache } from '../lib/access.js'
 import { sendBetaApprovalEmail } from '../lib/email.js'
+import { deleteAuthUser, describeAdminAuthError, getAuthUser, listAuthUsers, setAuthUserBan } from '../lib/supabaseAdminAuth.js'
 
 export const adminPanelRouter = Router()
 
@@ -36,14 +37,6 @@ const accountActionSchema = z.object({
   confirmation: z.string().trim().max(320).optional(),
 })
 
-const accountProfileFields = [
-  'id', 'auth_id', 'email', 'full_name', 'username', 'avatar_url', 'headline',
-  'location_city', 'university', 'current_company', 'status', 'persona',
-  'interests', 'goals', 'is_international', 'home_country', 'is_admin', 'is_hr',
-  'is_premium', 'is_online', 'last_seen_at', 'terms_accepted_at', 'terms_version',
-  'created_at', 'updated_at',
-].join(', ')
-
 function isAccountBanned(bannedUntil?: string | null) {
   return Boolean(bannedUntil && new Date(bannedUntil).getTime() > Date.now())
 }
@@ -63,20 +56,21 @@ function accountProfileCompletion(profile: any) {
   return Math.round((checks.filter(Boolean).length / checks.length) * 100)
 }
 
-function serializeAccount(authUser: any, profile: any) {
-  const providers = Array.isArray(authUser.app_metadata?.providers)
+function serializeAccount(authUser: any | null, profile: any | null) {
+  const providers = Array.isArray(authUser?.app_metadata?.providers)
     ? authUser.app_metadata.providers
-    : [...new Set((authUser.identities ?? []).map((identity: any) => identity.provider).filter(Boolean))]
-  const banned = isAccountBanned(authUser.banned_until)
+    : [...new Set((authUser?.identities ?? []).map((identity: any) => identity.provider).filter(Boolean))]
+  const authId = authUser?.id ?? profile?.auth_id
+  const banned = isAccountBanned(authUser?.banned_until)
   return {
-    id: authUser.id,
-    authId: authUser.id,
+    id: authId,
+    authId,
     profileId: profile?.id ?? null,
-    email: authUser.email ?? profile?.email ?? null,
-    phone: authUser.phone ?? null,
-    fullName: profile?.full_name ?? authUser.user_metadata?.full_name ?? authUser.user_metadata?.name ?? null,
+    email: authUser?.email ?? profile?.email ?? null,
+    phone: authUser?.phone ?? null,
+    fullName: profile?.full_name ?? authUser?.user_metadata?.full_name ?? authUser?.user_metadata?.name ?? null,
     username: profile?.username ?? null,
-    avatarUrl: profile?.avatar_url ?? authUser.user_metadata?.avatar_url ?? null,
+    avatarUrl: profile?.avatar_url ?? authUser?.user_metadata?.avatar_url ?? null,
     headline: profile?.headline ?? null,
     locationCity: profile?.location_city ?? null,
     university: profile?.university ?? null,
@@ -96,17 +90,18 @@ function serializeAccount(authUser: any, profile: any) {
     termsVersion: profile?.terms_version ?? null,
     profileCreatedAt: profile?.created_at ?? null,
     profileUpdatedAt: profile?.updated_at ?? null,
-    authCreatedAt: authUser.created_at,
-    authUpdatedAt: authUser.updated_at ?? null,
-    lastSignInAt: authUser.last_sign_in_at ?? null,
-    emailConfirmedAt: authUser.email_confirmed_at ?? authUser.confirmed_at ?? null,
-    phoneConfirmedAt: authUser.phone_confirmed_at ?? null,
-    invitedAt: authUser.invited_at ?? null,
+    authCreatedAt: authUser?.created_at ?? profile?.created_at ?? null,
+    authUpdatedAt: authUser?.updated_at ?? null,
+    lastSignInAt: authUser?.last_sign_in_at ?? profile?.last_seen_at ?? null,
+    emailConfirmedAt: authUser?.email_confirmed_at ?? authUser?.confirmed_at ?? null,
+    phoneConfirmedAt: authUser?.phone_confirmed_at ?? null,
+    invitedAt: authUser?.invited_at ?? null,
     providers,
-    isSso: Boolean(authUser.is_sso_user),
-    isAnonymous: Boolean(authUser.is_anonymous),
-    bannedUntil: banned ? authUser.banned_until : null,
+    isSso: Boolean(authUser?.is_sso_user),
+    isAnonymous: Boolean(authUser?.is_anonymous),
+    bannedUntil: banned ? authUser?.banned_until : null,
     accountStatus: banned ? 'deactivated' : 'active',
+    authAvailable: Boolean(authUser),
     profileCompletion: accountProfileCompletion(profile),
     onboardingComplete: Boolean(
       profile?.persona &&
@@ -119,28 +114,54 @@ function serializeAccount(authUser: any, profile: any) {
 adminPanelRouter.get('/accounts', async (req, res) => {
   const parsed = accountQuerySchema.safeParse(req.query)
   if (!parsed.success) return res.status(422).json({ error: 'Invalid pagination.' })
-  const authResult = await supabase.auth.admin.listUsers({ page: parsed.data.page, perPage: parsed.data.perPage })
-  if (authResult.error) return res.status(500).json({ error: authResult.error.message })
-
-  const authUsers = authResult.data.users ?? []
-  const authIds = authUsers.map((user) => user.id)
-  const profileResult = authIds.length
-    ? await supabase.from('users').select(accountProfileFields).in('auth_id', authIds)
-    : { data: [], error: null }
+  const from = (parsed.data.page - 1) * parsed.data.perPage
+  const to = from + parsed.data.perPage - 1
+  const profileResult = await supabase
+    .from('users')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to)
   if (profileResult.error) return res.status(500).json({ error: profileResult.error.message })
 
-  const profileByAuthId = new Map((profileResult.data ?? []).map((profile: any) => [profile.auth_id, profile]))
-  const accounts = authUsers.map((user) => serializeAccount(user, profileByAuthId.get(user.id)))
-  const total = authResult.data.total || accounts.length
+  const profiles = (profileResult.data ?? []) as any[]
+  const profileByAuthId = new Map(profiles.filter((profile) => profile.auth_id).map((profile) => [profile.auth_id, profile]))
+  let authUsers: any[] = []
+  let authTotal = 0
+  let authAvailable = true
+  let warning: string | null = null
+  let authPagination = { nextPage: null as number | null, lastPage: parsed.data.page }
+
+  try {
+    const authPage = await listAuthUsers(parsed.data.page, parsed.data.perPage)
+    authUsers = authPage.users
+    authTotal = authPage.total
+    authPagination = { nextPage: authPage.nextPage, lastPage: authPage.lastPage }
+  } catch (error) {
+    const detail = describeAdminAuthError(error)
+    authAvailable = false
+    warning = 'Profile accounts loaded, but Supabase Auth metadata is temporarily unavailable. Lifecycle actions are disabled until the server secret-key permission is corrected.'
+    console.error(`[admin-panel/accounts] ${detail.code}: ${detail.message}`)
+  }
+
+  const authById = new Map(authUsers.map((user) => [user.id, user]))
+  const accounts = profiles
+    .filter((profile) => profile.auth_id)
+    .map((profile) => serializeAccount(authById.get(profile.auth_id) ?? null, profile))
+  for (const authUser of authUsers) {
+    if (!profileByAuthId.has(authUser.id)) accounts.push(serializeAccount(authUser, null))
+  }
+  const total = authAvailable ? Math.max(authTotal, profileResult.count ?? 0) : (profileResult.count ?? accounts.length)
   return res.json({
     accounts,
+    authAvailable,
+    warning,
     pagination: {
       page: parsed.data.page,
       perPage: parsed.data.perPage,
       total,
       loaded: accounts.length,
-      nextPage: authResult.data.nextPage ?? null,
-      lastPage: authResult.data.lastPage ?? parsed.data.page,
+      nextPage: authAvailable ? authPagination.nextPage : (to + 1 < total ? parsed.data.page + 1 : null),
+      lastPage: authAvailable ? authPagination.lastPage : Math.max(1, Math.ceil(total / parsed.data.perPage)),
     },
     stats: {
       total,
@@ -156,13 +177,18 @@ adminPanelRouter.get('/accounts', async (req, res) => {
 adminPanelRouter.get('/accounts/:authId', async (req, res) => {
   const authId = accountIdSchema.safeParse(req.params.authId)
   if (!authId.success) return res.status(422).json({ error: 'Invalid account ID.' })
-  const authResult = await supabase.auth.admin.getUserById(authId.data)
-  if (authResult.error || !authResult.data.user) {
-    return res.status(authResult.error?.status === 404 ? 404 : 500).json({ error: authResult.error?.message ?? 'Account not found.' })
-  }
-  const profileResult = await supabase.from('users').select(accountProfileFields).eq('auth_id', authId.data).maybeSingle()
+  const profileResult = await supabase.from('users').select('*').eq('auth_id', authId.data).maybeSingle()
   if (profileResult.error) return res.status(500).json({ error: profileResult.error.message })
   const profile = profileResult.data as any
+  let authUser: any | null = null
+  let authWarning: string | null = null
+  try { authUser = await getAuthUser(authId.data) }
+  catch (error) {
+    const detail = describeAdminAuthError(error)
+    authWarning = 'Supabase Auth metadata is unavailable for this account. Profile data and activity are still current.'
+    console.error(`[admin-panel/accounts/${authId.data}] ${detail.code}: ${detail.message}`)
+  }
+  if (!profile && !authUser) return res.status(404).json({ error: 'Account not found.' })
 
   let activity = { connections: 0, posts: 0, messages: 0, eventRsvps: 0, gigs: 0 }
   if (profile?.id) {
@@ -182,7 +208,7 @@ adminPanelRouter.get('/accounts/:authId', async (req, res) => {
       gigs: gigs.count ?? 0,
     }
   }
-  return res.json({ account: serializeAccount(authResult.data.user, profile), activity })
+  return res.json({ account: serializeAccount(authUser, profile), activity, warning: authWarning })
 })
 
 adminPanelRouter.patch('/accounts/:authId/roles', async (req, res) => {
@@ -221,26 +247,32 @@ adminPanelRouter.post('/accounts/:authId/action', async (req, res) => {
   const parsed = accountActionSchema.safeParse(req.body)
   if (!parsed.success) return res.status(422).json({ error: 'Invalid account action.' })
 
-  const authResult = await supabase.auth.admin.getUserById(authId.data)
-  if (authResult.error || !authResult.data.user) {
-    return res.status(authResult.error?.status === 404 ? 404 : 500).json({ error: authResult.error?.message ?? 'Account not found.' })
+  let authUser
+  try { authUser = await getAuthUser(authId.data) }
+  catch (error) {
+    const detail = describeAdminAuthError(error)
+    return res.status(detail.status).json({ error: detail.message, code: detail.code })
   }
 
   if (parsed.data.action === 'deactivate' || parsed.data.action === 'reactivate') {
     const banDuration = parsed.data.action === 'deactivate' ? '876000h' : 'none'
-    const update = await supabase.auth.admin.updateUserById(authId.data, { ban_duration: banDuration })
-    if (update.error) return res.status(500).json({ error: update.error.message })
+    let updatedUser
+    try { updatedUser = await setAuthUserBan(authId.data, banDuration) }
+    catch (error) {
+      const detail = describeAdminAuthError(error)
+      return res.status(detail.status).json({ error: detail.message, code: detail.code })
+    }
     console.info(`[admin-panel] account ${authId.data} ${parsed.data.action}d`)
     return res.json({
       ok: true,
       accountStatus: parsed.data.action === 'deactivate' ? 'deactivated' : 'active',
-      bannedUntil: parsed.data.action === 'deactivate' ? update.data.user?.banned_until ?? null : null,
+      bannedUntil: parsed.data.action === 'deactivate' ? updatedUser.banned_until ?? null : null,
     })
   }
 
-  const expectedConfirmation = (authResult.data.user.email ?? authId.data).toLowerCase()
+  const expectedConfirmation = (authUser.email ?? authId.data).toLowerCase()
   if ((parsed.data.confirmation ?? '').toLowerCase() !== expectedConfirmation) {
-    return res.status(422).json({ error: `Type ${authResult.data.user.email ?? authId.data} to confirm permanent deletion.` })
+    return res.status(422).json({ error: `Type ${authUser.email ?? authId.data} to confirm permanent deletion.` })
   }
 
   const profile = await supabase.from('users').select('id, is_admin').eq('auth_id', authId.data).maybeSingle()
@@ -251,8 +283,11 @@ adminPanelRouter.post('/accounts/:authId/action', async (req, res) => {
     if ((adminCount.count ?? 0) <= 1) return res.status(409).json({ error: 'The last admin account cannot be deleted.' })
   }
 
-  const deletion = await supabase.auth.admin.deleteUser(authId.data)
-  if (deletion.error) return res.status(500).json({ error: deletion.error.message })
+  try { await deleteAuthUser(authId.data) }
+  catch (error) {
+    const detail = describeAdminAuthError(error)
+    return res.status(detail.status).json({ error: detail.message, code: detail.code })
+  }
   if (profile.data?.id) {
     const cleanup = await supabase.from('users').delete().eq('id', profile.data.id)
     if (cleanup.error) {

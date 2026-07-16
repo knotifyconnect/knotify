@@ -49,6 +49,7 @@ type Account = {
   isAnonymous: boolean
   bannedUntil: string | null
   accountStatus: AccountStatus
+  authAvailable: boolean
   profileCompletion: number
   onboardingComplete: boolean
 }
@@ -59,8 +60,10 @@ type AccountsResponse = {
   accounts: Account[]
   stats: AccountStats
   pagination: { total: number; loaded: number }
+  authAvailable: boolean
+  warning: string | null
 }
-type AccountDetailResponse = { account: Account; activity: Activity }
+type AccountDetailResponse = { account: Account; activity: Activity; warning?: string | null }
 type StatusFilter = 'all' | 'active' | 'deactivated' | 'unverified' | 'incomplete'
 type RoleFilter = 'all' | 'admin' | 'hr' | 'premium' | 'member'
 type Sort = 'newest' | 'last-sign-in' | 'name' | 'completion'
@@ -183,6 +186,7 @@ export function AccountsAdmin() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [serverWarning, setServerWarning] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
   const [role, setRole] = useState<RoleFilter>('all')
@@ -205,6 +209,7 @@ export function AccountsAdmin() {
       setAccounts(response.accounts ?? [])
       setStats(response.stats)
       setLoaded(response.pagination.loaded)
+      setServerWarning(response.warning ?? '')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load accounts.')
     } finally {
@@ -352,6 +357,7 @@ export function AccountsAdmin() {
 
       {notice && <div style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 120, maxWidth: 360, borderRadius: 11, padding: '11px 14px', background: C.ink, color: C.white, fontSize: 12, boxShadow: '0 12px 34px rgba(20,15,10,.2)' }}>✓ {notice}</div>}
       {error && <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 14px', borderRadius: 10, color: C.signal, background: C.signalSoft, border: '0.5px solid rgba(216,68,43,.18)', fontSize: 12, marginBottom: 15 }}><span>{error}</span><button onClick={() => setError('')} style={{ border: 'none', background: 'none', color: C.signal, cursor: 'pointer' }}>×</button></div>}
+      {serverWarning && <div style={{ padding: '11px 14px', borderRadius: 10, color: C.amber, background: C.amberSoft, border: '0.5px solid rgba(180,83,9,.18)', fontSize: 12, lineHeight: 1.45, marginBottom: 15 }}>⚠ {serverWarning}</div>}
 
       <div className="account-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 10, marginBottom: 18 }}>
         <StatCard label="Total accounts" value={stats.total} sub={`${loaded} loaded`} />
@@ -391,7 +397,7 @@ export function AccountsAdmin() {
                 <div style={{ position: 'relative' }}><Avatar account={account} /><span title={account.isOnline ? 'Online now' : 'Offline'} style={{ position: 'absolute', right: -2, bottom: -1, width: 9, height: 9, borderRadius: 99, background: account.isOnline ? C.verd : C.inkFaint, border: `2px solid ${C.paper}` }} /></div>
                 <div style={{ minWidth: 0 }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ color: C.ink, fontSize: 12.5, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{account.fullName || 'Profile not completed'}</span>{!account.profileId && <Pill color={C.amber} background={C.amberSoft}>No profile</Pill>}</div><div style={{ color: C.inkMuted, fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>{account.email || account.phone || account.authId}</div></div>
               </div>
-              <div><div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}><Pill {...colors}>{roleLabel(account)}</Pill>{account.accountStatus === 'deactivated' ? <Pill color={C.signal} background={C.signalSoft}>● Deactivated</Pill> : <Pill color={C.verd} background={C.verdSoft}>● Active</Pill>}</div><div style={{ marginTop: 5, color: verified ? C.inkFaint : C.amber, fontSize: 10.5 }}>{verified ? '✓ Identity verified' : '⚠ Not verified'}</div></div>
+              <div><div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}><Pill {...colors}>{roleLabel(account)}</Pill>{!account.authAvailable ? <Pill color={C.amber} background={C.amberSoft}>Profile only</Pill> : account.accountStatus === 'deactivated' ? <Pill color={C.signal} background={C.signalSoft}>● Deactivated</Pill> : <Pill color={C.verd} background={C.verdSoft}>● Active</Pill>}</div><div style={{ marginTop: 5, color: verified ? C.inkFaint : C.amber, fontSize: 10.5 }}>{account.authAvailable ? (verified ? '✓ Identity verified' : '⚠ Not verified') : 'Auth metadata unavailable'}</div></div>
               <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.inkMuted, marginBottom: 5 }}><span>Profile health</span><strong style={{ color: account.profileCompletion >= 75 ? C.verd : account.profileCompletion >= 40 ? C.amber : C.signal }}>{account.profileCompletion}%</strong></div><div style={{ height: 4, background: C.paperSoft, borderRadius: 99, overflow: 'hidden' }}><div style={{ height: '100%', width: `${account.profileCompletion}%`, background: account.profileCompletion >= 75 ? C.verd : account.profileCompletion >= 40 ? C.amber : C.signal, borderRadius: 99 }} /></div><div style={{ marginTop: 5, fontSize: 10, color: C.inkFaint }}>{account.providers.join(', ') || 'Unknown provider'}</div></div>
               <div><div style={{ fontSize: 11.5, color: C.ink }}>{timeAgo(account.lastSignInAt)}</div><div style={{ fontSize: 10, color: C.inkFaint, marginTop: 3 }}>Joined {timeAgo(account.authCreatedAt)}</div></div>
               <span style={{ color: C.inkFaint, fontSize: 17 }}>›</span>
@@ -416,7 +422,7 @@ export function AccountsAdmin() {
 
               <section style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 13, padding: '14px 15px', marginBottom: 12 }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 6 }}>Authentication</div><DetailRow label="Provider" value={shownAccount.providers.join(', ') || 'Unknown'} /><DetailRow label="Last sign-in" value={fullDate(shownAccount.lastSignInAt)} /><DetailRow label="Last seen" value={fullDate(shownAccount.lastSeenAt)} /><DetailRow label="Account created" value={fullDate(shownAccount.authCreatedAt)} /><DetailRow label="Email verified" value={fullDate(shownAccount.emailConfirmedAt)} /><DetailRow label="Auth ID" value={<span>{shownAccount.authId} <button onClick={() => copy(shownAccount.authId)} style={{ border: 'none', background: 'none', color: C.blue, padding: 0, marginLeft: 5, cursor: 'pointer', fontSize: 10 }}>Copy</button></span>} mono /><DetailRow label="Profile ID" value={shownAccount.profileId ? <span>{shownAccount.profileId} <button onClick={() => copy(shownAccount.profileId!)} style={{ border: 'none', background: 'none', color: C.blue, padding: 0, marginLeft: 5, cursor: 'pointer', fontSize: 10 }}>Copy</button></span> : null} mono /></section>
 
-              <section style={{ background: C.white, border: `0.5px solid ${shownAccount.accountStatus === 'deactivated' ? 'rgba(45,125,70,.2)' : 'rgba(216,68,43,.2)'}`, borderRadius: 13, padding: '14px 15px' }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 4 }}>Account lifecycle</div><p style={{ margin: '0 0 12px', color: C.inkMuted, fontSize: 10.5, lineHeight: 1.5 }}>{shownAccount.accountStatus === 'deactivated' ? 'This account is blocked from signing in. Reactivation is immediate and keeps all user data.' : 'Deactivation blocks sign-in and is reversible. Permanent deletion removes the Auth identity and profile data.'}</p>{shownAccount.accountStatus === 'deactivated' ? <button disabled={Boolean(busy)} onClick={() => void runAction('reactivate')} style={{ ...buttonBase, width: '100%', background: C.verd, color: C.white }}>{busy === 'reactivate' ? 'Reactivating…' : 'Reactivate account'}</button> : <button disabled={Boolean(busy)} onClick={() => setConfirmMode('deactivate')} style={{ ...buttonBase, width: '100%', background: C.amberSoft, color: C.amber, border: '0.5px solid rgba(180,83,9,.16)' }}>Deactivate account</button>}<button disabled={Boolean(busy)} onClick={() => { setConfirmMode('delete'); setConfirmation('') }} style={{ ...buttonBase, width: '100%', marginTop: 8, background: 'transparent', color: C.signal, border: `0.5px solid ${C.rule}` }}>Permanently delete…</button></section>
+              <section style={{ background: C.white, border: `0.5px solid ${shownAccount.accountStatus === 'deactivated' ? 'rgba(45,125,70,.2)' : 'rgba(216,68,43,.2)'}`, borderRadius: 13, padding: '14px 15px' }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 4 }}>Account lifecycle</div><p style={{ margin: '0 0 12px', color: C.inkMuted, fontSize: 10.5, lineHeight: 1.5 }}>{!shownAccount.authAvailable ? 'Lifecycle controls are safely disabled because Supabase Auth metadata could not be verified. Profile and role administration remain available.' : shownAccount.accountStatus === 'deactivated' ? 'This account is blocked from signing in. Reactivation is immediate and keeps all user data.' : 'Deactivation blocks sign-in and is reversible. Permanent deletion removes the Auth identity and profile data.'}</p>{shownAccount.accountStatus === 'deactivated' ? <button disabled={Boolean(busy) || !shownAccount.authAvailable} onClick={() => void runAction('reactivate')} style={{ ...buttonBase, width: '100%', background: C.verd, color: C.white, opacity: shownAccount.authAvailable ? 1 : .45 }}>{busy === 'reactivate' ? 'Reactivating…' : 'Reactivate account'}</button> : <button disabled={Boolean(busy) || !shownAccount.authAvailable} onClick={() => setConfirmMode('deactivate')} style={{ ...buttonBase, width: '100%', background: C.amberSoft, color: C.amber, border: '0.5px solid rgba(180,83,9,.16)', opacity: shownAccount.authAvailable ? 1 : .45 }}>Deactivate account</button>}<button disabled={Boolean(busy) || !shownAccount.authAvailable} onClick={() => { setConfirmMode('delete'); setConfirmation('') }} style={{ ...buttonBase, width: '100%', marginTop: 8, background: 'transparent', color: C.signal, border: `0.5px solid ${C.rule}`, opacity: shownAccount.authAvailable ? 1 : .45 }}>Permanently delete…</button></section>
             </div>
           </aside>
         </div>
