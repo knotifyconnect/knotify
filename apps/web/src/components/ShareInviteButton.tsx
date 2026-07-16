@@ -16,8 +16,8 @@ function firstName(value?: string | null) {
 }
 
 function buildMessage(name: string) {
-  const who = name ? `${name} here: ` : ''
-  return `${who}I've been using knotify to actually meet people in Munich. Come connect:`
+  const who = name ? `Hey it's ${name}, ` : 'Hey, '
+  return `${who}I'm building my trusted circle on knotify, and you're one of the people I'd genuinely like to have in it.\n\nknotify helps us turn our connections into real help, useful introductions, opportunities, and relationships that don't quietly fade away.\n\nLater you can invite your friends too.\n\nJoin my circle here:`
 }
 
 export function ShareInviteButton({
