@@ -465,18 +465,19 @@ export function DiscoverPage() {
 
     return (
       <KCard
-        style={{ padding: '16px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 11 }}
+        className="k-discover-person-card"
+        style={{ padding: '16px', cursor: 'pointer' }}
         onClick={() => navigate(`/profile/${user.id}`)}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div className="k-discover-person-identity" style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <KAvatar name={user.full_name} src={user.avatar_url} size={46} style={{ flexShrink: 0 }} />
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-              <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, minWidth: 0 }}>
+              <span style={{ minWidth: 0, flex: 1, fontSize: 15, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {user.full_name}
               </span>
-              <VerifiedBadge size={13} />
+              <span style={{ flexShrink: 0, display: 'inline-flex' }}><VerifiedBadge size={13} /></span>
             </div>
 
             <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -489,7 +490,7 @@ export function DiscoverPage() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 8px', minHeight: 24 }}>
+        <div className="k-discover-person-facts" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 8px' }}>
           <KPill color={pill.color}>{pill.label}</KPill>
           {user.location_city && <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{user.location_city}</span>}
           {mutualCount > 0 && !reasonAlreadyShowsMutual && (
@@ -499,13 +500,11 @@ export function DiscoverPage() {
           )}
         </div>
 
-        {supportingLine && (
-          <div style={{ fontSize: 12, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {supportingLine}
-          </div>
-        )}
+        <div className="k-discover-person-context" style={{ fontSize: 12, color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {supportingLine || '\u00a0'}
+        </div>
 
-        <div style={{ borderLeft: '3px solid var(--verd)', background: 'rgba(31,107,94,0.055)', borderRadius: '0 10px 10px 0', padding: '8px 10px' }}>
+        <div className="k-discover-person-signal" style={{ borderLeft: '3px solid var(--verd)', background: 'rgba(31,107,94,0.055)', borderRadius: '0 10px 10px 0', padding: '8px 10px' }}>
           <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--verd)', fontWeight: 600, marginBottom: 3 }}>
             Connection signal
           </div>
@@ -514,8 +513,8 @@ export function DiscoverPage() {
           </div>
         </div>
 
-        {displayedSkills.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <div className="k-discover-person-evidence" style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+          {displayedSkills.length > 0 && <>
             <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', flexShrink: 0 }}>
               Shared skills
             </span>
@@ -539,10 +538,10 @@ export function DiscoverPage() {
               </span>
             ))}
             </div>
-          </div>
-        )}
+          </>}
+        </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingTop: 1, marginTop: 'auto' }}>
+        <div className="k-discover-person-actions" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
           <KBtn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/profile/${user.id}`) }}>
             View profile
           </KBtn>
@@ -1024,7 +1023,7 @@ export function DiscoverPage() {
             </p>
           </KCard>
         ) : visibleUsers.length > 0 ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start' }}>
+          <div className="k-discover-people-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
             {visibleUsers.map((user) => (
               <PersonCard key={user.id} user={user} />
             ))}

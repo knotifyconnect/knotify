@@ -69,6 +69,38 @@ body {
   }
 }
 
+/* Discover cards use fixed semantic rows so sparse and detailed profiles keep
+   identical geometry. Actions and connection signals align across the grid. */
+.k-discover-person-card {
+  box-sizing: border-box;
+  height: 320px;
+  display: grid;
+  grid-template-rows: 76px 24px 17px 64px 24px 36px;
+  row-gap: 9px;
+}
+
+.k-discover-person-identity,
+.k-discover-person-facts,
+.k-discover-person-context,
+.k-discover-person-signal,
+.k-discover-person-evidence,
+.k-discover-person-actions {
+  min-width: 0;
+}
+
+.k-discover-person-signal {
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+@media (max-width: 767px) {
+  .k-discover-person-card {
+    height: 312px;
+    grid-template-rows: 72px 24px 17px 60px 22px 36px;
+    row-gap: 9px;
+  }
+}
+
 /* Shared page heading rhythm. Every primary tab now starts at the same visual
    baseline and uses the same mobile title scale. */
 .k-desk-header {
