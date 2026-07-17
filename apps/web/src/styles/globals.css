@@ -138,20 +138,18 @@ body {
     min-width: 0;
   }
   .k-desk-header {
-    margin-bottom: 12px;
+    margin-bottom: 8px;
   }
   .k-desk-header-row {
     align-items: center;
-    gap: 8px 10px;
+    gap: 6px 8px;
   }
   .k-desk-header-kicker {
-    margin-bottom: 2px;
-    font-size: 10.5px;
-    line-height: 1.25;
+    display: none;
   }
   .k-desk-header-title {
-    font-size: 22px;
-    line-height: 1.04;
+    font-size: 20px;
+    line-height: 1.08;
   }
   .k-desk-header-actions {
     gap: 6px;
@@ -167,12 +165,30 @@ body {
 
   /* The shell already names the active page. These rules keep the page-level
      voice and primary action, without spending a second full hero on context. */
+  .k-relationship-home-page .k-desk-header-row {
+    align-items: flex-end;
+  }
+
+  .k-relationship-home-page .k-desk-header-copy {
+    flex-basis: 100%;
+  }
+
   .k-relationship-home-page .k-desk-header-actions {
     width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .k-relationship-home-page .k-desk-header-actions > * {
+    min-height: 30px;
+  }
+
+  .k-relationship-home-page .k-desk-header-actions > button:not(.k-desktop-only-action) {
+    flex: 1;
+    justify-content: center;
   }
 
   .k-cafes-page .k-desk-header-copy {
-    flex-basis: 180px;
+    flex-basis: 170px;
   }
 
   .k-cafes-page .k-desk-header-actions > button {
@@ -181,7 +197,17 @@ body {
   }
 
   .k-cafes-search {
-    margin-bottom: 12px !important;
+    margin-bottom: 9px !important;
+  }
+
+  .k-cafes-search input {
+    padding: 8px 12px 8px 36px !important;
+    border-radius: 999px !important;
+  }
+
+  .k-cafes-search svg {
+    top: 50% !important;
+    transform: translateY(-50%);
   }
 
   .k-discover-page .k-desk-header-copy {
@@ -207,11 +233,23 @@ body {
   }
 
   .k-discover-search {
-    margin-bottom: 9px !important;
+    margin-bottom: 7px !important;
+  }
+
+  .k-discover-search input {
+    padding-top: 9px !important;
+    padding-bottom: 9px !important;
+    border-radius: 999px !important;
   }
 
   .k-discover-tabs {
-    margin-bottom: 11px !important;
+    margin-bottom: 8px !important;
+    gap: 5px !important;
+  }
+
+  .k-discover-tabs button {
+    padding: 5px 11px !important;
+    font-size: 11.5px !important;
   }
 
   .k-discover-summary {
@@ -221,6 +259,15 @@ body {
 
   .k-discover-summary > div:first-child > div:last-child {
     display: none;
+  }
+
+  .k-discover-summary > div:first-child > div:first-child {
+    margin-bottom: 0 !important;
+  }
+
+  .k-discover-summary button {
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
   }
 }
 
@@ -254,25 +301,50 @@ body {
 @media (max-width: 767px) {
   .k-jobs-toggle-row {
     padding: 0;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
   }
 
   .k-jobs-page .k-desk-header {
-    margin-bottom: 9px;
+    margin-bottom: 6px;
+  }
+
+  .k-jobs-section-toggle {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    padding: 2px !important;
+  }
+
+  .k-jobs-section-toggle button {
+    padding: 5px 12px !important;
+    font-size: 12px !important;
   }
 
   .k-referral-inbox-card {
-    padding: 11px 13px !important;
-    margin-bottom: 11px !important;
+    padding: 9px 11px !important;
+    margin-bottom: 9px !important;
   }
 
-  .k-referral-inbox-head {
-    margin-bottom: 7px !important;
+  .k-referral-inbox-card:has(.k-referral-inbox-empty) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .k-referral-inbox-card:has(.k-referral-inbox-empty) .k-referral-inbox-head {
+    display: contents !important;
+  }
+
+  .k-referral-inbox-head button {
+    padding: 5px 9px !important;
+    font-size: 11.5px !important;
   }
 
   .k-referral-inbox-empty {
+    grid-column: 1 / -1;
     margin: 0;
-    font-size: 12.5px !important;
+    padding-top: 3px;
+    font-size: 11.5px !important;
   }
 
   .k-jobs-board {
@@ -286,11 +358,19 @@ body {
   .k-jobs-results { order: 3; }
 
   .k-job-share-toggle {
-    min-width: 96px;
+    min-width: 90px;
+    padding: 6px 10px !important;
   }
 
   .k-jobs-search {
-    margin-bottom: 10px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .k-jobs-search > input {
+    margin-bottom: 6px !important;
+    padding: 8px 11px !important;
+    border-radius: 999px !important;
+    font-size: 13px !important;
   }
 
   .k-jobs-filter-grid {
@@ -301,8 +381,27 @@ body {
 
   .k-jobs-filter-grid > * {
     width: 100%;
+    min-height: 34px;
     min-width: 0 !important;
+    padding: 6px 9px !important;
+    font-size: 12px !important;
     box-sizing: border-box;
+  }
+
+  .k-jobs-board-heading {
+    margin-bottom: 7px !important;
+    gap: 7px !important;
+  }
+
+  .k-messages-shell {
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .k-message-search input {
+    border-color: rgba(84, 75, 62, 0.16) !important;
+    background: rgba(244,239,230,0.92) !important;
   }
 
   .k-job-share-close-desktop {
@@ -667,9 +766,25 @@ body::before {
 @media (max-width: 767px) {
   .k-knot-stage { min-height: 0; }
   .your-knot-stage { height: 100%; min-height: 0; overflow: hidden; }
+  .k-knot-command-mobile {
+    padding: 7px 10px 6px !important;
+    gap: 4px !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .k-knot-command-mobile > div:first-child {
+    font-size: 18px !important;
+  }
+  .k-knot-command-mobile > div:last-child {
+    gap: 6px !important;
+  }
+  .k-knot-command-mobile > div:last-child button {
+    padding: 5px 9px !important;
+    font-size: 11.5px !important;
+  }
   .your-knot-stage .k-knot-search-box {
-    top: 8px;
-    padding: 6px 9px;
+    top: 6px;
+    padding: 5px 8px;
   }
 }
 .k-knot-bg {
