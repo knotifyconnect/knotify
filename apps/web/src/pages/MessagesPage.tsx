@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { SmilePlus, Trash2 } from 'lucide-react'
+import { Search, SmilePlus, Trash2 } from 'lucide-react'
 import { apiDeleteJson, apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot, setApiCacheSnapshot } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard, KnotifyMark } from '../lib/knotify'
@@ -1477,7 +1477,7 @@ export function MessagesPage() {
       {/* App-shell: one surface split into conversation list + thread.
           Mobile: show EITHER list OR thread (switcher driven by selectedId). */}
       <div
-        className="grid grid-cols-1 md:grid-cols-[360px_minmax(0,1fr)]"
+        className="k-messages-shell grid grid-cols-1 md:grid-cols-[360px_minmax(0,1fr)]"
         style={{
           flex: 1,
           minHeight: 0,
@@ -1513,15 +1513,22 @@ export function MessagesPage() {
                 </div>
               </div>
             </div>}
-            <div style={{ position: 'relative' }}>
+            <div className="k-message-search" style={{ position: 'relative' }}>
+              {isMobile && (
+                <Search
+                  aria-hidden="true"
+                  size={15}
+                  style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)', pointerEvents: 'none' }}
+                />
+              )}
               <input
                 ref={searchInputRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search threads or start a new chat"
+                placeholder={isMobile ? 'Search or start a chat' : 'Search threads or start a new chat'}
                 style={{
                   width: '100%',
-                  padding: isMobile ? '9px 40px 9px 14px' : '11px 42px 11px 15px',
+                  padding: isMobile ? '8px 40px 8px 36px' : '11px 42px 11px 15px',
                   borderRadius: 999,
                   border: '0.5px solid rgba(26,24,21,0.06)',
                   background: 'rgba(238,231,216,0.72)',

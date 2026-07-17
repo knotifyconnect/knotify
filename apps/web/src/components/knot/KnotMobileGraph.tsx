@@ -232,10 +232,10 @@ const VW = 390
 const VH = 600
 const CX = VW / 2
 const CY = VH / 2
-// The mobile tab bar and graph controls occupy slightly more room below the
-// canvas than the search field does above it. Center the knot in the usable
-// graph area rather than the raw SVG rectangle.
-const VISUAL_CY = CY - 10
+// The graph stage already excludes the fixed shell bars. Keep the knot on the
+// exact geometric center of that usable stage; controls overlay it and must not
+// shift the relationship map itself.
+const VISUAL_CY = CY
 const MIN_ZOOM = 0.6
 const MAX_ZOOM = 3
 
