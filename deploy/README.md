@@ -38,6 +38,9 @@ The API service runs `apps/api/dist/index.js` directly. It does not run TypeScri
 
 - `SUPABASE_SERVICE_ROLE_KEY` and other server secrets never enter Cloudflare Pages.
 - `ALLOWED_ORIGIN` contains exact HTTPS frontend origins only.
+- `ALLOWED_ORIGIN_HOST_SUFFIXES` is limited to trusted deployment families
+  such as `knotify-web.pages.dev`; it never accepts `*` and matches only HTTPS
+  on the suffix itself or a true subdomain.
 - Ports `3001` and `11434` are not opened in the cloud firewall.
 - Only ports `22`, `80`, and `443` are exposed on the VM.
 - The API enforces a 10 MB CV upload limit and a 15 MB JSON body limit.
