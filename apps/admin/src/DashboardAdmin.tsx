@@ -1,0 +1,372 @@
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { api } from './api'
+
+const C = {
+  signal: '#D8442B', ink: '#1a1410', inkMuted: '#6b5f55', inkFaint: '#a09287',
+  paper: '#f5f0e8', paperSoft: '#ede8df', rule: 'rgba(84,72,58,0.14)',
+  white: '#fff', verd: '#2d7d46', ochre: '#b8820f', blue: '#386a8a',
+}
+
+const card: CSSProperties = { background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 14 }
+const ghostButton: CSSProperties = {
+  padding: '7px 12px', borderRadius: 7, border: `0.5px solid ${C.rule}`, background: 'transparent',
+  color: C.inkMuted, fontSize: 12, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif',
+}
+
+type Point = { date: string; count: number }
+type Activity = {
+  messages: number; connectionsRequested: number; connectionsAccepted: number; conversations: number
+  eventRsvps: number; questCompletions: number; cafeCheckins: number; gigRequests: number
+  feedback: number; invites: number; eventsCreated: number; uniqueContributors: number
+}
+type Kpis = {
+  generatedAt: string
+  context: { timeZone: string; todayStartedAt: string; comparisonEndsAt: string; comparisonLabel: string }
+  users: {
+    total: number; newToday: number; newYesterday: number; new7d: number; previous7d: number
+    activeToday: number; active7d: number; returningToday: number; newActiveToday: number
+    dormant30d: number; onboardingComplete: number; onboardingRate: number; averageProfileCompletion: number
+    invited: number; organic: number; premium: number; hr: number; international: number
+    personas: { label: string; count: number }[]; locations: { label: string; count: number }[]
+  }
+  latestUsers: {
+    id: string; fullName: string; username: string; avatarUrl: string | null; persona: string | null
+    locationCity: string | null; createdAt: string; lastSeenAt: string | null; source: 'Invite' | 'Organic'
+    profileCompletion: number; onboardingComplete: boolean
+  }[]
+  growth: { rangeDays: number; usersPerDay: Point[]; signupsPerDay: Point[]; messagesPerDay: Point[] }
+  today: Activity
+  yesterday: Activity
+  betaFunnel: { total: number; pending: number; approved: number; rejected: number }
+  workQueue: { total: number; betaPending: number; feedbackOpen: number; bugsOpen: number; gigRequestsPending: number; roleRequestsPending: number }
+  platform: { messagesTotal: number; connectionsAccepted: number; conversationsTotal: number; upcomingEvents: number; openGigs: number; activeCafes: number; publishedQuests: number }
+}
+
+const KPI_RANGES = [7, 14, 30, 90] as const
+
+function pct(value: number, total: number) {
+  return total ? Math.round(value / total * 100) : 0
+}
+
+function SectionTitle({ title, subtitle, accent = C.signal, action }: { title: string; subtitle?: string; accent?: string; action?: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, margin: '30px 0 11px', flexWrap: 'wrap' }}>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: accent }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.inkMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</span>
+        </div>
+        {subtitle && <div style={{ margin: '4px 0 0 16px', fontSize: 12, color: C.inkFaint }}>{subtitle}</div>}
+      </div>
+      {action}
+    </div>
+  )
+}
+
+function Delta({ current, previous, label = 'vs yesterday' }: { current: number; previous: number; label?: string }) {
+  const difference = current - previous
+  const percent = previous ? Math.round(Math.abs(difference) / previous * 100) : null
+  const color = difference > 0 ? C.verd : difference < 0 ? C.signal : C.inkFaint
+  const text = difference === 0
+    ? `No change ${label}`
+    : `${difference > 0 ? '+' : ''}${difference}${percent === null ? '' : ` (${percent}%)`} ${label}`
+  return <span style={{ fontSize: 11.5, color }}>{text}</span>
+}
+
+function MetricCard({ label, value, detail, current, previous, color, large = false }: {
+  label: string; value: number | string; detail?: ReactNode; current?: number; previous?: number; color?: string; large?: boolean
+}) {
+  return (
+    <div style={{ ...card, padding: large ? '21px 22px' : '17px 18px', minWidth: 0 }}>
+      <div style={{ color: C.inkFaint, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.075em', marginBottom: 9 }}>{label}</div>
+      <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: large ? 36 : 29, lineHeight: 1, letterSpacing: '-0.03em', color: color ?? C.ink }}>{value}</div>
+      <div style={{ marginTop: 9, minHeight: 17, fontSize: 11.5, color: C.inkFaint }}>
+        {current !== undefined && previous !== undefined ? <Delta current={current} previous={previous} /> : detail}
+      </div>
+    </div>
+  )
+}
+
+function RangePicker({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {KPI_RANGES.map(range => (
+        <button key={range} onClick={() => onChange(range)} style={{
+          ...ghostButton, padding: '4px 10px', borderRadius: 999,
+          borderColor: value === range ? C.signal : C.rule,
+          background: value === range ? C.signal : 'transparent', color: value === range ? C.white : C.inkMuted,
+        }}>{range}d</button>
+      ))}
+    </div>
+  )
+}
+
+function TrendChart({ series }: { series: { label: string; color: string; points: Point[] }[] }) {
+  const width = 760, height = 190, left = 30, right = 10, top = 10, bottom = 25
+  const values = series.flatMap(item => item.points.map(point => point.count))
+  const max = Math.max(1, ...values)
+  const count = Math.max(1, ...series.map(item => item.points.length))
+  const x = (index: number) => left + (index / Math.max(1, count - 1)) * (width - left - right)
+  const y = (value: number) => top + (1 - value / max) * (height - top - bottom)
+  const path = (points: Point[]) => points.map((point, index) => `${index ? 'L' : 'M'}${x(index).toFixed(1)},${y(point.count).toFixed(1)}`).join(' ')
+  const dates = series[0]?.points ?? []
+  const middle = Math.floor((dates.length - 1) / 2)
+  return (
+    <div style={{ ...card, padding: '18px 18px 12px' }}>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 8 }}>
+        {series.map(item => (
+          <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+            <span style={{ width: 18, height: 2, background: item.color }} />
+            <span style={{ color: C.inkMuted }}>{item.label}</span>
+            <strong style={{ color: C.ink }}>{item.points.reduce((sum, point) => sum + point.count, 0)}</strong>
+          </div>
+        ))}
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', width: '100%', height: 190 }} role="img" aria-label="Growth and activity trend">
+        {[0, .5, 1].map(fraction => (
+          <g key={fraction}>
+            <line x1={left} x2={width - right} y1={y(max * fraction)} y2={y(max * fraction)} stroke={C.rule} />
+            <text x={left - 7} y={y(max * fraction) + 4} textAnchor="end" fontSize="9" fill={C.inkFaint}>{Math.round(max * fraction)}</text>
+          </g>
+        ))}
+        {series.map(item => <path key={item.label} d={path(item.points)} fill="none" stroke={item.color} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />)}
+        {dates.length > 0 && [0, middle, dates.length - 1].map((index, position) => (
+          <text key={`${index}-${position}`} x={x(index)} y={height - 5} textAnchor={position === 0 ? 'start' : position === 2 ? 'end' : 'middle'} fontSize="9.5" fill={C.inkFaint}>
+            {dates[index]?.date.slice(5)}
+          </text>
+        ))}
+      </svg>
+    </div>
+  )
+}
+
+function Breakdown({ title, rows, total }: { title: string; rows: { label: string; count: number }[]; total: number }) {
+  const max = Math.max(1, ...rows.map(row => row.count))
+  return (
+    <div style={{ ...card, padding: 18 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 15 }}>{title}</div>
+      <div style={{ display: 'grid', gap: 11 }}>
+        {rows.map(row => (
+          <div key={row.label}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5, marginBottom: 5 }}>
+              <span style={{ color: C.inkMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.label}</span>
+              <span style={{ color: C.ink, fontWeight: 700 }}>{row.count} <span style={{ color: C.inkFaint, fontWeight: 400 }}>· {pct(row.count, total)}%</span></span>
+            </div>
+            <div style={{ height: 6, borderRadius: 999, background: C.paperSoft, overflow: 'hidden' }}>
+              <div style={{ width: `${row.count / max * 100}%`, height: '100%', borderRadius: 999, background: C.signal }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Initials({ name, src }: { name: string; src: string | null }) {
+  if (src) return <img src={src} alt="" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+  return (
+    <span style={{ width: 34, height: 34, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: C.paperSoft, color: C.inkMuted, fontSize: 11, fontWeight: 700 }}>
+      {name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase() || '?'}
+    </span>
+  )
+}
+
+function LatestMembers({ users, timeZone }: { users: Kpis['latestUsers']; timeZone: string }) {
+  const formatter = new Intl.DateTimeFormat('en-GB', { timeZone, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return (
+    <div style={{ ...card, overflow: 'hidden' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+          <thead>
+            <tr style={{ background: C.paperSoft }}>
+              {['Member', 'Joined', 'Persona & location', 'Source', 'Profile', 'Last seen'].map(label => (
+                <th key={label} style={{ padding: '10px 14px', textAlign: 'left', color: C.inkFaint, fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(user => (
+              <tr key={user.id} style={{ borderTop: `0.5px solid ${C.rule}` }}>
+                <td style={{ padding: '11px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Initials name={user.fullName} src={user.avatarUrl} />
+                    <div><div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{user.fullName}</div><div style={{ fontSize: 11, color: C.inkFaint }}>@{user.username}</div></div>
+                  </div>
+                </td>
+                <td style={{ padding: '11px 14px', fontSize: 11.5, color: C.inkMuted, whiteSpace: 'nowrap' }}>{formatter.format(new Date(user.createdAt))}</td>
+                <td style={{ padding: '11px 14px', fontSize: 11.5 }}><div style={{ color: C.ink }}>{user.persona || 'Persona not set'}</div><div style={{ color: C.inkFaint }}>{user.locationCity || 'Location not set'}</div></td>
+                <td style={{ padding: '11px 14px', fontSize: 11.5, color: user.source === 'Invite' ? C.verd : C.inkMuted }}>{user.source}</td>
+                <td style={{ padding: '11px 14px', minWidth: 105 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 55, height: 5, background: C.paperSoft, borderRadius: 99, overflow: 'hidden' }}><div style={{ width: `${user.profileCompletion}%`, height: '100%', background: user.onboardingComplete ? C.verd : C.ochre }} /></div><span style={{ fontSize: 11, color: C.inkMuted }}>{user.profileCompletion}%</span></div>
+                </td>
+                <td style={{ padding: '11px 14px', fontSize: 11.5, color: C.inkMuted, whiteSpace: 'nowrap' }}>{user.lastSeenAt ? formatter.format(new Date(user.lastSeenAt)) : 'Never'}</td>
+              </tr>
+            ))}
+            {users.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: C.inkFaint, fontSize: 12 }}>No members yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function WorkQueue({ queue }: { queue: Kpis['workQueue'] }) {
+  const rows = [
+    ['Beta approvals', queue.betaPending, 'Signups waiting for a decision'],
+    ['Open feedback', queue.feedbackOpen, `${queue.bugsOpen} marked as bugs`],
+    ['Gig requests', queue.gigRequestsPending, 'Providers need to respond'],
+    ['Role requests', queue.roleRequestsPending, 'HR or company access requests'],
+  ] as const
+  return (
+    <div style={{ ...card, overflow: 'hidden' }}>
+      {rows.map(([label, value, note], index) => (
+        <div key={label} style={{ padding: '14px 16px', display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto', alignItems: 'center', gap: 12, borderTop: index ? `0.5px solid ${C.rule}` : undefined }}>
+          <div><div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{label}</div><div style={{ fontSize: 11.5, color: C.inkFaint, marginTop: 2 }}>{note}</div></div>
+          <span style={{ minWidth: 30, height: 30, padding: '0 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', background: value ? 'rgba(216,68,43,.10)' : C.paperSoft, color: value ? C.signal : C.inkFaint, fontWeight: 700, fontSize: 12 }}>{value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function BetaFunnel({ funnel }: { funnel: Kpis['betaFunnel'] }) {
+  const rows = [
+    ['Approved', funnel.approved, C.verd], ['Pending', funnel.pending, C.ochre], ['Rejected', funnel.rejected, C.signal],
+  ] as const
+  return (
+    <div style={{ ...card, padding: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}><span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Beta waitlist</span><span style={{ fontSize: 12, color: C.inkMuted }}>{funnel.total} total</span></div>
+      <div style={{ height: 12, display: 'flex', overflow: 'hidden', borderRadius: 999, background: C.paperSoft, marginBottom: 14 }}>
+        {rows.map(([label, value, color]) => <div key={label} title={`${label}: ${value}`} style={{ width: `${pct(value, funnel.total)}%`, background: color }} />)}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        {rows.map(([label, value, color]) => <div key={label}><div style={{ color, fontSize: 18, fontFamily: "'Fraunces', Georgia, serif" }}>{value}</div><div style={{ color: C.inkFaint, fontSize: 10.5 }}>{label} · {pct(value, funnel.total)}%</div></div>)}
+      </div>
+    </div>
+  )
+}
+
+function exportDashboard(kpis: Kpis) {
+  const rows = [
+    ['section', 'metric', 'value'],
+    ['Today', 'New members', kpis.users.newToday], ['Today', 'Active members', kpis.users.activeToday],
+    ['Today', 'Unique contributors', kpis.today.uniqueContributors], ['Today', 'Messages', kpis.today.messages],
+    ['Today', 'Connections accepted', kpis.today.connectionsAccepted], ['Today', 'Event RSVPs', kpis.today.eventRsvps],
+    ['Users', 'Total', kpis.users.total], ['Users', 'Onboarding complete', kpis.users.onboardingComplete],
+    ['Users', 'Active 7 days', kpis.users.active7d], ['Users', 'Dormant 30 days', kpis.users.dormant30d],
+    ['Users', 'Average profile completion', `${kpis.users.averageProfileCompletion}%`], ['Users', 'Invited', kpis.users.invited],
+    ['Work queue', 'Total', kpis.workQueue.total], ['Work queue', 'Beta approvals', kpis.workQueue.betaPending],
+    ['Work queue', 'Open feedback', kpis.workQueue.feedbackOpen], ['Work queue', 'Pending gig requests', kpis.workQueue.gigRequestsPending],
+  ]
+  const csv = rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `knotify-company-dashboard-${new Date().toISOString().slice(0, 10)}.csv`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+export function DashboardAdmin() {
+  const [kpis, setKpis] = useState<Kpis | null>(null)
+  const [range, setRange] = useState(14)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async (selectedRange: number) => {
+    setError('')
+    try {
+      setKpis(await api.kpis(selectedRange) as Kpis)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Dashboard could not be loaded.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load(range) }, [load, range])
+
+  if (loading && !kpis) return <div style={{ padding: 48, textAlign: 'center', color: C.inkFaint, fontSize: 13 }}>Loading company dashboard…</div>
+  if (error && !kpis) return <div style={{ ...card, padding: 20, color: C.signal, fontSize: 13 }}>{error}</div>
+  if (!kpis) return null
+
+  const { users, today, yesterday, growth } = kpis
+  const activityCards: { label: string; key: keyof Activity; detail: string }[] = [
+    { label: 'Messages sent', key: 'messages', detail: 'Chat messages sent by members' },
+    { label: 'Connections made', key: 'connectionsAccepted', detail: 'Requests accepted today' },
+    { label: 'Connection requests', key: 'connectionsRequested', detail: 'New requests between members' },
+    { label: 'Event RSVPs', key: 'eventRsvps', detail: 'Members joining events' },
+    { label: 'Quest completions', key: 'questCompletions', detail: 'Verified progress signals' },
+    { label: 'Gig requests', key: 'gigRequests', detail: 'Requests sent to providers' },
+    { label: 'Café check-ins', key: 'cafeCheckins', detail: 'Member venue activity' },
+    { label: 'New conversations', key: 'conversations', detail: 'Conversation threads started' },
+  ]
+  const timeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: kpis.context.timeZone, hour: '2-digit', minute: '2-digit' })
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 25, fontWeight: 400, letterSpacing: '-0.025em', margin: '0 0 4px', color: C.ink }}>Today at Knotify</h2>
+          <div style={{ fontSize: 12, color: C.inkFaint }}>Berlin business day · refreshed {timeFormatter.format(new Date(kpis.generatedAt))} · comparisons use {kpis.context.comparisonLabel}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={ghostButton} onClick={() => exportDashboard(kpis)}>Export CSV</button>
+          <button style={ghostButton} onClick={() => { setLoading(true); void load(range) }}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+        </div>
+      </div>
+      {error && <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, background: 'rgba(216,68,43,.08)', color: C.signal, fontSize: 12 }}>{error} Showing the last successful snapshot.</div>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginTop: 19 }}>
+        <MetricCard large label="New members" value={users.newToday} current={users.newToday} previous={users.newYesterday} color={C.verd} />
+        <MetricCard large label="Active members" value={users.activeToday} detail={`${users.returningToday} returning · ${users.newActiveToday} new`} />
+        <MetricCard large label="Unique contributors" value={today.uniqueContributors} detail="Members who created, joined, messaged or connected" color={C.blue} />
+        <MetricCard large label="Messages sent" value={today.messages} current={today.messages} previous={yesterday.messages} color={C.signal} />
+      </div>
+
+      <SectionTitle title="User health" subtitle="Who is joining, activating and coming back" accent={C.verd} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+        <MetricCard label="All members" value={users.total} detail={`${users.new7d} joined in the last 7 days`} />
+        <MetricCard label="Onboarded" value={`${users.onboardingRate}%`} detail={`${users.onboardingComplete} members completed core onboarding`} color={C.verd} />
+        <MetricCard label="Profile quality" value={`${users.averageProfileCompletion}%`} detail="Average completion across member profiles" />
+        <MetricCard label="Active · 7 days" value={users.active7d} detail={`${pct(users.active7d, users.total)}% of all members`} color={C.blue} />
+        <MetricCard label="Dormant · 30 days" value={users.dormant30d} detail="Not seen in the last 30 days" color={users.dormant30d ? C.ochre : C.verd} />
+        <MetricCard label="Invite acquisition" value={`${pct(users.invited, users.total)}%`} detail={`${users.invited} invited · ${users.organic} organic`} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginTop: 12 }}>
+        <Breakdown title="Members by persona" rows={users.personas} total={users.total} />
+        <Breakdown title="Members by location" rows={users.locations} total={users.total} />
+      </div>
+
+      <SectionTitle title="Latest members" subtitle="The newest accounts and whether they made it through onboarding" />
+      <LatestMembers users={kpis.latestUsers} timeZone={kpis.context.timeZone} />
+
+      <SectionTitle title="Activity today" subtitle={`Volume compared with ${kpis.context.comparisonLabel}`} accent={C.blue} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+        {activityCards.map(item => <MetricCard key={item.key} label={item.label} value={today[item.key]} current={today[item.key]} previous={yesterday[item.key]} detail={item.detail} />)}
+      </div>
+
+      <SectionTitle title="Growth & engagement" subtitle="New users, waitlist demand and messages by Berlin calendar day" accent={C.verd} action={<RangePicker value={range} onChange={value => { setLoading(true); setRange(value) }} />} />
+      <TrendChart series={[
+        { label: 'New members', color: C.verd, points: growth.usersPerDay },
+        { label: 'Messages', color: C.blue, points: growth.messagesPerDay },
+        { label: 'Waitlist signups', color: C.signal, points: growth.signupsPerDay },
+      ]} />
+
+      <SectionTitle title="Needs attention" subtitle={`${kpis.workQueue.total} items currently require an operator`} accent={kpis.workQueue.total ? C.signal : C.verd} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+        <WorkQueue queue={kpis.workQueue} />
+        <BetaFunnel funnel={kpis.betaFunnel} />
+      </div>
+
+      <SectionTitle title="Platform footprint" subtitle="Current inventory and all-time network volume" accent={C.inkMuted} />
+      <div style={{ ...card, padding: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 16 }}>
+        {[
+          ['Messages', kpis.platform.messagesTotal], ['Connections', kpis.platform.connectionsAccepted], ['Conversations', kpis.platform.conversationsTotal],
+          ['Upcoming events', kpis.platform.upcomingEvents], ['Open gigs', kpis.platform.openGigs], ['Active cafés', kpis.platform.activeCafes], ['Published quests', kpis.platform.publishedQuests],
+        ].map(([label, value]) => <div key={label}><div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 23, color: C.ink }}>{value}</div><div style={{ fontSize: 10.5, color: C.inkFaint, marginTop: 3 }}>{label}</div></div>)}
+      </div>
+    </div>
+  )
+}

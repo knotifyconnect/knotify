@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api, getSecret, setSecret, clearSecret } from './api'
-import { EventsAdmin, GigsAdmin, QuestsAdmin, InvitesAdmin, FeedbackAdmin, CafesAdmin, CafeSuggestionsAdmin, DashboardAdmin } from './AdminPanels'
+import { EventsAdmin, GigsAdmin, QuestsAdmin, InvitesAdmin, FeedbackAdmin, CafesAdmin, CafeSuggestionsAdmin } from './AdminPanels'
+import { DashboardAdmin } from './DashboardAdmin'
 import { AccountsAdmin } from './AccountsAdmin'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
