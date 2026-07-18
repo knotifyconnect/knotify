@@ -34,7 +34,8 @@
 
 ## Cloudflare Pages
 
-- [ ] Configure the four required `VITE_*` variables.
+- [ ] Configure the core and legal `VITE_*` variables listed in `deploy/cloudflare/pages-settings.txt`.
+- [ ] Keep `KNOTIFY_PRODUCTION_BRANCHES` aligned with the protected Cloudflare production branch.
 - [ ] Build from the protected release branch.
 - [ ] Attach the frontend custom domain.
 - [ ] Confirm SPA deep-link refreshes work.
