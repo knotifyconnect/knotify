@@ -996,149 +996,296 @@ adminPanelRouter.get('/stats', async (_req, res) => {
   })
 })
 
-// ── KPI dashboard (beta launch metrics) ──────────────────────────────────────
-function dayKey(d: Date) { return d.toISOString().slice(0, 10) }
+// ── Company dashboard ─────────────────────────────────────────────────────────
+const DASHBOARD_PAGE_SIZE = 1000
 
-function bucketByDay(rows: { created_at: string }[], days: number) {
-  const buckets = new Map<string, number>()
-  const start = new Date()
-  start.setUTCHours(0, 0, 0, 0)
-  start.setUTCDate(start.getUTCDate() - (days - 1))
-  for (let i = 0; i < days; i++) {
-    const d = new Date(start)
-    d.setUTCDate(d.getUTCDate() + i)
-    buckets.set(dayKey(d), 0)
+function dashboardTimeZone() {
+  const candidate = process.env.ADMIN_REPORT_TIME_ZONE || 'Europe/Berlin'
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: candidate }).format(new Date())
+    return candidate
+  } catch {
+    return 'Europe/Berlin'
   }
-  for (const r of rows) {
-    const key = r.created_at.slice(0, 10)
+}
+
+function zonedParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date)
+  const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find(part => part.type === type)?.value ?? 0)
+  return { year: value('year'), month: value('month'), day: value('day'), hour: value('hour'), minute: value('minute'), second: value('second') }
+}
+
+function zonedMidnightUtc(year: number, month: number, day: number, timeZone: string) {
+  const target = Date.UTC(year, month - 1, day)
+  let guess = target
+  for (let i = 0; i < 3; i++) {
+    const parts = zonedParts(new Date(guess), timeZone)
+    const represented = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
+    guess += target - represented
+  }
+  return new Date(guess)
+}
+
+function reportDayStart(now: Date, timeZone: string, offsetDays = 0) {
+  const current = zonedParts(now, timeZone)
+  const shifted = new Date(Date.UTC(current.year, current.month - 1, current.day + offsetDays))
+  return zonedMidnightUtc(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate(), timeZone)
+}
+
+function dayKeyInZone(value: string | Date, timeZone: string) {
+  const date = typeof value === 'string' ? new Date(value) : value
+  const parts = zonedParts(date, timeZone)
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+}
+
+function bucketByReportDay(rows: { at: string }[], days: number, now: Date, timeZone: string) {
+  const buckets = new Map<string, number>()
+  for (let offset = -(days - 1); offset <= 0; offset++) {
+    buckets.set(dayKeyInZone(reportDayStart(now, timeZone, offset), timeZone), 0)
+  }
+  for (const row of rows) {
+    const key = dayKeyInZone(row.at, timeZone)
     if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1)
   }
   return [...buckets.entries()].map(([date, count]) => ({ date, count }))
+}
+
+async function fetchAllDashboardRows<T>(label: string, query: () => any): Promise<T[]> {
+  const rows: T[] = []
+  for (let from = 0; ; from += DASHBOARD_PAGE_SIZE) {
+    const result = await query().range(from, from + DASHBOARD_PAGE_SIZE - 1)
+    if (result.error) throw new Error(`${label}: ${result.error.message}`)
+    const page = (result.data ?? []) as T[]
+    rows.push(...page)
+    if (page.length < DASHBOARD_PAGE_SIZE) return rows
+  }
+}
+
+async function dashboardCount(label: string, table: string, build?: (query: any) => any) {
+  let query = supabase.from(table).select('id', { count: 'exact', head: true })
+  if (build) query = build(query)
+  const result = await query
+  if (result.error) throw new Error(`${label}: ${result.error.message}`)
+  return result.count ?? 0
+}
+
+function dashboardOnboardingComplete(user: any) {
+  return Boolean(
+    user.persona &&
+    Array.isArray(user.interests) && user.interests.length >= 3 &&
+    Array.isArray(user.goals) && user.goals.length >= 1
+  )
+}
+
+function dashboardBreakdown(rows: any[], read: (row: any) => string | null | undefined, limit = 5) {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const value = String(read(row) || 'Not set').trim() || 'Not set'
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  const ordered = [...counts.entries()].sort((a, b) => b[1] - a[1])
+  if (ordered.length <= limit) return ordered.map(([label, count]) => ({ label, count }))
+  const visible: [string, number][] = ordered.slice(0, limit - 1)
+  visible.push(['Other', ordered.slice(limit - 1).reduce((sum, [, count]) => sum + count, 0)])
+  return visible.map(([label, count]) => ({ label, count }))
 }
 
 const KPI_RANGES = [7, 14, 30, 90] as const
 
 adminPanelRouter.get('/kpis', async (req, res) => {
   const now = new Date()
-  const todayStart = new Date(now); todayStart.setUTCHours(0, 0, 0, 0)
-  const rangeDays = (KPI_RANGES as readonly number[]).includes(Number(req.query.range))
-    ? Number(req.query.range)
-    : 14
-  const d7 = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString()
-  const dRange = new Date(now.getTime() - rangeDays * 24 * 3600 * 1000).toISOString()
-  const d30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString()
-  const todayIso = todayStart.toISOString()
+  const timeZone = dashboardTimeZone()
+  const rangeDays = (KPI_RANGES as readonly number[]).includes(Number(req.query.range)) ? Number(req.query.range) : 14
+  const todayStart = reportDayStart(now, timeZone)
+  const yesterdayStart = reportDayStart(now, timeZone, -1)
+  const yesterdayComparisonEnd = new Date(yesterdayStart.getTime() + (now.getTime() - todayStart.getTime()))
+  const rangeStart = reportDayStart(now, timeZone, -(rangeDays - 1))
+  const d7 = new Date(now.getTime() - 7 * 24 * 3600 * 1000)
+  const d14 = new Date(now.getTime() - 14 * 24 * 3600 * 1000)
+  const d30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000)
 
-  const count = (table: string, build?: (q: any) => any) => {
-    let q = supabase.from(table).select('id', { count: 'exact', head: true })
-    if (build) q = build(q)
-    return q
+  const inWindow = (value: string | null | undefined, start: Date, end: Date) => {
+    if (!value) return false
+    const timestamp = new Date(value).getTime()
+    return timestamp >= start.getTime() && timestamp < end.getTime()
   }
+  const countWindow = (rows: any[], column: string, start: Date, end: Date) => rows.filter(row => inWindow(row[column], start, end)).length
 
-  const [
-    usersTotal, usersToday, users7d, users30d, usersActive7d, usersActiveToday, usersPremium, usersHr, usersOnline,
-    betaTotal, betaPending, betaApproved, betaRejected,
-    connectionsTotal, connectionsAccepted, conversationsTotal, messagesTotal, messagesToday,
-    eventsTotal, eventsUpcoming, eventRsvpsTotal,
-    gigsOpen, gigsClosed, gigRequestsTotal, gigRequestsPending,
-    cafesActive, cafeCheckinsTotal,
-    questsPublished, questCompletionsTotal,
-    invitesTotal,
-    feedbackTotal, feedbackOpen, feedbackBugs,
-    usersSeries, betaSeries, questCompleters,
-  ] = await Promise.all([
-    count('users'),
-    count('users', q => q.gte('created_at', todayIso)),
-    count('users', q => q.gte('created_at', d7)),
-    count('users', q => q.gte('created_at', d30)),
-    count('users', q => q.gte('last_seen_at', d7)),
-    count('users', q => q.gte('last_seen_at', todayIso)),
-    count('users', q => q.eq('is_premium', true)),
-    count('users', q => q.eq('is_hr', true)),
-    count('users', q => q.eq('is_online', true)),
-    count('beta_signups'),
-    count('beta_signups', q => q.eq('status', 'pending')),
-    count('beta_signups', q => q.eq('status', 'approved')),
-    count('beta_signups', q => q.eq('status', 'rejected')),
-    count('connections'),
-    count('connections', q => q.eq('status', 'accepted')),
-    count('conversations'),
-    count('messages'),
-    count('messages', q => q.gte('created_at', todayIso)),
-    count('events'),
-    count('events', q => q.gte('starts_at', now.toISOString())),
-    count('event_rsvps'),
-    count('gigs', q => q.eq('status', 'open')),
-    count('gigs', q => q.eq('status', 'closed')),
-    count('gig_requests'),
-    count('gig_requests', q => q.eq('status', 'pending')),
-    count('cafes', q => q.eq('is_active', true)),
-    count('cafe_checkins'),
-    count('quests', q => q.eq('active', true)),
-    count('user_quests'),
-    count('invites'),
-    count('feedback'),
-    count('feedback', q => q.eq('status', 'open')),
-    count('feedback', q => q.eq('type', 'bug')),
-    supabase.from('users').select('created_at').gte('created_at', dRange),
-    supabase.from('beta_signups').select('created_at').gte('created_at', dRange),
-    supabase.from('user_quests').select('user_id'),
-  ])
+  try {
+    const [
+      users, betaRecent, messagesRecent, connectionsCreated, connectionsAcceptedRecent,
+      conversationsRecent, rsvpsRecent, questsRecent, checkinsRecent, gigRequestsRecent,
+      feedbackRecent, invitesRecent, eventsRecent,
+      betaTotal, betaPending, betaApproved, betaRejected,
+      workFeedback, workBugs, workGigs, workRoles,
+      totalMessages, totalConnectionsAccepted, totalConversations,
+      upcomingEvents, openGigs, activeCafes, activeQuests,
+    ] = await Promise.all([
+      fetchAllDashboardRows<any>('users', () => supabase.from('users').select('id, full_name, username, avatar_url, persona, interests, goals, headline, location_city, university, current_company, is_international, invited_by, is_premium, is_hr, last_seen_at, created_at').order('created_at', { ascending: false })),
+      fetchAllDashboardRows<any>('beta signups trend', () => supabase.from('beta_signups').select('created_at').gte('created_at', rangeStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('messages activity', () => supabase.from('messages').select('sender_id, created_at').gte('created_at', rangeStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('connection requests activity', () => supabase.from('connections').select('requester_id, addressee_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('accepted connections activity', () => supabase.from('connections').select('requester_id, addressee_id, updated_at').eq('status', 'accepted').gte('updated_at', yesterdayStart.toISOString()).order('updated_at')),
+      fetchAllDashboardRows<any>('conversations activity', () => supabase.from('conversations').select('created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('event RSVP activity', () => supabase.from('event_rsvps').select('user_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('quest activity', () => supabase.from('user_quests').select('user_id, completed_at').gte('completed_at', yesterdayStart.toISOString()).order('completed_at')),
+      fetchAllDashboardRows<any>('cafe check-in activity', () => supabase.from('cafe_checkins').select('user_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('gig request activity', () => supabase.from('gig_requests').select('seeker_id, provider_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('feedback activity', () => supabase.from('feedback').select('user_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('invite activity', () => supabase.from('invites').select('inviter_id, invitee_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('event creation activity', () => supabase.from('events').select('host_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
+      dashboardCount('beta signups total', 'beta_signups'),
+      dashboardCount('beta signups pending', 'beta_signups', query => query.eq('status', 'pending')),
+      dashboardCount('beta signups approved', 'beta_signups', query => query.eq('status', 'approved')),
+      dashboardCount('beta signups rejected', 'beta_signups', query => query.eq('status', 'rejected')),
+      dashboardCount('open feedback', 'feedback', query => query.eq('status', 'open')),
+      dashboardCount('open bugs', 'feedback', query => query.eq('status', 'open').eq('type', 'bug')),
+      dashboardCount('pending gig requests', 'gig_requests', query => query.eq('status', 'pending')),
+      dashboardCount('pending role requests', 'role_requests', query => query.eq('status', 'pending')),
+      dashboardCount('messages total', 'messages'),
+      dashboardCount('accepted connections total', 'connections', query => query.eq('status', 'accepted')),
+      dashboardCount('conversations total', 'conversations'),
+      dashboardCount('upcoming events', 'events', query => query.gte('starts_at', now.toISOString())),
+      dashboardCount('open gigs', 'gigs', query => query.eq('status', 'open')),
+      dashboardCount('active cafes', 'cafes', query => query.eq('is_active', true)),
+      dashboardCount('published quests', 'quests', query => query.eq('active', true)),
+    ])
 
-  return res.json({
-    generatedAt: now.toISOString(),
-    users: {
-      total: usersTotal.count ?? 0,
-      newToday: usersToday.count ?? 0,
-      new7d: users7d.count ?? 0,
-      new30d: users30d.count ?? 0,
-      active7d: usersActive7d.count ?? 0,
-      activeToday: usersActiveToday.count ?? 0,
-      onlineNow: usersOnline.count ?? 0,
-      premium: usersPremium.count ?? 0,
-      hr: usersHr.count ?? 0,
-    },
-    betaFunnel: {
-      total: betaTotal.count ?? 0,
-      pending: betaPending.count ?? 0,
-      approved: betaApproved.count ?? 0,
-      rejected: betaRejected.count ?? 0,
-    },
-    growth: {
-      rangeDays,
-      usersPerDay: bucketByDay((usersSeries.data ?? []) as any, rangeDays),
-      signupsPerDay: bucketByDay((betaSeries.data ?? []) as any, rangeDays),
-    },
-    engagement: {
-      connectionsTotal: connectionsTotal.count ?? 0,
-      connectionsAccepted: connectionsAccepted.count ?? 0,
-      conversationsTotal: conversationsTotal.count ?? 0,
-      messagesTotal: messagesTotal.count ?? 0,
-      messagesToday: messagesToday.count ?? 0,
-    },
-    content: {
-      eventsTotal: eventsTotal.count ?? 0,
-      eventsUpcoming: eventsUpcoming.count ?? 0,
-      eventRsvpsTotal: eventRsvpsTotal.count ?? 0,
-      gigsOpen: gigsOpen.count ?? 0,
-      gigsClosed: gigsClosed.count ?? 0,
-      gigRequestsTotal: gigRequestsTotal.count ?? 0,
-      gigRequestsPending: gigRequestsPending.count ?? 0,
-      cafesActive: cafesActive.count ?? 0,
-      cafeCheckinsTotal: cafeCheckinsTotal.count ?? 0,
-      questsPublished: questsPublished.count ?? 0,
-      questCompletionsTotal: questCompletionsTotal.count ?? 0,
-      questCompletersUnique: new Set((questCompleters.data ?? []).map((r: any) => r.user_id)).size,
-    },
-    feedback: {
-      total: feedbackTotal.count ?? 0,
-      open: feedbackOpen.count ?? 0,
-      bugs: feedbackBugs.count ?? 0,
-    },
-    invites: {
-      total: invitesTotal.count ?? 0,
-    },
-  })
+    const createdToday = users.filter(user => inWindow(user.created_at, todayStart, now))
+    const createdYesterday = users.filter(user => inWindow(user.created_at, yesterdayStart, yesterdayComparisonEnd))
+    const activeToday = users.filter(user => inWindow(user.last_seen_at, todayStart, now))
+    const active7d = users.filter(user => user.last_seen_at && new Date(user.last_seen_at) >= d7)
+    const new7d = users.filter(user => new Date(user.created_at) >= d7).length
+    const previous7d = users.filter(user => new Date(user.created_at) >= d14 && new Date(user.created_at) < d7).length
+    const onboardingComplete = users.filter(dashboardOnboardingComplete).length
+    const completionTotal = users.reduce((sum, user) => sum + accountProfileCompletion(user), 0)
+
+    const today = {
+      messages: countWindow(messagesRecent, 'created_at', todayStart, now),
+      connectionsRequested: countWindow(connectionsCreated, 'created_at', todayStart, now),
+      connectionsAccepted: countWindow(connectionsAcceptedRecent, 'updated_at', todayStart, now),
+      conversations: countWindow(conversationsRecent, 'created_at', todayStart, now),
+      eventRsvps: countWindow(rsvpsRecent, 'created_at', todayStart, now),
+      questCompletions: countWindow(questsRecent, 'completed_at', todayStart, now),
+      cafeCheckins: countWindow(checkinsRecent, 'created_at', todayStart, now),
+      gigRequests: countWindow(gigRequestsRecent, 'created_at', todayStart, now),
+      feedback: countWindow(feedbackRecent, 'created_at', todayStart, now),
+      invites: countWindow(invitesRecent, 'created_at', todayStart, now),
+      eventsCreated: countWindow(eventsRecent, 'created_at', todayStart, now),
+      uniqueContributors: 0,
+    }
+    const yesterday = {
+      messages: countWindow(messagesRecent, 'created_at', yesterdayStart, yesterdayComparisonEnd),
+      connectionsRequested: countWindow(connectionsCreated, 'created_at', yesterdayStart, yesterdayComparisonEnd),
+      connectionsAccepted: countWindow(connectionsAcceptedRecent, 'updated_at', yesterdayStart, yesterdayComparisonEnd),
+      conversations: countWindow(conversationsRecent, 'created_at', yesterdayStart, yesterdayComparisonEnd),
+      eventRsvps: countWindow(rsvpsRecent, 'created_at', yesterdayStart, yesterdayComparisonEnd),
+      questCompletions: countWindow(questsRecent, 'completed_at', yesterdayStart, yesterdayComparisonEnd),
+      cafeCheckins: countWindow(checkinsRecent, 'created_at', yesterdayStart, yesterdayComparisonEnd),
+      gigRequests: countWindow(gigRequestsRecent, 'created_at', yesterdayStart, yesterdayComparisonEnd),
+      feedback: countWindow(feedbackRecent, 'created_at', yesterdayStart, yesterdayComparisonEnd),
+      invites: countWindow(invitesRecent, 'created_at', yesterdayStart, yesterdayComparisonEnd),
+      eventsCreated: countWindow(eventsRecent, 'created_at', yesterdayStart, yesterdayComparisonEnd),
+      uniqueContributors: 0,
+    }
+
+    const contributorIds = new Set<string>()
+    const addToday = (rows: any[], timestamp: string, ids: string[]) => {
+      for (const row of rows) if (inWindow(row[timestamp], todayStart, now)) {
+        for (const id of ids) if (row[id]) contributorIds.add(row[id])
+      }
+    }
+    addToday(messagesRecent, 'created_at', ['sender_id'])
+    addToday(connectionsCreated, 'created_at', ['requester_id', 'addressee_id'])
+    addToday(connectionsAcceptedRecent, 'updated_at', ['requester_id', 'addressee_id'])
+    addToday(rsvpsRecent, 'created_at', ['user_id'])
+    addToday(questsRecent, 'completed_at', ['user_id'])
+    addToday(checkinsRecent, 'created_at', ['user_id'])
+    addToday(gigRequestsRecent, 'created_at', ['seeker_id', 'provider_id'])
+    addToday(feedbackRecent, 'created_at', ['user_id'])
+    addToday(invitesRecent, 'created_at', ['inviter_id', 'invitee_id'])
+    addToday(eventsRecent, 'created_at', ['host_id'])
+    today.uniqueContributors = contributorIds.size
+
+    return res.json({
+      generatedAt: now.toISOString(),
+      context: {
+        timeZone,
+        todayStartedAt: todayStart.toISOString(),
+        comparisonEndsAt: yesterdayComparisonEnd.toISOString(),
+        comparisonLabel: 'same time yesterday',
+      },
+      users: {
+        total: users.length,
+        newToday: createdToday.length,
+        newYesterday: createdYesterday.length,
+        new7d,
+        previous7d,
+        activeToday: activeToday.length,
+        active7d: active7d.length,
+        returningToday: activeToday.filter(user => new Date(user.created_at) < todayStart).length,
+        newActiveToday: activeToday.filter(user => new Date(user.created_at) >= todayStart).length,
+        dormant30d: users.filter(user => !user.last_seen_at || new Date(user.last_seen_at) < d30).length,
+        onboardingComplete,
+        onboardingRate: users.length ? Math.round(onboardingComplete / users.length * 100) : 0,
+        averageProfileCompletion: users.length ? Math.round(completionTotal / users.length) : 0,
+        invited: users.filter(user => user.invited_by).length,
+        organic: users.filter(user => !user.invited_by).length,
+        premium: users.filter(user => user.is_premium).length,
+        hr: users.filter(user => user.is_hr).length,
+        international: users.filter(user => user.is_international).length,
+        personas: dashboardBreakdown(users, user => user.persona),
+        locations: dashboardBreakdown(users, user => user.location_city),
+      },
+      latestUsers: users.slice(0, 8).map(user => ({
+        id: user.id,
+        fullName: user.full_name,
+        username: user.username,
+        avatarUrl: user.avatar_url,
+        persona: user.persona,
+        locationCity: user.location_city,
+        createdAt: user.created_at,
+        lastSeenAt: user.last_seen_at,
+        source: user.invited_by ? 'Invite' : 'Organic',
+        profileCompletion: accountProfileCompletion(user),
+        onboardingComplete: dashboardOnboardingComplete(user),
+      })),
+      growth: {
+        rangeDays,
+        usersPerDay: bucketByReportDay(users.map(user => ({ at: user.created_at })), rangeDays, now, timeZone),
+        signupsPerDay: bucketByReportDay(betaRecent.map(row => ({ at: row.created_at })), rangeDays, now, timeZone),
+        messagesPerDay: bucketByReportDay(messagesRecent.map(row => ({ at: row.created_at })), rangeDays, now, timeZone),
+      },
+      today,
+      yesterday,
+      betaFunnel: { total: betaTotal, pending: betaPending, approved: betaApproved, rejected: betaRejected },
+      workQueue: {
+        total: betaPending + workFeedback + workGigs + workRoles,
+        betaPending,
+        feedbackOpen: workFeedback,
+        bugsOpen: workBugs,
+        gigRequestsPending: workGigs,
+        roleRequestsPending: workRoles,
+      },
+      platform: {
+        messagesTotal: totalMessages,
+        connectionsAccepted: totalConnectionsAccepted,
+        conversationsTotal: totalConversations,
+        upcomingEvents,
+        openGigs,
+        activeCafes,
+        publishedQuests: activeQuests,
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown dashboard query error'
+    console.error(`[admin-panel/kpis] ${message}`)
+    return res.status(500).json({ error: `Dashboard data could not be loaded. ${message}` })
+  }
 })
 
 // ── App settings (beta toggle etc.) ──────────────────────────────────────────
