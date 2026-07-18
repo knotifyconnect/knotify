@@ -5,13 +5,14 @@
  *  · Account   — email (from the Supabase session), password reset, sign out
  *  · Preferences — sound effects (lib/sound, device-level)
  *  · Privacy   — usage-analytics consent (lib/analyticsConsent getConsent/setConsent)
- *  · Danger    — request account deletion (privacy@knotify.app)
+ *  · Danger    — request account deletion through the configured privacy contact
  *
  * Design: modernized flat sections (white + soft shadow), Fraunces title,
  * IBM Plex body. No nested-card chrome.
  */
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { LEGAL } from '../lib/legal'
 import { ChevronRight, LogOut, Mail, Lock, Bell, ShieldCheck, Volume2, HelpCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useSessionStore } from '../store/session'
@@ -101,7 +102,7 @@ export function SettingsPage() {
   function requestDeletion() {
     const subject = encodeURIComponent('Account deletion request')
     const body = encodeURIComponent(`Please delete my knotify account associated with ${email || '(your email)'}.`)
-    window.location.href = `mailto:privacy@knotify.app?subject=${subject}&body=${body}`
+    window.location.href = `mailto:${LEGAL.privacyEmail}?subject=${subject}&body=${body}`
   }
 
   return (

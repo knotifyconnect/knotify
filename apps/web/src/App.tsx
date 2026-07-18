@@ -77,6 +77,13 @@ function writeLastActiveAt(timestamp = Date.now()) {
 }
 
 function shouldShowInactivityLanding(now = Date.now()) {
+  const standalone = window.matchMedia?.('(display-mode: standalone)').matches ||
+    Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
+  // An installed app should reopen where the member left it. Showing the
+  // marketing re-entry screen inside the standalone shell looks like a broken
+  // session on both iOS and Android.
+  if (standalone) return false
+
   const lastActiveAt = readLastActiveAt()
 
   if (!lastActiveAt) return false
@@ -350,7 +357,7 @@ function AnimatedRoutes({
   }, [location.pathname])
 
   return (
-    <Suspense fallback={<div className="min-h-screen bg-bg-base" />}>
+    <Suspense fallback={<AppLoadingScreen />}>
       {token ? (
         showReentryLanding ? (
           <ReentryLandingRoutes onContinue={onReentryContinue} />
@@ -361,6 +368,14 @@ function AnimatedRoutes({
         <PublicRoutes />
       )}
     </Suspense>
+  )
+}
+
+function AppLoadingScreen() {
+  return (
+    <div aria-busy="true" aria-label="Loading knotify" style={{ minHeight: '100dvh', background: 'var(--paper, #F4EFE6)', display: 'grid', placeItems: 'center' }}>
+      <img src="/mark.png" alt="" width={54} height={50} style={{ opacity: 0.72 }} />
+    </div>
   )
 }
 
@@ -385,6 +400,22 @@ export default function App() {
   useEffect(() => {
     return runWhenIdle(() => setShowNonCriticalLayers(true), 1800)
   }, [])
+
+  useEffect(() => {
+    if (!token || reentryState.showLanding) return
+    return runWhenIdle(() => {
+      // Warm the route chunks as one idle batch so the first tab switch does
+      // not reveal the application one feature at a time.
+      void Promise.all([
+        import('./pages/RelationshipHomePage'),
+        import('./pages/MapPage'),
+        import('./pages/DiscoverPage'),
+        import('./pages/MessagesPage'),
+        import('./pages/JobsPage'),
+        import('./pages/ProfilePage'),
+      ])
+    }, 900)
+  }, [token, reentryState.showLanding])
 
   useEffect(() => {
     // onAuthStateChange fires INITIAL_SESSION immediately on mount with the
@@ -497,7 +528,7 @@ export default function App() {
     )
 
   if ((!canRenderPublicWhileChecking && hydrating) || !reentryState.ready || reentryState.token !== token) {
-    return <div className="min-h-screen bg-bg-base" />
+    return <AppLoadingScreen />
   }
 
   return (

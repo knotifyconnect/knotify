@@ -4,11 +4,13 @@ import multer from 'multer'
 import { analyseCv } from '../services/cvAnalysis.js'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { allocateUsername, profileNameFromIdentity } from '../services/usernames.js'
 
 const uploadCv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 
 const updateMeSchema = z.object({
   fullName: z.string().min(2).optional(),
+  username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/).optional(),
   bio: z.string().max(500).optional().nullable(),
   headline: z.string().max(120).optional().nullable(),
   university: z.string().optional(),
@@ -81,9 +83,9 @@ usersRouter.get('/me', requireAuth, async (req, res) => {
   // Self-heal: auto-create the profile row if missing (recovers from failed signup completions)
   if (!row) {
     const email = req.authUser.email ?? `user-${req.authUser.id.slice(0, 8)}@unknown.app`
-    const baseUsername = `user_${req.authUser.id.replace(/-/g, '').slice(0, 12)}`
-    const stem = (email.split('@')[0] ?? 'New user').replace(/[._-]+/g, ' ')
-    const fullName = stem.charAt(0).toUpperCase() + stem.slice(1)
+    const metadata = (req.authUser.user_metadata ?? {}) as Record<string, unknown>
+    const fullName = profileNameFromIdentity(metadata, email)
+    const username = await allocateUsername(fullName)
 
     // Auto-promote knotify team emails to admin on first profile creation
     const ADMIN_EMAILS = ['armen.ter-minasyan@tum.de', 'jaydip.gohil@tum.de']
@@ -94,7 +96,7 @@ usersRouter.get('/me', requireAuth, async (req, res) => {
       .insert({
         auth_id: req.authUser.id,
         email,
-        username: baseUsername,
+        username,
         full_name: fullName,
         location_city: 'Munich',
         status: 'open_to_work',
@@ -182,6 +184,7 @@ usersRouter.patch('/me', requireAuth, async (req, res) => {
   const data = parsed.data
   const update: Record<string, unknown> = {}
   if (data.fullName !== undefined) update.full_name = data.fullName.trim()
+  if (data.username !== undefined) update.username = data.username.trim().toLowerCase()
   if (data.bio !== undefined) update.bio = data.bio ? data.bio.trim() : null
   if (data.university !== undefined) update.university = data.university.trim()
   if (data.currentCompany !== undefined) update.current_company = data.currentCompany.trim()
@@ -216,6 +219,9 @@ usersRouter.patch('/me', requireAuth, async (req, res) => {
 
   const result = await supabase.from('users').update(update).eq('auth_id', req.authUser.id).select('*').single()
   if (result.error) {
+    if (result.error.code === '23505') {
+      return res.status(409).json({ error: 'That username is already taken.' })
+    }
     return res.status(500).json({ error: result.error.message })
   }
 

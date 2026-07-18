@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "knotify · Networks worth keeping",
+  "short_name": "knotify",
+  "description": "Keep valuable professional relationships warm and turn trust into real opportunities.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#F4EFE6",
+  "theme_color": "#F4EFE6",
+  "lang": "en",
+  "categories": ["social", "business", "productivity"],
+  "icons": [
+    { "src": "/app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/app-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Your Knot", "url": "/map", "icons": [{ "src": "/app-icon-192.png", "sizes": "192x192" }] },
+    { "name": "Messages", "url": "/messages", "icons": [{ "src": "/app-icon-192.png", "sizes": "192x192" }] },
+    { "name": "Jobs", "url": "/jobs", "icons": [{ "src": "/app-icon-192.png", "sizes": "192x192" }] }
+  ]
+}

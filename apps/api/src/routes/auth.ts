@@ -29,14 +29,14 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
   }
 
   const fullName = parsed.data.fullName.trim()
-  const username = parsed.data.username.trim()
+  const username = parsed.data.username.trim().toLowerCase()
   const locationCity = parsed.data.locationCity.trim()
   const university = parsed.data.university?.trim()
   const status = parsed.data.status
 
   const existing = await supabase
     .from('users')
-    .select('id')
+    .select('id, terms_accepted_at')
     .eq('auth_id', req.authUser.id)
     .maybeSingle()
 
@@ -44,13 +44,13 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
     return res.status(500).json({ error: existing.error.message })
   }
 
-  const isNewAccount = !existing.data
+  const needsConsentRecord = !existing.data?.terms_accepted_at
 
   // Legal consent is only required — and only recorded — at the moment the
   // account row is actually created. This is a server-enforced gate, not just
   // a UI checkbox: re-syncing an existing profile (e.g. on every login) never
   // requires or overwrites the original consent timestamp.
-  if (isNewAccount && parsed.data.termsAccepted !== true) {
+  if (needsConsentRecord && parsed.data.termsAccepted !== true) {
     return res.status(422).json({ error: 'You must accept the Terms of Service and Privacy Policy to create an account.' })
   }
 
@@ -65,7 +65,7 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
         location_city: locationCity,
         university: university ?? null,
         status,
-        ...(isNewAccount ? { terms_accepted_at: new Date().toISOString(), terms_version: TERMS_VERSION } : {}),
+        ...(needsConsentRecord ? { terms_accepted_at: new Date().toISOString(), terms_version: TERMS_VERSION } : {}),
       },
       { onConflict: 'auth_id' }
     )

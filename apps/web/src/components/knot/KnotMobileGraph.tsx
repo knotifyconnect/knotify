@@ -242,6 +242,7 @@ const MAX_ZOOM = 3
 export function KnotMobileGraph({
   me,
   nodes,
+  peerEdges = [],
   selectedNodeId,
   query = '',
   onSelectNode,
@@ -253,6 +254,7 @@ export function KnotMobileGraph({
 }: {
   me: MeNode
   nodes: KnotGraphNode[]
+  peerEdges?: Array<{ id: string; sourceId: string; targetId: string }>
   selectedNodeId: string | null
   query?: string
   onSelectNode: (node: KnotGraphNode) => void
@@ -288,7 +290,7 @@ export function KnotMobileGraph({
   const second = nodes.filter(n => n.degree === 'second')
   // When second-degree nodes are present we are in "expanded" mode: gray out the
   // first-degree knot (except the expanded root) and let the new path stand out.
-  const expandedMode = second.length > 0
+  const expandedMode = Boolean(expandedRootId)
   // A direct node is dimmed in expanded mode unless it's the root we expanded from
   const isDimmed = (n: KnotGraphNode) => expandedMode && n.degree !== 'second' && n.id !== expandedRootId
   // The denser inner orbit keeps the default knot lively; genuinely large
@@ -330,6 +332,7 @@ export function KnotMobileGraph({
     ...directPositioned,
     ...second.map((n, i) => ({ n, x: dragPositions[n.id]?.x ?? secondSlots[i].x, y: dragPositions[n.id]?.y ?? secondSlots[i].y, r: 17 })),
   ]
+  const positionedById = new Map(positioned.map((item) => [item.n.id, item]))
   const layoutFitSignature = nodes.map((node) => node.id).join('|')
 
   function fitViewport(items = positioned, options?: { maxScale?: number; targetY?: number }) {
@@ -650,6 +653,44 @@ export function KnotMobileGraph({
               strokeDasharray={isSecond ? '5 4' : undefined}
               strokeLinecap="round"
               opacity={searchMuted ? 0.38 : isDimmed(n) ? 0.18 : 1}
+            />
+          )
+        })}
+
+        {/* Connections inside the knot. These were previously only passed to
+            the desktop graph, which made every mobile relationship look like
+            an isolated spoke even when two people knew each other. */}
+        {peerEdges.map((edge) => {
+          const source = positionedById.get(edge.sourceId)
+          const target = positionedById.get(edge.targetId)
+          if (!source || !target) return null
+
+          const duplicatesExpansionStrand =
+            (target.n.degree === 'second' && target.n.expandedViaUserId === source.n.userId) ||
+            (source.n.degree === 'second' && source.n.expandedViaUserId === target.n.userId)
+          if (duplicatesExpansionStrand) return null
+
+          const endpoints = edgeEndpointsForRects(
+            source,
+            { width: source.r * 2, height: source.r * 2 },
+            target,
+            { width: target.r * 2, height: target.r * 2 },
+          )
+          const selected = selectedNodeId === source.n.id || selectedNodeId === target.n.id
+          const muted = Boolean(selectedNodeId) && !selected
+
+          return (
+            <path
+              key={`peer-${edge.id}`}
+              data-graph-line={edge.id}
+              d={curvedPath(endpoints.source.x, endpoints.source.y, endpoints.target.x, endpoints.target.y)}
+              fill="none"
+              stroke={selected ? 'rgba(31,107,94,0.78)' : 'rgba(31,107,94,0.38)'}
+              strokeWidth={selected ? 1.7 : 1.15}
+              strokeDasharray={selected ? undefined : '3 4'}
+              strokeLinecap="round"
+              opacity={muted ? 0.18 : 1}
+              style={{ pointerEvents: 'none' }}
             />
           )
         })}

@@ -1220,6 +1220,12 @@ function KnotStage({
       ? nodes.find((node) => node.degree === 'direct' && node.connection.id === selectedConnection.id) ?? null
       : null
 
+  const selectedGraphNodeId = selectedNode?.id ?? (
+    selectedSecondDegreeUser
+      ? nodes.find((node) => node.degree === 'second' && node.userId === selectedSecondDegreeUser.id)?.id ?? null
+      : null
+  )
+
   const nodesByUserId = useMemo(() => new Map(nodes.map((node) => [node.userId, node])), [nodes])
 
   const knotColdCount = useMemo(
@@ -1360,7 +1366,8 @@ function KnotStage({
                 key={graphResetToken}
                 me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
                 nodes={nodes}
-                selectedNodeId={selectedNode?.id ?? null}
+                peerEdges={graphPeerEdges}
+                selectedNodeId={selectedGraphNodeId}
                 query={query}
                 onSelectNode={(node: KnotGraphNode) => {
                   const match = nodes.find((item) => item.id === node.id)
@@ -1444,7 +1451,7 @@ function KnotStage({
                   me={{ id: 'me', name: meName, avatarUrl: meAvatar }}
                   nodes={nodes}
                   peerEdges={graphPeerEdges}
-                  selectedNodeId={selectedNode?.id ?? null}
+                  selectedNodeId={selectedGraphNodeId}
                   query={query}
                   onClearQuery={() => onQueryChange('')}
                   onResetGraph={onResetGraphState}

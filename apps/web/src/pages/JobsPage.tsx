@@ -40,6 +40,10 @@ type JobListItem = {
   } | null
   poster?: { id: string; full_name: string; username: string; avatar_url: string | null } | null
   referral_connections?: Array<{ id: string; full_name: string; username: string; avatar_url: string | null }>
+  connection_context?: {
+    direct: CompanyConnection[]
+    secondDegree: Array<CompanyConnection & { mutual_connections: CompanyConnection[] }>
+  }
 }
 
 type JobLinkDraft = {
@@ -66,6 +70,7 @@ type CompanyConnection = {
   full_name: string
   username: string
   avatar_url: string | null
+  current_company?: string | null
 }
 
 type ReferralItem = {
@@ -231,6 +236,8 @@ export function JobsPage() {
   const skippedInitialFilterLoadRef = useRef(false)
 
   const hasConnections = connectionsAtCompany.length > 0
+  const secondDegreeAtCompany = selectedJob?.connection_context?.secondDegree ?? []
+  const hasCompanyPaths = hasConnections || secondDegreeAtCompany.length > 0
 
   const selectedReferrer = useMemo(
     () => connectionsAtCompany.find((u) => u.id === selectedReferrerId) ?? null,
@@ -420,15 +427,22 @@ export function JobsPage() {
     setOfferNote('')
 
     try {
+      const listItem = jobs.find((job) => job.id === jobId)
+      const companyId = listItem?.company_id ?? null
+      // Start all independent requests together. Previously the panel waited
+      // for job detail before even beginning its connection/referral checks.
+      const checkPromise = companyId
+        ? apiGet<{ users: CompanyConnection[] }>(`/api/referrals/check?companyId=${companyId}`)
+        : Promise.resolve({ users: [] as CompanyConnection[] })
+      const offerPromise = companyId
+        ? apiGet<{ eligible: boolean; users: CompanyConnection[] }>(`/api/referrals/offer-check?jobId=${jobId}`)
+        : Promise.resolve({ eligible: false, users: [] as CompanyConnection[] })
       const detail = await apiGet<{ job: JobDetail }>(`/api/jobs/${jobId}`)
       setSelectedJob(detail.job)
+      setConnectionsAtCompany(detail.job.referral_connections ?? detail.job.connection_context?.direct ?? [])
 
-      const companyId = detail.job.company_id
       if (companyId) {
-        const [check, offerCheck] = await Promise.all([
-          apiGet<{ users: CompanyConnection[] }>(`/api/referrals/check?companyId=${companyId}`),
-          apiGet<{ eligible: boolean; users: CompanyConnection[] }>(`/api/referrals/offer-check?jobId=${jobId}`),
-        ])
+        const [check, offerCheck] = await Promise.all([checkPromise, offerPromise])
         const users = check.users ?? []
         setConnectionsAtCompany(users)
         if (users.length) setSelectedReferrerId(users[0].id)
@@ -1169,6 +1183,27 @@ export function JobsPage() {
                   </div>
                 </div>
 
+                {((job.connection_context?.direct.length ?? 0) + (job.connection_context?.secondDegree.length ?? 0) > 0) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', marginBottom: 12, borderRadius: 10, background: 'var(--verd-soft)', border: '0.5px solid rgba(31,107,94,0.18)' }}>
+                    <div style={{ display: 'flex', paddingLeft: 4 }}>
+                      {[...(job.connection_context?.direct ?? []), ...(job.connection_context?.secondDegree ?? [])].slice(0, 4).map((person, index) => (
+                        <div key={person.id} style={{ marginLeft: index === 0 ? 0 : -7, borderRadius: '50%', border: '2px solid var(--verd-soft)' }}>
+                          <KAvatar name={person.full_name} src={person.avatar_url} size={25} />
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ minWidth: 0, fontSize: 11.5, color: 'var(--verd)', lineHeight: 1.35 }}>
+                      {(job.connection_context?.direct.length ?? 0) > 0 && (
+                        <span>{job.connection_context!.direct.length} direct connection{job.connection_context!.direct.length === 1 ? '' : 's'}</span>
+                      )}
+                      {(job.connection_context?.direct.length ?? 0) > 0 && (job.connection_context?.secondDegree.length ?? 0) > 0 && <span> · </span>}
+                      {(job.connection_context?.secondDegree.length ?? 0) > 0 && (
+                        <span>{job.connection_context!.secondDegree.length} second-degree path{job.connection_context!.secondDegree.length === 1 ? '' : 's'}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Skills */}
                 {job.required_skills?.length > 0 && (
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -1420,13 +1455,17 @@ export function JobsPage() {
                   style={{
                     padding: '16px 18px',
                     borderRadius: 14,
-                    background: hasConnections ? 'var(--verd-soft)' : 'var(--paper-soft)',
-                    border: `0.5px solid ${hasConnections ? 'rgba(31,107,94,0.2)' : 'var(--rule-soft)'}`,
+                    background: hasCompanyPaths ? 'var(--verd-soft)' : 'var(--paper-soft)',
+                    border: `0.5px solid ${hasCompanyPaths ? 'rgba(31,107,94,0.2)' : 'var(--rule-soft)'}`,
                     marginBottom: 16,
                   }}
                 >
-                  <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: hasConnections ? 'var(--verd)' : 'var(--ink-faint)', marginBottom: 8 }}>
-                    {hasConnections ? `${connectionsAtCompany.length} connection${connectionsAtCompany.length === 1 ? '' : 's'} at this company` : 'No connections at this company'}
+                  <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: hasCompanyPaths ? 'var(--verd)' : 'var(--ink-faint)', marginBottom: 8 }}>
+                    {hasConnections
+                      ? `${connectionsAtCompany.length} direct connection${connectionsAtCompany.length === 1 ? '' : 's'} at this company`
+                      : secondDegreeAtCompany.length
+                        ? `${secondDegreeAtCompany.length} second-degree path${secondDegreeAtCompany.length === 1 ? '' : 's'} at this company`
+                        : 'No connections at this company'}
                   </div>
 
                   {hasConnections ? (
@@ -1481,6 +1520,32 @@ export function JobsPage() {
                         </KBtn>
                       </div>
                     </>
+                  ) : secondDegreeAtCompany.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {secondDegreeAtCompany.slice(0, 5).map((person) => {
+                        const mutual = person.mutual_connections[0]
+                        return (
+                          <div key={person.id} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                            <KAvatar name={person.full_name} src={person.avatar_url} size={30} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>{person.full_name}</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
+                                {mutual ? `Known through ${mutual.full_name}` : 'Second-degree connection'}
+                              </div>
+                            </div>
+                            {mutual && (
+                              <KBtn
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => navigate(`/messages?to=${mutual.id}&draft=${encodeURIComponent(`Could you introduce me to ${person.full_name} regarding the ${selectedJob.title} role at ${selectedJob.company?.name ?? 'their company'}?`)}`)}
+                              >
+                                Ask {mutual.full_name.split(' ')[0]}
+                              </KBtn>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                   ) : (
                     <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: 0 }}>
                       Connect with someone at {selectedJob.company?.name ?? 'this company'} first.

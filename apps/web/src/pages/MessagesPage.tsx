@@ -32,6 +32,7 @@ type ConversationSummary = {
 
 type ConversationsCache = {
   conversations: ConversationSummary[]
+  current_user_id?: string
 }
 
 type ConversationUpdatesResponse = ConversationsCache & {
@@ -453,7 +454,7 @@ export function MessagesPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [messagesByConversation, setMessagesByConversation] = useState<Record<string, Message[]>>({})
   const [optimistic, setOptimistic] = useState<Record<string, OptimisticMessage[]>>({})
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(() => getApiCacheSnapshot<ConversationsCache>(CONVERSATIONS_PATH)?.current_user_id ?? null)
   const [loadingConvs, setLoadingConvs] = useState(() => !getApiCacheSnapshot<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH))
   const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [sendLoading, setSendLoading] = useState(false)
@@ -623,7 +624,10 @@ export function MessagesPage() {
   }, [lastMine])
 
   function cacheConversations(next: ConversationSummary[]) {
-    setApiCacheSnapshot<ConversationsCache>(CONVERSATIONS_PATH, { conversations: next })
+    setApiCacheSnapshot<ConversationsCache>(CONVERSATIONS_PATH, {
+      conversations: next,
+      current_user_id: currentUserIdRef.current ?? undefined,
+    })
   }
 
   function publishUnreadTotal(next: ConversationSummary[]) {
@@ -765,7 +769,11 @@ export function MessagesPage() {
     const requestStartedAt = Date.now()
     const task = (async () => {
       try {
-        const res = await apiGet<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)
+        const res = await apiGet<ConversationsCache>(CONVERSATIONS_PATH)
+        if (res.current_user_id) {
+          currentUserIdRef.current = res.current_user_id
+          setCurrentUserId(res.current_user_id)
+        }
         const next = mergeRestConversationSnapshot(res.conversations ?? [], requestStartedAt)
         updateConversations(() => next)
         rememberConversationUpdateTime(new Date(requestStartedAt).toISOString())
@@ -893,6 +901,10 @@ export function MessagesPage() {
     conversationUpdatesInFlightRef.current = true
     try {
       const res = await apiGet<ConversationUpdatesResponse>(`${CONVERSATIONS_PATH}/updates?since=${encodeURIComponent(since)}`)
+      if (res.current_user_id && res.current_user_id !== currentUserIdRef.current) {
+        currentUserIdRef.current = res.current_user_id
+        setCurrentUserId(res.current_user_id)
+      }
       applyConversationSummaries(res.conversations ?? [])
       if (res.server_time) rememberConversationUpdateTime(res.server_time)
     } catch {
@@ -954,25 +966,6 @@ export function MessagesPage() {
   }
 
   useEffect(() => {
-    let disposed = false
-
-    void supabase.auth.getSession().then(({ data }) => {
-      if (!disposed) setCurrentUserId(data.session?.user.id ?? null)
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUserId(session?.user.id ?? null)
-    })
-
-    return () => {
-      disposed = true
-      subscription.unsubscribe()
-    }
-  }, [])
-
-  useEffect(() => {
     void loadConvs()
     void loadMeetings(true)
     return runWhenIdle(() => {
@@ -989,7 +982,9 @@ export function MessagesPage() {
       if (!document.hidden) sync()
     }
 
-    const interval = window.setInterval(sync, 1000)
+    // Realtime is primary. This is only a repair loop for missed events, so a
+    // one-second database poll added load without making messages feel faster.
+    const interval = window.setInterval(sync, 15_000)
     window.addEventListener('focus', sync)
     document.addEventListener('visibilitychange', onVisibilityChange)
     sync()

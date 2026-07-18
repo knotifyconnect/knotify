@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { KnotifyLogoImg, KBtn } from '@/lib/knotify'
 import { useSeo } from '@/lib/seo'
+import { LEGAL, LEGAL_OPERATOR_INLINE } from '@/lib/legal'
 
 export function TermsPage() {
   const navigate = useNavigate()
@@ -15,7 +16,7 @@ export function TermsPage() {
   return (
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         background: 'var(--paper)',
         color: 'var(--ink)',
         fontFamily: "'IBM Plex Sans', sans-serif",
@@ -74,13 +75,13 @@ export function TermsPage() {
             margin: '0 0 40px',
           }}
         >
-          Terms of Service, knotify, v1.0 · Juli 2026
+          Terms of Service, knotify, v2.0 · 18. Juli 2026
         </p>
 
         <Section title="1. Geltungsbereich">
           <p>
             Diese Nutzungsbedingungen gelten für die Nutzung von knotify (der „Dienst"), betrieben
-            von [Betreiber, Adresse eintragen]. Mit der Erstellung eines Kontos erkennen Sie diese
+            von {LEGAL_OPERATOR_INLINE}. Mit der Erstellung eines Kontos erkennen Sie diese
             Bedingungen sowie unsere{' '}
             <a href="/privacy" style={{ color: 'var(--signal)' }}>
               Datenschutzerklärung
@@ -168,24 +169,13 @@ export function TermsPage() {
         <Section title="10. Kontakt">
           <p>
             Fragen zu diesen Bedingungen richten Sie an{' '}
-            <a href="mailto:hello@knotify.app" style={{ color: 'var(--signal)' }}>
-              hello@knotify.app
+            <a href={`mailto:${LEGAL.email}`} style={{ color: 'var(--signal)' }}>
+              {LEGAL.email}
             </a>
             .
           </p>
         </Section>
 
-        <p
-          style={{
-            marginTop: 24,
-            fontSize: 12.5,
-            color: 'var(--ink-faint)',
-            lineHeight: 1.6,
-          }}
-        >
-          Dieser Entwurf ist eine erste Fassung und enthält Platzhalter. Bitte vor dem öffentlichen
-          Start rechtlich prüfen und die Betreiberangaben vervollständigen.
-        </p>
       </article>
     </div>
   )

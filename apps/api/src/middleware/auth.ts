@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express'
 import { supabase } from '../lib.js'
 import { ADMIN_EMAILS, evaluateNewUserAccess } from '../lib/access.js'
+import { allocateUsername, isGeneratedUsername, profileNameFromIdentity } from '../services/usernames.js'
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -65,7 +66,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   let lookup = (await supabase
     .from('users')
-    .select('id, is_admin, is_hr')
+    .select('id, is_admin, is_hr, full_name, username')
     .eq('auth_id', authId)
     .maybeSingle()).data
 
@@ -85,30 +86,51 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 
     const email = authEmail ?? `user-${authId.slice(0, 8)}@unknown.app`
-    const baseUsername = `user_${authId.replace(/-/g, '').slice(0, 12)}`
-    const stem = (email.split('@')[0] ?? 'New user').replace(/[._+-]+/g, ' ')
-    const fullName = stem.charAt(0).toUpperCase() + stem.slice(1)
+    const fullName = profileNameFromIdentity(metadata, email)
+    const metadataUsername = typeof metadata.username === 'string' ? metadata.username.trim().toLowerCase() : ''
+    let username = /^[a-z0-9_]{3,32}$/.test(metadataUsername)
+      ? metadataUsername
+      : await allocateUsername(fullName)
 
     const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase())
 
-    const insert = await supabase
+    let insert = await supabase
       .from('users')
       .insert({
         auth_id: authId,
         email,
-        username: baseUsername,
+        username,
         full_name: fullName,
         location_city: 'Munich',
         status: 'open_to_work',
         is_admin: isAdmin,
       })
-      .select('id, is_admin, is_hr')
+      .select('id, is_admin, is_hr, full_name, username')
       .single()
+
+    // A concurrent signup may have claimed the same readable handle after our
+    // availability check. Allocate again from the now-current database state.
+    if (insert.error?.code === '23505' && insert.error.message.toLowerCase().includes('username')) {
+      username = await allocateUsername(fullName)
+      insert = await supabase
+        .from('users')
+        .insert({
+          auth_id: authId,
+          email,
+          username,
+          full_name: fullName,
+          location_city: 'Munich',
+          status: 'open_to_work',
+          is_admin: isAdmin,
+        })
+        .select('id, is_admin, is_hr, full_name, username')
+        .single()
+    }
 
     if (insert.error) {
       const retry = await supabase
         .from('users')
-        .select('id, is_admin, is_hr')
+        .select('id, is_admin, is_hr, full_name, username')
         .eq('auth_id', authId)
         .maybeSingle()
 
@@ -120,6 +142,25 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       }
     } else {
       lookup = insert.data
+    }
+  }
+
+  // Repair legacy UUID-derived handles lazily as users return. Migration 061
+  // performs the bulk repair; this path also covers deployments where the API
+  // rolls out before the migration or an old row is restored later.
+  if (isGeneratedUsername(lookup.username)) {
+    try {
+      const readableUsername = await allocateUsername(lookup.full_name, lookup.id)
+      const repaired = await supabase
+        .from('users')
+        .update({ username: readableUsername, updated_at: new Date().toISOString() })
+        .eq('id', lookup.id)
+        .eq('username', lookup.username)
+        .select('id, is_admin, is_hr, full_name, username')
+        .maybeSingle()
+      if (!repaired.error && repaired.data) lookup = repaired.data
+    } catch (error) {
+      console.warn('[auth] readable username repair failed:', error)
     }
   }
 
