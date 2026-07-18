@@ -435,7 +435,7 @@ conversationsRouter.get('/updates', requireAuth, async (req, res) => {
 
   try {
     const conversationIds = await listConversationIdsForUser(req.appUserId)
-    if (!conversationIds.length) return res.json({ conversations: [], server_time: serverTime })
+    if (!conversationIds.length) return res.json({ conversations: [], server_time: serverTime, current_user_id: req.appUserId })
 
     let changedConversationIds = conversationIds
     if (since) {
@@ -452,11 +452,12 @@ conversationsRouter.get('/updates', requireAuth, async (req, res) => {
       changedConversationIds = [...new Set((changed.data ?? []).map((row) => row.conversation_id as string))]
     }
 
-    if (!changedConversationIds.length) return res.json({ conversations: [], server_time: serverTime })
+    if (!changedConversationIds.length) return res.json({ conversations: [], server_time: serverTime, current_user_id: req.appUserId })
 
     return res.json({
       conversations: await buildConversationSummaries(req.appUserId, changedConversationIds),
       server_time: serverTime,
+      current_user_id: req.appUserId,
     })
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed loading conversation updates' })
@@ -468,9 +469,12 @@ conversationsRouter.get('/', requireAuth, async (req, res) => {
 
   try {
     const conversationIds = await listConversationIdsForUser(req.appUserId)
-    if (!conversationIds.length) return res.json({ conversations: [] })
+    if (!conversationIds.length) return res.json({ conversations: [], current_user_id: req.appUserId })
 
-    return res.json({ conversations: await buildConversationSummaries(req.appUserId, conversationIds) })
+    return res.json({
+      conversations: await buildConversationSummaries(req.appUserId, conversationIds),
+      current_user_id: req.appUserId,
+    })
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed loading conversations' })
   }
@@ -644,36 +648,32 @@ conversationsRouter.post('/:id/messages', requireAuth, async (req, res) => {
     const allowed = await isParticipant(conversationId, req.appUserId)
     if (!allowed) return res.status(403).json({ error: 'Not allowed to send in this conversation' })
 
-    const insert = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        sender_id: req.appUserId,
-        content: parsed.data.content,
-      })
-      .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
-      .single()
+    const [insert, restore] = await Promise.all([
+      supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          sender_id: req.appUserId,
+          content: parsed.data.content,
+        })
+        .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
+        .single(),
+      restoreConversationForAllParticipants(conversationId)
+        .then(() => null)
+        .catch((error) => error instanceof Error ? error : new Error('Failed restoring conversation')),
+    ])
 
     if (insert.error) return res.status(500).json({ error: insert.error.message })
-
-    try {
-      await restoreConversationForAllParticipants(conversationId)
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed restoring conversation' })
+    // The message is durable at this point. Do not report a false send failure
+    // (which invites duplicate retries) if unarchiving the thread alone failed.
+    if (restore instanceof Error) {
+      console.warn('[messages] sent but failed to restore participant state:', restore)
     }
-
-    const sender = await supabase
-      .from('users')
-      .select('id, full_name, username, avatar_url')
-      .eq('id', req.appUserId)
-      .maybeSingle()
-
-    if (sender.error) return res.status(500).json({ error: sender.error.message })
 
     return res.status(201).json({
       message: {
         ...insert.data,
-        sender: sender.data ?? null,
+        sender: null,
         is_mine: true,
         reactions: [],
       },

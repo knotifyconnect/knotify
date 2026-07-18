@@ -23,6 +23,7 @@ import { KAvatar, KBtn, KCard, KPill, VerifiedBadge } from '../lib/knotify'
 import { DeskHeader, Toggle, CredRingDark } from '../lib/desk'
 import { AvatarPicker } from '../components/ui/avatar-picker'
 import { AvatarGroup } from '../components/ui/avatar-1'
+import { AvatarCropper } from '../components/profile/AvatarCropper'
 import { avatarUrl } from '../lib/avatar'
 import { useIsMobile } from '../hooks/useIsMobile'
 import {
@@ -144,33 +145,6 @@ const LANGUAGE_OPTIONS = [
   'Mandarin', 'Japanese', 'Korean', 'Arabic', 'Russian', 'Hindi',
   'Dutch', 'Polish', 'Turkish', 'Swedish', 'Norwegian', 'Danish',
 ]
-
-async function imageFileToDataUrl(file: File) {
-  const objectUrl = URL.createObjectURL(file)
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image()
-      img.onload = () => resolve(img)
-      img.onerror = () => reject(new Error('Could not read image file'))
-      img.src = objectUrl
-    })
-    const size = 160
-    const canvas = document.createElement('canvas')
-    canvas.width = size
-    canvas.height = size
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('Canvas not available')
-    const scale = Math.max(size / image.width, size / image.height)
-    const dw = image.width * scale
-    const dh = image.height * scale
-    ctx.fillStyle = '#F4EFE6'
-    ctx.fillRect(0, 0, size, size)
-    ctx.drawImage(image, (size - dw) / 2, (size - dh) / 2, dw, dh)
-    return canvas.toDataURL('image/jpeg', 0.86)
-  } finally {
-    URL.revokeObjectURL(objectUrl)
-  }
-}
 
 function statusMeta(status: string) {
   if (status === 'employed') return { label: 'Employed', color: 'verd' as const }
@@ -335,6 +309,7 @@ function OwnProfileView() {
   // Avatar
   const [avatarEditorOpen, setAvatarEditorOpen] = useState(false)
   const [avatarDraft, setAvatarDraft] = useState<string | null>(null)
+  const [avatarCropSource, setAvatarCropSource] = useState<string | null>(null)
   const [avatarSaving, setAvatarSaving] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
 
@@ -521,6 +496,7 @@ function OwnProfileView() {
     try {
       const data = await apiPatch<{ user: Me }>('/api/users/me', {
         fullName: me.full_name,
+        username: me.username,
         bio: me.bio ?? '',
         headline: me.headline ?? '',
         locationCity: me.location_city ?? '',
@@ -549,7 +525,13 @@ function OwnProfileView() {
     if (!file.type.startsWith('image/')) { setAvatarError('Please choose an image file.'); return }
     try {
       setAvatarError(null)
-      setAvatarDraft(await imageFileToDataUrl(file))
+      if (file.size > 20 * 1024 * 1024) throw new Error('Please choose an image smaller than 20 MB.')
+      setAvatarCropSource(await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read image file'))
+        reader.onerror = () => reject(new Error('Could not read image file'))
+        reader.readAsDataURL(file)
+      }))
     } catch (err) {
       setAvatarError(err instanceof Error ? err.message : 'Could not process image')
     } finally { event.target.value = '' }
@@ -563,6 +545,7 @@ function OwnProfileView() {
       const data = await apiPatch<{ user: Me }>('/api/users/me', { avatarUrl: avatarDraft })
       setMe(data.user)
       setAvatarDraft(data.user.avatar_url ?? null)
+      setAvatarCropSource(null)
       setAvatarEditorOpen(false)
     } catch (err) {
       setAvatarError(err instanceof Error ? err.message : 'Could not save avatar')
@@ -1009,7 +992,8 @@ function OwnProfileView() {
           <SectionHead label="Basic info" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {([
-                            { label: 'Full name', key: 'full_name' as const },
+              { label: 'Full name', key: 'full_name' as const },
+              { label: 'Username', key: 'username' as const },
               { label: 'City', key: 'location_city' as const },
               { label: 'University', key: 'university' as const },
               { label: 'Current company', key: 'current_company' as const },
@@ -1017,7 +1001,7 @@ function OwnProfileView() {
               { label: 'GitHub URL', key: 'github_url' as const },
               { label: 'LinkedIn URL', key: 'linkedin_url' as const },
             ] as { label: string; key: keyof Me }[]).map(({ label, key }) => (
-              <div key={key} style={{ gridColumn: key === 'full_name' ? 'span 2' : undefined }}>
+              <div key={key} style={{ gridColumn: key === 'full_name' || key === 'username' ? 'span 2' : undefined }}>
                 {fieldLabel(label)}
                 <input
                   value={(me[key] as string | null) ?? ''}
@@ -1577,7 +1561,7 @@ function OwnProfileView() {
 
       {/* ─── Avatar editor modal ──────────────────────────────────────────── */}
       {avatarEditorOpen && (
-        <div onClick={() => setAvatarEditorOpen(false)}
+        <div onClick={() => { setAvatarCropSource(null); setAvatarEditorOpen(false) }}
           style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(26,24,21,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(3px)' }}>
           <div onClick={(e) => e.stopPropagation()}
             style={{ width: '100%', maxWidth: 640, background: 'var(--paper)', borderRadius: 20, padding: 24, boxShadow: '0 24px 80px rgba(26,24,21,0.28)' }}>
@@ -1586,8 +1570,15 @@ function OwnProfileView() {
                 <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 400, margin: 0, letterSpacing: '-0.02em' }}>Edit avatar</h2>
                 <p style={{ fontSize: 12.5, color: 'var(--ink-muted)', margin: '3px 0 0' }}>Pick a style or upload your own photo.</p>
               </div>
-              <KBtn variant="ghost" size="sm" onClick={() => setAvatarEditorOpen(false)}>Close</KBtn>
+              <KBtn variant="ghost" size="sm" onClick={() => { setAvatarCropSource(null); setAvatarEditorOpen(false) }}>Close</KBtn>
             </div>
+            {avatarCropSource ? (
+              <AvatarCropper
+                source={avatarCropSource}
+                onCancel={() => setAvatarCropSource(null)}
+                onApply={(dataUrl) => { setAvatarDraft(dataUrl); setAvatarCropSource(null) }}
+              />
+            ) : (
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_200px] gap-4">
               <AvatarPicker value={avatarDraft} onChange={setAvatarDraft} />
               <div style={{ padding: 14, borderRadius: 14, background: 'var(--paper-soft)', border: '0.5px solid var(--rule-soft)' }}>
@@ -1605,10 +1596,11 @@ function OwnProfileView() {
                 />
               </div>
             </div>
+            )}
             {avatarError && <p style={{ fontSize: 12, color: 'var(--signal)', marginTop: 10 }}>{avatarError}</p>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
               <KBtn variant="ghost" size="sm" onClick={() => { setAvatarDraft(me.avatar_url ?? null); setAvatarError(null) }} disabled={avatarSaving}>Reset</KBtn>
-              <KBtn variant="ghost" size="sm" onClick={() => setAvatarEditorOpen(false)} disabled={avatarSaving}>Cancel</KBtn>
+              <KBtn variant="ghost" size="sm" onClick={() => { setAvatarCropSource(null); setAvatarEditorOpen(false) }} disabled={avatarSaving}>Cancel</KBtn>
               <KBtn variant="signal" size="sm" onClick={saveAvatar} disabled={!avatarDraft || avatarSaving || avatarDraft === (me.avatar_url ?? null)}>
                 {avatarSaving ? 'Saving…' : 'Save avatar'}
               </KBtn>

@@ -79,6 +79,110 @@ async function canManageCompany(companyId: string, userId: string) {
   return Boolean(membership.data)
 }
 
+type NetworkPerson = {
+  id: string
+  full_name: string
+  username: string
+  avatar_url: string | null
+  current_company: string | null
+}
+
+type JobConnectionContext = {
+  direct: NetworkPerson[]
+  secondDegree: Array<NetworkPerson & { mutual_connections: NetworkPerson[] }>
+}
+
+function normalizedCompanyName(value: string | null | undefined) {
+  return (value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(gmbh|ag|se|inc|ltd|llc|group|holding|company|co)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function worksAtCompany(person: NetworkPerson, companyName: string) {
+  const personCompany = normalizedCompanyName(person.current_company)
+  const jobCompany = normalizedCompanyName(companyName)
+  if (!personCompany || !jobCompany) return false
+  return personCompany === jobCompany || personCompany.includes(jobCompany) || jobCompany.includes(personCompany)
+}
+
+async function connectionContextForCompanies(userId: string, companyNames: string[]) {
+  const uniqueNames = [...new Set(companyNames.map((name) => name.trim()).filter(Boolean))]
+  const empty = new Map(uniqueNames.map((name) => [name, { direct: [], secondDegree: [] } as JobConnectionContext]))
+  if (!uniqueNames.length) return empty
+
+  const myConnections = await supabase
+    .from('connections')
+    .select('requester_id, addressee_id')
+    .eq('status', 'accepted')
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+  if (myConnections.error) throw new Error(myConnections.error.message)
+
+  const directIds = [...new Set((myConnections.data ?? []).map((connection) =>
+    connection.requester_id === userId ? connection.addressee_id : connection.requester_id
+  ))]
+  if (!directIds.length) return empty
+
+  const [directResult, requestedByDirect, addressedToDirect] = await Promise.all([
+    supabase.from('users').select('id, full_name, username, avatar_url, current_company').in('id', directIds),
+    supabase.from('connections').select('requester_id, addressee_id').eq('status', 'accepted').in('requester_id', directIds),
+    supabase.from('connections').select('requester_id, addressee_id').eq('status', 'accepted').in('addressee_id', directIds),
+  ])
+  if (directResult.error) throw new Error(directResult.error.message)
+  if (requestedByDirect.error) throw new Error(requestedByDirect.error.message)
+  if (addressedToDirect.error) throw new Error(addressedToDirect.error.message)
+
+  const direct = (directResult.data ?? []) as NetworkPerson[]
+  const directSet = new Set(directIds)
+  const mutualIdsBySecond = new Map<string, Set<string>>()
+  const edgeRows = [...(requestedByDirect.data ?? []), ...(addressedToDirect.data ?? [])]
+
+  for (const connection of edgeRows) {
+    const requesterIsDirect = directSet.has(connection.requester_id)
+    const addresseeIsDirect = directSet.has(connection.addressee_id)
+    if (requesterIsDirect === addresseeIsDirect) continue
+
+    const mutualId = requesterIsDirect ? connection.requester_id : connection.addressee_id
+    const secondId = requesterIsDirect ? connection.addressee_id : connection.requester_id
+    if (secondId === userId || directSet.has(secondId)) continue
+
+    const mutualIds = mutualIdsBySecond.get(secondId) ?? new Set<string>()
+    mutualIds.add(mutualId)
+    mutualIdsBySecond.set(secondId, mutualIds)
+  }
+
+  const secondIds = [...mutualIdsBySecond.keys()]
+  const secondResult = secondIds.length
+    ? await supabase.from('users').select('id, full_name, username, avatar_url, current_company').in('id', secondIds)
+    : { data: [], error: null }
+  if (secondResult.error) throw new Error(secondResult.error.message)
+
+  const directById = new Map(direct.map((person) => [person.id, person]))
+  const second = (secondResult.data ?? []) as NetworkPerson[]
+  const result = new Map<string, JobConnectionContext>()
+
+  for (const companyName of uniqueNames) {
+    result.set(companyName, {
+      direct: direct.filter((person) => worksAtCompany(person, companyName)).slice(0, 8),
+      secondDegree: second
+        .filter((person) => worksAtCompany(person, companyName))
+        .slice(0, 12)
+        .map((person) => ({
+          ...person,
+          mutual_connections: [...(mutualIdsBySecond.get(person.id) ?? [])]
+            .map((id) => directById.get(id))
+            .filter((value): value is NetworkPerson => Boolean(value))
+            .slice(0, 4),
+        })),
+    })
+  }
+
+  return result
+}
+
 export const jobsRouter = Router()
 
 // Paste a job posting URL, get back an editable draft (title/company/location/
@@ -146,39 +250,46 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
   const jobs = jobsResult.data ?? []
 
   const companyIds = [...new Set(jobs.map((j) => j.company_id).filter((id): id is string => Boolean(id)))]
-  const companies = companyIds.length
-    ? await supabase.from('companies').select('id, name, logo_url, city').in('id', companyIds)
-    : { data: [], error: null }
-  if (companies.error) return res.status(500).json({ error: companies.error.message })
-
-  const companyMap = new Map((companies.data ?? []).map((c) => [c.id, c]))
-
   // Link-shared jobs have no verified company — the member who shared it is
   // the contact/referral point instead, so surface their identity.
   const posterIds = [...new Set(jobs.filter((j) => !j.company_id).map((j) => j.posted_by).filter(Boolean))]
-  const posters = posterIds.length
-    ? await supabase.from('users').select('id, full_name, username, avatar_url').in('id', posterIds)
-    : { data: [], error: null }
-  if (posters.error) return res.status(500).json({ error: posters.error.message })
-  const posterMap = new Map((posters.data ?? []).map((u) => [u.id, u]))
-
-  let verifiedSkillNames = new Set<string>()
-  if (req.appUserId) {
-    const mySkills = await supabase
-      .from('skills_legacy')
-      .select('name')
-      .eq('user_id', req.appUserId)
-      .eq('is_verified', true)
-    if (mySkills.error) return res.status(500).json({ error: mySkills.error.message })
-    verifiedSkillNames = new Set((mySkills.data ?? []).map((s) => (s.name ?? '').toLowerCase()))
-  }
-
-  // Check which jobs current user has saved
   const jobIds = jobs.map((j) => j.id)
-  let savedSet = new Set<string>()
-  if (req.appUserId && jobIds.length > 0) {
-    const savedResult = await supabase.from('saved_jobs').select('job_id').eq('user_id', req.appUserId).in('job_id', jobIds)
-    savedSet = new Set((savedResult.data ?? []).map((r) => r.job_id))
+  const [companies, posters, mySkills, savedResult] = await Promise.all([
+    companyIds.length
+      ? supabase.from('companies').select('id, name, logo_url, city').in('id', companyIds)
+      : Promise.resolve({ data: [], error: null }),
+    posterIds.length
+      ? supabase.from('users').select('id, full_name, username, avatar_url').in('id', posterIds)
+      : Promise.resolve({ data: [], error: null }),
+    req.appUserId
+      ? supabase.from('skills_legacy').select('name').eq('user_id', req.appUserId).eq('is_verified', true)
+      : Promise.resolve({ data: [], error: null }),
+    req.appUserId && jobIds.length > 0
+      ? supabase.from('saved_jobs').select('job_id').eq('user_id', req.appUserId).in('job_id', jobIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (companies.error) return res.status(500).json({ error: companies.error.message })
+  if (posters.error) return res.status(500).json({ error: posters.error.message })
+  if (mySkills.error) return res.status(500).json({ error: mySkills.error.message })
+  if (savedResult.error) return res.status(500).json({ error: savedResult.error.message })
+
+  const companyMap = new Map((companies.data ?? []).map((c) => [c.id, c]))
+  const posterMap = new Map((posters.data ?? []).map((u) => [u.id, u]))
+  const verifiedSkillNames = new Set((mySkills.data ?? []).map((s) => (s.name ?? '').toLowerCase()))
+  const savedSet = new Set((savedResult.data ?? []).map((row) => row.job_id))
+
+  const companyNames = jobs
+    .map((job) => job.company_id ? companyMap.get(job.company_id)?.name : job.company_name)
+    .filter((name): name is string => Boolean(name))
+  let connectionContext = new Map<string, JobConnectionContext>()
+  if (req.appUserId) {
+    try {
+      connectionContext = await connectionContextForCompanies(req.appUserId, companyNames)
+    } catch (error) {
+      // Connection hints should never prevent jobs themselves from loading.
+      console.warn('[jobs] connection context unavailable:', error)
+    }
   }
 
   const mapped = jobs.map((job) => {
@@ -190,11 +301,13 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
       ? companyMap.get(job.company_id) ?? null
       : { id: null, name: job.company_name, logo_url: job.company_logo_url, city: null }
     const poster = job.company_id ? null : posterMap.get(job.posted_by) ?? null
+    const network = company?.name ? connectionContext.get(company.name) : null
 
     return {
       ...job,
       company,
       poster,
+      connection_context: network ?? { direct: [], secondDegree: [] },
       matchScore,
       matchedRequiredSkills: matched,
       totalRequiredSkills: required.length,
@@ -246,22 +359,12 @@ jobsRouter.get('/:id', requireAuth, async (req, res) => {
   if (referralsCount.error) return res.status(500).json({ error: referralsCount.error.message })
 
   // Referral connections — users connected to me who work at this company
-  let referralConnections: any[] = []
-  if (req.appUserId && company.data) {
-    const conns = await supabase
-      .from('connections')
-      .select('requester_id, addressee_id')
-      .eq('status', 'accepted')
-      .or(`requester_id.eq.${req.appUserId},addressee_id.eq.${req.appUserId}`)
-    const connIds = (conns.data ?? []).map((c) => c.requester_id === req.appUserId ? c.addressee_id : c.requester_id)
-    if (connIds.length > 0) {
-      const companyName = company.data.name
-      const users = await supabase
-        .from('users')
-        .select('id, full_name, username, avatar_url, current_company')
-        .in('id', connIds)
-        .ilike('current_company', `%${companyName}%`)
-      referralConnections = users.data ?? []
+  let network: JobConnectionContext = { direct: [], secondDegree: [] }
+  if (req.appUserId && company.data?.name) {
+    try {
+      network = (await connectionContextForCompanies(req.appUserId, [company.data.name])).get(company.data.name) ?? network
+    } catch (error) {
+      console.warn('[jobs/:id] connection context unavailable:', error)
     }
   }
 
@@ -271,7 +374,8 @@ jobsRouter.get('/:id', requireAuth, async (req, res) => {
       company: company.data ?? null,
       poster: poster.data ?? null,
       submittedReferrals: referralsCount.count ?? 0,
-      referral_connections: referralConnections,
+      referral_connections: network.direct,
+      connection_context: network,
     },
   })
 })

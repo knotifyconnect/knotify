@@ -31,7 +31,7 @@ export function AppLayout({ children }: PropsWithChildren) {
     <TourProvider>
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         background: 'var(--paper)',
         color: 'var(--ink)',
         fontFamily: "'IBM Plex Sans', sans-serif",
