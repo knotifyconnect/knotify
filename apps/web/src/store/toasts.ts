@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 
-type ToastType = 'referral_received' | 'referral_submitted' | 'connection_accepted' | 'message' | 'invite_bonus'
+type ToastType =
+  | 'referral_received'
+  | 'referral_submitted'
+  | 'connection_accepted'
+  | 'connection_request'
+  | 'message'
+  | 'event_rsvp'
+  | 'invite_bonus'
 
 export type ToastItem = {
   id: string

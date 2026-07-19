@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { createNotification, getUserFirstName } from '../lib/notifications.js'
 
 const createConnectionSchema = z.object({
   addresseeId: z.string().uuid(),
@@ -101,6 +102,17 @@ connectionsRouter.post('/', requireAuth, async (req, res) => {
       .single()
 
     if (accept.error) return res.status(500).json({ error: accept.error.message })
+
+    const accepterName = await getUserFirstName(req.appUserId)
+    void createNotification({
+      userId: reverse.requester_id,
+      actorId: req.appUserId,
+      type: 'connection_accepted',
+      title: `${accepterName} accepted your connection request`,
+      entityType: 'connection',
+      entityId: reverse.id,
+    })
+
     return res.status(200).json({ connection: accept.data, autoAccepted: true })
   }
 
@@ -119,6 +131,17 @@ connectionsRouter.post('/', requireAuth, async (req, res) => {
       .select('*')
       .single()
     if (update.error) return res.status(500).json({ error: update.error.message })
+
+    const resenderName = await getUserFirstName(req.appUserId)
+    void createNotification({
+      userId: addresseeId,
+      actorId: req.appUserId,
+      type: 'connection_request',
+      title: `${resenderName} sent you a connection request`,
+      entityType: 'connection',
+      entityId: update.data.id,
+    })
+
     return res.status(200).json({ connection: update.data })
   }
 
@@ -132,6 +155,16 @@ connectionsRouter.post('/', requireAuth, async (req, res) => {
   if (insert.error) {
     return res.status(500).json({ error: insert.error.message })
   }
+
+  const requesterName = await getUserFirstName(req.appUserId)
+  void createNotification({
+    userId: addresseeId,
+    actorId: req.appUserId,
+    type: 'connection_request',
+    title: `${requesterName} sent you a connection request`,
+    entityType: 'connection',
+    entityId: insert.data.id,
+  })
 
   return res.status(201).json({ connection: insert.data })
 })
@@ -167,6 +200,18 @@ connectionsRouter.patch('/:id', requireAuth, async (req, res) => {
 
   if (!result.data) {
     return res.status(404).json({ error: 'Pending request not found' })
+  }
+
+  if (parsed.data.status === 'accepted') {
+    const accepterName = await getUserFirstName(req.appUserId)
+    void createNotification({
+      userId: result.data.requester_id,
+      actorId: req.appUserId,
+      type: 'connection_accepted',
+      title: `${accepterName} accepted your connection request`,
+      entityType: 'connection',
+      entityId: result.data.id,
+    })
   }
 
   return res.json({ connection: result.data })

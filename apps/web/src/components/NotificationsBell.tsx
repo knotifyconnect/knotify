@@ -13,12 +13,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { Bell, MessageSquare, Briefcase, Check, X, Inbox, ClipboardList, UserRoundPlus, Plus, MessageCircle } from 'lucide-react'
-import { apiGetCached, apiPatch } from '../lib/api'
+import { Bell, MessageSquare, Briefcase, Check, X, Inbox, ClipboardList, UserRoundPlus, Plus, MessageCircle, BellRing, UserPlus, CalendarCheck } from 'lucide-react'
+import { apiGetCached, apiPatch, apiPost } from '../lib/api'
 import { KAvatar } from '../lib/knotify'
 import { runWhenIdle } from '../lib/schedule'
 import { AskDrawer, type Ask } from './asks/AskDrawer'
 import { CreateAskModal } from './asks/CreateAskModal'
+import { useNotificationsUnreadCount } from '../hooks/useNotifications'
+import { isPushSupported, subscribeToPush } from '../lib/push'
 
 type Peer = { id: string; full_name: string; username: string; avatar_url: string | null }
 type RawConn = {
@@ -29,7 +31,38 @@ type RawConn = {
   user: Peer | null
 }
 type Request = { id: string; peer: Peer }
-type BellTab = 'for-you' | 'your-asks' | 'requests'
+type NotificationActor = { id: string; full_name: string; username: string; avatar_url: string | null }
+type NotificationItem = {
+  id: string
+  type: 'connection_request' | 'connection_accepted' | 'message' | 'event_rsvp'
+  title: string
+  body: string | null
+  url: string | null
+  read_at: string | null
+  created_at: string
+  actor: NotificationActor | null
+}
+type BellTab = 'activity' | 'for-you' | 'your-asks' | 'requests'
+
+const NOTIFICATION_ICONS: Record<NotificationItem['type'], typeof UserPlus> = {
+  connection_request: UserPlus,
+  connection_accepted: UserRoundPlus,
+  message: MessageSquare,
+  event_rsvp: CalendarCheck,
+}
+
+const PUSH_SOFT_ASK_DISMISSED_KEY = 'knotify:push-soft-ask-dismissed'
+
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const minutes = Math.round(diffMs / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  return `${days}d ago`
+}
 
 const T = {
   paper: '#F4EFE6', paperSoft: '#FAF6EE', ink: '#1A1815', inkMuted: '#6B6358',
@@ -45,12 +78,31 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   const [feedAsks, setFeedAsks] = useState<Ask[]>([])
   const [myAsks, setMyAsks] = useState<Ask[]>([])
   const [askUnread, setAskUnread] = useState(0)
-  const [activeTab, setActiveTab] = useState<BellTab>('for-you')
+  const [activeTab, setActiveTab] = useState<BellTab>('activity')
   const [selectedAsk, setSelectedAsk] = useState<Ask | null>(null)
   const [creatingAsk, setCreatingAsk] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const [pos, setPos] = useState<React.CSSProperties | null>(null)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const notificationsUnread = useNotificationsUnreadCount()
+  const [pushDismissed, setPushDismissed] = useState(
+    () => typeof window !== 'undefined' && window.localStorage.getItem(PUSH_SOFT_ASK_DISMISSED_KEY) === '1'
+  )
+  const [pushPermission, setPushPermission] = useState(
+    () => (typeof Notification !== 'undefined' ? Notification.permission : 'denied')
+  )
+  const showPushSoftAsk = isPushSupported() && pushPermission === 'default' && !pushDismissed
+
+  const loadNotifications = useCallback(async () => {
+    if (document.hidden) return
+    try {
+      const data = await apiGetCached<{ notifications: NotificationItem[] }>('/api/notifications', { ttlMs: 10_000 })
+      setNotifications(data.notifications ?? [])
+    } catch {
+      /* silent — notifications degrade gracefully */
+    }
+  }, [])
 
   const load = useCallback(async () => {
     if (document.hidden) return
@@ -78,15 +130,15 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   }, [])
 
   useEffect(() => {
-    const cancelInitialLoad = runWhenIdle(() => void load(), 10_000)
-    const interval = window.setInterval(() => void load(), 120000)
+    const cancelInitialLoad = runWhenIdle(() => { void load(); void loadNotifications() }, 10_000)
+    const interval = window.setInterval(() => { void load(); void loadNotifications() }, 120000)
     return () => {
       cancelInitialLoad()
       window.clearInterval(interval)
     }
-  }, [load])
+  }, [load, loadNotifications])
 
-  const total = requests.length + askUnread + messageUnread + referralUnread
+  const total = requests.length + askUnread + messageUnread + referralUnread + notificationsUnread
   function toggle() {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect()
@@ -98,6 +150,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
         setPos({ top: r.bottom + 8, left: Math.max(12, left) })
       }
       void load()
+      void loadNotifications()
     }
     setOpen((o) => !o)
   }
@@ -112,6 +165,39 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
     } finally {
       setBusyId(null)
     }
+  }
+
+  async function openNotification(n: NotificationItem) {
+    setOpen(false)
+    if (!n.read_at) {
+      setNotifications((prev) => prev.map((item) => (item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item)))
+      try {
+        await apiPatch(`/api/notifications/${n.id}/read`, {})
+      } catch {
+        /* count will reconcile on next poll */
+      }
+    }
+    if (n.url) navigate(n.url)
+  }
+
+  async function markAllNotificationsRead() {
+    setNotifications((prev) => prev.map((item) => (item.read_at ? item : { ...item, read_at: new Date().toISOString() })))
+    try {
+      await apiPost('/api/notifications/read-all', {})
+    } catch {
+      /* count will reconcile on next poll */
+    }
+  }
+
+  function dismissPushSoftAsk() {
+    setPushDismissed(true)
+    window.localStorage.setItem(PUSH_SOFT_ASK_DISMISSED_KEY, '1')
+  }
+
+  async function enablePush() {
+    const granted = await subscribeToPush()
+    setPushPermission(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
+    if (granted) dismissPushSoftAsk()
   }
 
   const bellButton = (
@@ -160,8 +246,18 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
               <button type="button" onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkFaint, display: 'flex', padding: 2 }}><X size={16} /></button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, padding: '0 8px 8px', borderBottom: `0.5px solid ${T.ruleSoft}` }}>
+            {showPushSoftAsk && (
+              <div style={{ margin: '0 8px 8px', padding: '9px 10px', borderRadius: 10, background: 'rgba(216,68,43,0.08)', border: '0.5px solid rgba(216,68,43,0.25)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <BellRing size={15} color={T.signal} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 12, color: T.ink, lineHeight: 1.4 }}>Get notified instantly — turn on browser notifications.</span>
+                <button type="button" onClick={() => void enablePush()} style={{ border: 'none', background: T.signal, color: '#fff', borderRadius: 8, padding: '5px 8px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Turn on</button>
+                <button type="button" onClick={dismissPushSoftAsk} aria-label="Dismiss" style={{ border: 'none', background: 'none', color: T.inkFaint, cursor: 'pointer', flexShrink: 0, display: 'flex', padding: 2 }}><X size={13} /></button>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, padding: '0 8px 8px', borderBottom: `0.5px solid ${T.ruleSoft}` }}>
               {([
+                { id: 'activity' as const, label: 'Activity', icon: Bell, count: notificationsUnread },
                 { id: 'for-you' as const, label: 'For you', icon: Inbox, count: askUnread },
                 { id: 'your-asks' as const, label: 'Your asks', icon: ClipboardList, count: myAsks.filter((ask) => ask.status === 'open').length },
                 { id: 'requests' as const, label: 'Requests', icon: UserRoundPlus, count: requests.length },
@@ -170,6 +266,39 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
                 return <button key={id} type="button" onClick={() => setActiveTab(id)} style={{ border: `0.5px solid ${active ? 'rgba(216,68,43,0.30)' : 'transparent'}`, background: active ? 'rgba(216,68,43,0.08)' : 'transparent', borderRadius: 10, padding: '7px 3px', color: active ? T.signal : T.inkMuted, cursor: 'pointer', fontFamily: T.text, display: 'grid', placeItems: 'center', gap: 3 }}><Icon size={14} /><span style={{ fontSize: 10.5, fontWeight: active ? 700 : 600 }}>{label}{count ? ` · ${count}` : ''}</span></button>
               })}
             </div>
+
+            {activeTab === 'activity' && (
+              <div style={{ padding: '4px 4px 8px' }}>
+                {notificationsUnread > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '4px 8px' }}>
+                    <button type="button" onClick={() => void markAllNotificationsRead()} style={{ border: 'none', background: 'none', color: T.signal, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: T.text }}>Mark all read</button>
+                  </div>
+                )}
+                {notifications.length === 0 ? (
+                  <div style={{ padding: '20px 12px 24px', textAlign: 'center', color: T.inkMuted, fontSize: 13.5 }}>
+                    You're all caught up.
+                  </div>
+                ) : (
+                  notifications.map((n) => {
+                    const Icon = NOTIFICATION_ICONS[n.type]
+                    return (
+                      <button key={n.id} type="button" onClick={() => void openNotification(n)} style={{ ...rowStyle, padding: '9px 6px', background: n.read_at ? 'none' : 'rgba(216,68,43,0.05)' }}>
+                        {n.actor ? (
+                          <KAvatar name={n.actor.full_name} src={n.actor.avatar_url} size={30} />
+                        ) : (
+                          <span style={iconWrap(T.signal)}><Icon size={15} /></span>
+                        )}
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontSize: 12.5, fontWeight: n.read_at ? 500 : 650, color: T.ink }}>{n.title}</span>
+                          <span style={{ display: 'block', marginTop: 2, fontSize: 11, color: T.inkFaint }}>{timeAgo(n.created_at)}</span>
+                        </span>
+                        {!n.read_at && <span style={{ width: 7, height: 7, borderRadius: '50%', background: T.signal, flexShrink: 0 }} />}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            )}
 
             {activeTab === 'for-you' && feedAsks.length === 0 && messageUnread === 0 && referralUnread === 0 && (
               <div style={{ padding: '20px 12px 24px', textAlign: 'center', color: T.inkMuted, fontSize: 13.5 }}>

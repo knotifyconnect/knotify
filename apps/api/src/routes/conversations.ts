@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { createNotification } from '../lib/notifications.js'
 
 type ConversationRow = {
   id: string
@@ -668,6 +669,33 @@ conversationsRouter.post('/:id/messages', requireAuth, async (req, res) => {
     // (which invites duplicate retries) if unarchiving the thread alone failed.
     if (restore instanceof Error) {
       console.warn('[messages] sent but failed to restore participant state:', restore)
+    }
+
+    const sender = await supabase
+      .from('users')
+      .select('id, full_name, username, avatar_url')
+      .eq('id', req.appUserId)
+      .maybeSingle()
+
+    if (sender.error) return res.status(500).json({ error: sender.error.message })
+
+    const otherParticipants = await supabase
+      .from('conversation_participants')
+      .select('user_id')
+      .eq('conversation_id', conversationId)
+      .neq('user_id', req.appUserId)
+
+    const senderFirstName = sender.data?.full_name?.split(' ')[0] ?? 'Someone'
+    for (const participant of otherParticipants.data ?? []) {
+      void createNotification({
+        userId: participant.user_id,
+        actorId: req.appUserId,
+        type: 'message',
+        title: `${senderFirstName} sent you a message`,
+        body: parsed.data.content.slice(0, 140),
+        entityType: 'conversation',
+        entityId: conversationId,
+      })
     }
 
     return res.status(201).json({

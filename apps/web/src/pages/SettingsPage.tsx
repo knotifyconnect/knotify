@@ -21,6 +21,7 @@ import { soundEnabled, setSoundEnabled } from '../lib/sound'
 import { DeskHeader, T, Toggle } from '../lib/desk'
 import { KBtn } from '../lib/knotify'
 import { useTour } from '../components/tour/TourProvider'
+import { getPushSubscriptionState, subscribeToPush, unsubscribeFromPush } from '../lib/push'
 
 function Section({ icon, title, description, children }: { icon: React.ReactNode; title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -65,11 +66,31 @@ export function SettingsPage() {
   const [sound, setSound] = useState(soundEnabled())
   const [analyticsOn, setAnalyticsOn] = useState(getConsent() === 'granted')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [pushState, setPushState] = useState<'unsupported' | 'default' | 'denied' | 'granted-subscribed' | 'granted-unsubscribed'>('default')
+  const [pushBusy, setPushBusy] = useState(false)
   const tour = useTour()
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? '')).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    void getPushSubscriptionState().then(setPushState)
+  }, [])
+
+  async function togglePush() {
+    setPushBusy(true)
+    try {
+      if (pushState === 'granted-subscribed') {
+        await unsubscribeFromPush()
+      } else {
+        await subscribeToPush()
+      }
+      setPushState(await getPushSubscriptionState())
+    } finally {
+      setPushBusy(false)
+    }
+  }
 
   async function sendPasswordReset() {
     if (!email) return
@@ -138,6 +159,17 @@ export function SettingsPage() {
             sub="Play a short sound when you complete a quest or earn credibility."
             right={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Volume2 size={15} color={sound ? T.verd : T.inkFaint} /><Toggle on={sound} onClick={toggleSound} /></span>}
           />
+          {pushState !== 'unsupported' && (
+            <Row
+              label="Browser notifications"
+              sub={
+                pushState === 'denied'
+                  ? 'Blocked in your browser settings. Enable notifications for knotify to turn this back on.'
+                  : 'Get notified about messages, connection requests and RSVPs even when knotify isn\'t open.'
+              }
+              right={pushState === 'denied' ? undefined : <Toggle on={pushState === 'granted-subscribed'} onClick={pushBusy ? undefined : () => void togglePush()} />}
+            />
+          )}
         </Section>
 
         <Section icon={<HelpCircle size={17} />} title="Help">

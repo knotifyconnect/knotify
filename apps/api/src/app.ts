@@ -33,6 +33,8 @@ import { gigsRouter } from './routes/gigs.js'
 import { invitesRouter } from './routes/invites.js'
 import { feedbackRouter } from './routes/feedback.js'
 import { intelligenceHealthRouter } from './routes/intelligenceHealth.js'
+import { notificationsRouter } from './routes/notifications.js'
+import { pushRouter } from './routes/push.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { supabase } from './lib.js'
 import { getAccessConfig, resolveInviteCode, isApprovedEmail } from './lib/access.js'
@@ -175,6 +177,8 @@ app.use('/api/for-you', forYouRouter)
 app.use('/api/gigs', gigsRouter)
 app.use('/api/invites', invitesRouter)
 app.use('/api/feedback', feedbackRouter)
+app.use('/api/notifications', notificationsRouter)
+app.use('/api/push', pushRouter)
 
 // Sentry captures the error, then our handler sends the (redacted) response.
 // No-op when SENTRY_DSN isn't configured.

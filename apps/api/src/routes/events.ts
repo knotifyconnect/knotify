@@ -3,6 +3,7 @@ import multer from 'multer'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { createNotification, getUserFirstName } from '../lib/notifications.js'
 
 export const eventsRouter = Router()
 
@@ -172,5 +173,19 @@ eventsRouter.post('/:id/rsvp', requireAuth, async (req, res) => {
   }
   const ins = await supabase.from('event_rsvps').insert({ event_id: req.params.id, user_id: req.appUserId })
   if (ins.error) return res.status(500).json({ error: ins.error.message })
+
+  const event = await supabase.from('events').select('host_id, title').eq('id', req.params.id).maybeSingle()
+  if (event.data && event.data.host_id !== req.appUserId) {
+    const attendeeName = await getUserFirstName(req.appUserId)
+    void createNotification({
+      userId: event.data.host_id,
+      actorId: req.appUserId,
+      type: 'event_rsvp',
+      title: `${attendeeName} RSVP'd to ${event.data.title}`,
+      entityType: 'event',
+      entityId: req.params.id,
+    })
+  }
+
   return res.json({ rsvped: true })
 })
