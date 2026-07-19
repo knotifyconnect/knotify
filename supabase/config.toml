@@ -233,15 +233,18 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Use a production-ready SMTP server
-# [auth.email.smtp]
-# enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# Route auth emails (confirmation, password reset, etc.) through Resend
+# instead of Supabase's default sender, so they come from our own verified
+# domain (hello@knotify.pro) with real SPF/DKIM alignment. Same provider and
+# API key already used for transactional email in apps/api/src/lib/email.ts.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 587
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "hello@knotify.pro"
+sender_name = "knotify"
 
 [auth.email.template.confirmation]
 subject = "Confirm your knotify account"
