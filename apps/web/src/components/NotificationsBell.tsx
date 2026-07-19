@@ -13,14 +13,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { Bell, MessageSquare, Briefcase, Check, X, Inbox, ClipboardList, UserRoundPlus, Plus, MessageCircle, BellRing, UserPlus, CalendarCheck } from 'lucide-react'
+import { Bell, MessageSquare, Briefcase, Check, X, Inbox, ClipboardList, UserRoundPlus, Plus, MessageCircle, UserPlus, CalendarCheck } from 'lucide-react'
 import { apiGetCached, apiPatch, apiPost } from '../lib/api'
 import { KAvatar } from '../lib/knotify'
 import { runWhenIdle } from '../lib/schedule'
 import { AskDrawer, type Ask } from './asks/AskDrawer'
 import { CreateAskModal } from './asks/CreateAskModal'
 import { useNotificationsUnreadCount } from '../hooks/useNotifications'
-import { isPushSupported, subscribeToPush } from '../lib/push'
 
 type Peer = { id: string; full_name: string; username: string; avatar_url: string | null }
 type RawConn = {
@@ -50,8 +49,6 @@ const NOTIFICATION_ICONS: Record<NotificationItem['type'], typeof UserPlus> = {
   message: MessageSquare,
   event_rsvp: CalendarCheck,
 }
-
-const PUSH_SOFT_ASK_DISMISSED_KEY = 'knotify:push-soft-ask-dismissed'
 
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -86,13 +83,6 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   const [pos, setPos] = useState<React.CSSProperties | null>(null)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const notificationsUnread = useNotificationsUnreadCount()
-  const [pushDismissed, setPushDismissed] = useState(
-    () => typeof window !== 'undefined' && window.localStorage.getItem(PUSH_SOFT_ASK_DISMISSED_KEY) === '1'
-  )
-  const [pushPermission, setPushPermission] = useState(
-    () => (typeof Notification !== 'undefined' ? Notification.permission : 'denied')
-  )
-  const showPushSoftAsk = isPushSupported() && pushPermission === 'default' && !pushDismissed
 
   const loadNotifications = useCallback(async () => {
     if (document.hidden) return
@@ -189,17 +179,6 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
     }
   }
 
-  function dismissPushSoftAsk() {
-    setPushDismissed(true)
-    window.localStorage.setItem(PUSH_SOFT_ASK_DISMISSED_KEY, '1')
-  }
-
-  async function enablePush() {
-    const granted = await subscribeToPush()
-    setPushPermission(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
-    if (granted) dismissPushSoftAsk()
-  }
-
   const bellButton = (
     <button
       ref={btnRef}
@@ -245,15 +224,6 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
               <span style={{ fontFamily: T.display, fontSize: 17, fontWeight: 500, color: T.ink }}>Notifications</span>
               <button type="button" onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.inkFaint, display: 'flex', padding: 2 }}><X size={16} /></button>
             </div>
-
-            {showPushSoftAsk && (
-              <div style={{ margin: '0 8px 8px', padding: '9px 10px', borderRadius: 10, background: 'rgba(216,68,43,0.08)', border: '0.5px solid rgba(216,68,43,0.25)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <BellRing size={15} color={T.signal} style={{ flexShrink: 0 }} />
-                <span style={{ flex: 1, fontSize: 12, color: T.ink, lineHeight: 1.4 }}>Get notified instantly — turn on browser notifications.</span>
-                <button type="button" onClick={() => void enablePush()} style={{ border: 'none', background: T.signal, color: '#fff', borderRadius: 8, padding: '5px 8px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Turn on</button>
-                <button type="button" onClick={dismissPushSoftAsk} aria-label="Dismiss" style={{ border: 'none', background: 'none', color: T.inkFaint, cursor: 'pointer', flexShrink: 0, display: 'flex', padding: 2 }}><X size={13} /></button>
-              </div>
-            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, padding: '0 8px 8px', borderBottom: `0.5px solid ${T.ruleSoft}` }}>
               {([

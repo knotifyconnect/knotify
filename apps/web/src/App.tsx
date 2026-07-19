@@ -418,6 +418,13 @@ export default function App() {
   }, [token, reentryState.showLanding])
 
   useEffect(() => {
+    if (!token) return
+    return runWhenIdle(() => {
+      void import('./lib/push').then((m) => m.maybeAutoSubscribeToPush()).catch(() => {})
+    }, 1500)
+  }, [token])
+
+  useEffect(() => {
     // onAuthStateChange fires INITIAL_SESSION immediately on mount with the
     // existing session (or null). This is the single source of truth â€”
     // no separate getSession() call that can race and wipe a valid token.

@@ -59,3 +59,21 @@ export async function getPushSubscriptionState(): Promise<'unsupported' | 'defau
   const subscription = await registration.pushManager.getSubscription()
   return subscription ? 'granted-subscribed' : 'granted-unsubscribed'
 }
+
+const AUTO_PROMPT_KEY = 'knotify:push-auto-prompted'
+
+// Requests push permission automatically once per browser, right after login,
+// instead of gating it behind a manual opt-in control. Guarded by localStorage
+// so a user who dismisses the native browser prompt isn't re-asked every session.
+export async function maybeAutoSubscribeToPush(): Promise<void> {
+  if (!isPushSupported()) return
+  if (window.localStorage.getItem(AUTO_PROMPT_KEY) === '1') return
+  window.localStorage.setItem(AUTO_PROMPT_KEY, '1')
+
+  if (Notification.permission !== 'default') return
+  try {
+    await subscribeToPush()
+  } catch (error) {
+    console.error('Auto push subscribe failed', error)
+  }
+}
