@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchConfirmedAuthUser } from '../lib/supabase'
 import { apiGet, apiPost, ApiError } from '../lib/api'
 import { SignInCard2 } from '../components/ui/sign-in-card-2'
 import { useSeo } from '../lib/seo'
@@ -296,7 +296,8 @@ export function AuthPage() {
         throw loginError ?? new Error('Missing session')
       }
 
-      if (!isEmailConfirmed(data.user)) {
+      const confirmedUser = (await fetchConfirmedAuthUser(data.session.access_token)) ?? data.user
+      if (!isEmailConfirmed(confirmedUser)) {
         await supabase.auth.signOut()
         throw new Error('Email not confirmed. Check your inbox and verify your email before logging in.')
       }
@@ -376,7 +377,11 @@ export function AuthPage() {
 
       if (signUpError) throw signUpError
 
-      if (data.session && isEmailConfirmed(data.user)) {
+      const confirmedSignupUser = data.session
+        ? (await fetchConfirmedAuthUser(data.session.access_token)) ?? data.user
+        : data.user
+
+      if (data.session && isEmailConfirmed(confirmedSignupUser)) {
         try {
           await completeProfileFromForm()
         } catch (profileErr) {
