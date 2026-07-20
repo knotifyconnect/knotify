@@ -16,6 +16,7 @@ type SignInCard2Props = {
   password: string
   fullName: string
   username: string
+  usernameStatus?: { tone: 'checking' | 'available' | 'taken'; message: string; suggestions: string[] } | null
   loading: boolean
   message?: string | null
   messageTone?: MessageTone
@@ -137,6 +138,7 @@ export function SignInCard2({
   password,
   fullName,
   username,
+  usernameStatus,
   loading,
   message,
   messageTone = 'error',
@@ -352,10 +354,19 @@ export function SignInCard2({
                   onChange={(e) => onUsernameChange(e.target.value)}
                   placeholder="your_handle"
                   style={inputStyle}
-                  required
                   disabled={loading}
                 />
               </FieldBox>
+              <div style={{ marginTop: 6, paddingLeft: 2, fontSize: 11.5, color: usernameStatus?.tone === 'taken' ? 'var(--signal)' : usernameStatus?.tone === 'available' ? 'var(--verd)' : 'var(--ink-faint)' }}>
+                {usernameStatus?.message ?? 'Optional. We’ll create a readable unique username from your name.'}
+              </div>
+              {usernameStatus?.suggestions.length ? (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
+                  {usernameStatus.suggestions.map((suggestion) => (
+                    <button key={suggestion} type="button" onClick={() => onUsernameChange(suggestion)} disabled={loading} style={{ border: '0.5px solid var(--rule)', borderRadius: 999, background: 'var(--paper)', color: 'var(--ink-muted)', padding: '4px 8px', fontSize: 11, cursor: 'pointer' }}>@{suggestion}</button>
+                  ))}
+                </div>
+              ) : null}
             </div>
           )}
 

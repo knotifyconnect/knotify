@@ -71,6 +71,14 @@ const usernameParamSchema = z.object({
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/),
 })
 
+const activityHeartbeatSchema = z.object({
+  sessionKey: z.string().uuid(),
+  path: z.string().trim().max(160).regex(/^\//).default('/'),
+  active: z.boolean().default(true),
+  pageView: z.boolean().default(false),
+  deviceType: z.enum(['desktop', 'mobile', 'tablet']).default('desktop'),
+})
+
 export const usersRouter = Router()
 
 usersRouter.get('/me', requireAuth, async (req, res) => {
@@ -120,6 +128,71 @@ usersRouter.get('/me', requireAuth, async (req, res) => {
   }
 
   return res.json({ user: row })
+})
+
+// First-party, privacy-minimal product activity. A heartbeat updates the
+// authoritative last-seen value and accumulates active time in bounded chunks,
+// so a suspended tab can never manufacture hours of usage when it wakes up.
+usersRouter.post('/me/activity', requireAuth, async (req, res) => {
+  if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const parsed = activityHeartbeatSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid activity heartbeat', fields: parsed.error.flatten() })
+
+  const now = new Date()
+  const nowIso = now.toISOString()
+  const existing = await supabase
+    .from('user_activity_sessions')
+    .select('id, last_seen_at, active_seconds, is_active, page_views, last_path')
+    .eq('user_id', req.appUserId)
+    .eq('session_key', parsed.data.sessionKey)
+    .maybeSingle()
+
+  if (existing.error) return res.status(500).json({ error: existing.error.message })
+
+  if (existing.data) {
+    const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(existing.data.last_seen_at).getTime()) / 1000))
+    const creditedSeconds = existing.data.is_active && parsed.data.active ? Math.min(elapsed, 90) : 0
+    const changedPage = parsed.data.pageView && existing.data.last_path !== parsed.data.path
+    const update = await supabase
+      .from('user_activity_sessions')
+      .update({
+        last_seen_at: nowIso,
+        active_seconds: (existing.data.active_seconds ?? 0) + creditedSeconds,
+        is_active: parsed.data.active,
+        page_views: (existing.data.page_views ?? 1) + (changedPage ? 1 : 0),
+        last_path: parsed.data.path,
+        device_type: parsed.data.deviceType,
+        updated_at: nowIso,
+      })
+      .eq('id', existing.data.id)
+    if (update.error) return res.status(500).json({ error: update.error.message })
+  } else {
+    const insert = await supabase.from('user_activity_sessions').insert({
+      user_id: req.appUserId,
+      session_key: parsed.data.sessionKey,
+      is_active: parsed.data.active,
+      last_path: parsed.data.path,
+      device_type: parsed.data.deviceType,
+    })
+    if (insert.error) return res.status(500).json({ error: insert.error.message })
+  }
+
+  const liveSessions = await supabase
+    .from('user_activity_sessions')
+    .select('id')
+    .eq('user_id', req.appUserId)
+    .eq('is_active', true)
+    .gte('last_seen_at', new Date(now.getTime() - 150_000).toISOString())
+    .limit(1)
+  if (liveSessions.error) return res.status(500).json({ error: liveSessions.error.message })
+
+  const profileUpdate = await supabase
+    .from('users')
+    .update({ last_seen_at: nowIso, is_online: Boolean(liveSessions.data?.length), updated_at: nowIso })
+    .eq('id', req.appUserId)
+  if (profileUpdate.error) return res.status(500).json({ error: profileUpdate.error.message })
+
+  return res.json({ ok: true, lastSeenAt: nowIso })
 })
 
 function profileText(value: unknown) {

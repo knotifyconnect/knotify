@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { allocateUsername, normalizeUsername, usernameOptions } from '../services/usernames.js'
 
 // Bump when the Terms of Service / Privacy Policy change in a way that requires
 // re-consent. Only recorded at account creation — see below.
@@ -9,7 +10,7 @@ const TERMS_VERSION = 'v1'
 
 const completeProfileSchema = z.object({
   fullName: z.string().min(2),
-  username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/),
+  username: z.string().max(32).optional(),
   locationCity: z.string().min(2).default('Munich'),
   university: z.string().optional(),
   status: z.enum(['studying', 'open_to_work', 'employed']).default('open_to_work'),
@@ -18,10 +19,26 @@ const completeProfileSchema = z.object({
 
 export const authRouter = Router()
 
+const usernameOptionsQuery = z.object({
+  fullName: z.string().trim().min(2).max(120),
+  username: z.string().max(80).optional(),
+})
+
+authRouter.get('/username-options', async (req, res) => {
+  const parsed = usernameOptionsQuery.safeParse(req.query)
+  if (!parsed.success) return res.status(422).json({ error: 'Enter your name to choose a username.' })
+  try {
+    return res.json(await usernameOptions(parsed.data.fullName, parsed.data.username))
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Could not check username availability.' })
+  }
+})
+
 authRouter.post('/complete-profile', requireAuth, async (req, res) => {
   if (!req.authUser) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
+  const authUser = req.authUser
 
   const parsed = completeProfileSchema.safeParse(req.body)
   if (!parsed.success) {
@@ -29,20 +46,27 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
   }
 
   const fullName = parsed.data.fullName.trim()
-  const username = parsed.data.username.trim().toLowerCase()
+  const requestedUsername = normalizeUsername(parsed.data.username ?? '')
+  if (parsed.data.username?.trim() && !/^[a-z0-9_]{3,32}$/.test(requestedUsername)) {
+    return res.status(422).json({ error: 'Username must be 3–32 characters using letters, numbers, or underscores.' })
+  }
+  let username = requestedUsername
   const locationCity = parsed.data.locationCity.trim()
   const university = parsed.data.university?.trim()
   const status = parsed.data.status
 
   const existing = await supabase
     .from('users')
-    .select('id, terms_accepted_at')
+    .select('id, username, terms_accepted_at')
     .eq('auth_id', req.authUser.id)
     .maybeSingle()
 
   if (existing.error) {
     return res.status(500).json({ error: existing.error.message })
   }
+
+  const shouldAllocate = !username && !existing.data?.username
+  if (!username) username = existing.data?.username ?? await allocateUsername(fullName, existing.data?.id)
 
   const needsConsentRecord = !existing.data?.terms_accepted_at
 
@@ -54,14 +78,14 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
     return res.status(422).json({ error: 'You must accept the Terms of Service and Privacy Policy to create an account.' })
   }
 
-  const upsert = await supabase
+  const writeProfile = (candidate: string) => supabase
     .from('users')
     .upsert(
       {
-        auth_id: req.authUser.id,
-        email: req.authUser.email,
+        auth_id: authUser.id,
+        email: authUser.email,
         full_name: fullName,
-        username,
+        username: candidate,
         location_city: locationCity,
         university: university ?? null,
         status,
@@ -71,6 +95,17 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
     )
     .select('id, email, full_name, username, location_city, university, status, created_at, updated_at')
     .single()
+
+  let upsert = await writeProfile(username)
+  // Availability checks improve UX; the database remains authoritative. If
+  // two automatic signups choose the same name simultaneously, allocate the
+  // next readable suffix instead of sending either person into recovery UI.
+  if (upsert.error?.code === '23505' && shouldAllocate) {
+    for (let attempt = 0; attempt < 3 && upsert.error?.code === '23505'; attempt += 1) {
+      username = await allocateUsername(fullName, existing.data?.id)
+      upsert = await writeProfile(username)
+    }
+  }
 
   if (upsert.error) {
     if (upsert.error.code === '23505') {

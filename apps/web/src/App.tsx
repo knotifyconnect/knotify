@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { useSessionStore } from './store/session'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { CookieConsentBanner } from './components/CookieConsentBanner'
-import { ApiError, apiGetCached } from './lib/api'
+import { ApiError, apiGetCached, apiPost } from './lib/api'
 import { runWhenIdle } from './lib/schedule'
 
 // Everything below is code-split so it does not ship in the landing-page bundle.
@@ -39,6 +39,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ de
 const LAST_ACTIVE_AT_KEY = 'knotify:lastActiveAt'
 const INACTIVITY_REENTRY_MS = 2 * 24 * 60 * 60 * 1000
 const ACTIVE_WRITE_THROTTLE_MS = 60 * 1000
+const ACTIVITY_SESSION_GAP_MS = 30 * 60 * 1000
 const ACTIVITY_EVENTS = ['click', 'keydown', 'scroll', 'touchstart', 'mousemove'] as const
 const ONBOARDING_STATUS_TTL_MS = 60_000
 
@@ -74,6 +75,27 @@ function writeLastActiveAt(timestamp = Date.now()) {
   } catch {
     // If localStorage is unavailable, do nothing. Supabase remains the auth source of truth.
   }
+}
+
+function activitySessionKey() {
+  const key = 'knotify:activitySession'
+  try {
+    const existing = window.sessionStorage.getItem(key)
+    const lastActiveAt = readLastActiveAt()
+    if (existing && lastActiveAt && Date.now() - lastActiveAt < ACTIVITY_SESSION_GAP_MS) return existing
+    const created = crypto.randomUUID()
+    window.sessionStorage.setItem(key, created)
+    return created
+  } catch {
+    return crypto.randomUUID()
+  }
+}
+
+function activityDeviceType(): 'desktop' | 'mobile' | 'tablet' {
+  const width = window.innerWidth
+  if (width < 640) return 'mobile'
+  if (width < 1024) return 'tablet'
+  return 'desktop'
 }
 
 function shouldShowInactivityLanding(now = Date.now()) {
@@ -490,30 +512,49 @@ export default function App() {
     if (!token || reentryState.showLanding) return
 
     let lastWrite = 0
+    let lastPath = window.location.pathname
+    const sessionKey = activitySessionKey()
 
-    const recordActivity = () => {
+    const recordActivity = (force = false, active = !document.hidden) => {
       const now = Date.now()
 
-      if (now - lastWrite < ACTIVE_WRITE_THROTTLE_MS) return
+      if (!force && now - lastWrite < ACTIVE_WRITE_THROTTLE_MS) return
 
       lastWrite = now
       writeLastActiveAt(now)
+      const path = window.location.pathname.slice(0, 160) || '/'
+      const pageView = path !== lastPath
+      lastPath = path
+      void apiPost('/api/users/me/activity', {
+        sessionKey,
+        path,
+        active,
+        pageView,
+        deviceType: activityDeviceType(),
+      }, { invalidate: false }).catch(() => {})
     }
 
     const recordVisibilityReturn = () => {
-      if (!document.hidden) recordActivity()
+      recordActivity(true, !document.hidden)
     }
+    const onUserActivity = () => recordActivity()
+
+    const heartbeat = window.setInterval(() => {
+      if (!document.hidden) recordActivity(true, true)
+    }, ACTIVE_WRITE_THROTTLE_MS)
 
     ACTIVITY_EVENTS.forEach((eventName) => {
-      window.addEventListener(eventName, recordActivity, { passive: true })
+      window.addEventListener(eventName, onUserActivity, { passive: true })
     })
     document.addEventListener('visibilitychange', recordVisibilityReturn)
 
-    recordActivity()
+    recordActivity(true, true)
 
     return () => {
+      window.clearInterval(heartbeat)
+      recordActivity(true, false)
       ACTIVITY_EVENTS.forEach((eventName) => {
-        window.removeEventListener(eventName, recordActivity)
+        window.removeEventListener(eventName, onUserActivity)
       })
       document.removeEventListener('visibilitychange', recordVisibilityReturn)
     }
