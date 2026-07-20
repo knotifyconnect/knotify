@@ -8,7 +8,6 @@ import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
 import { useEscapeClose } from '../hooks/useEscapeClose'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { useVisualViewportHeight } from '../hooks/useVisualViewportHeight'
 
 type UserPreview = {
   id: string
@@ -1465,37 +1464,8 @@ export function MessagesPage() {
   const QUICK_REACTIONS = ['❤️', '👍', '😂', '🙌', '🔥']
   const EMOJI_KEYBOARD = ['😊', '😂', '❤️', '👍', '🙌', '🔥', '🎉', '🤔', '😎', '👏', '✨', '💪', '🚀', '💯', '🙏']
 
-  // With interactive-widget=overlays-content (index.html), the keyboard
-  // draws on top of the page instead of resizing anything — including the
-  // fixed AppLayout shell this page lives in, so nothing here can lean on
-  // that shell having shrunk. window.visualViewport.height is the one
-  // number that actually reflects the keyboard: the delta from
-  // window.innerHeight is the keyboard's own height in px. Applying that
-  // straight onto the composer's existing bottom padding pushes it up by
-  // exactly that much, and the message list (flex: 1) naturally shrinks to
-  // make room for it, the same way it already does for the safe-area inset.
-  const visualViewportHeight = useVisualViewportHeight()
-  const keyboardInset = isMobile && visualViewportHeight != null
-    ? Math.max(0, Math.round(window.innerHeight - visualViewportHeight))
-    : 0
-  // Real keyboards are 200px+; a small delta is just address-bar/UI chrome.
-  const keyboardOpen = keyboardInset > 120
-
   return (
-    <div
-      style={{
-        height: isMobile ? '100%' : 'calc(100dvh - 104px)',
-        minHeight: isMobile ? 0 : 460,
-        // The tab bar only needs bottom clearance while it's actually
-        // visible above the keyboard — once the keyboard is open it covers
-        // the tab bar itself, so reserving space for it here would just
-        // leave a blank gap between the composer and the keyboard.
-        paddingBottom: isMobile ? (keyboardOpen ? 'env(safe-area-inset-bottom)' : 'calc(64px + env(safe-area-inset-bottom))') : 0,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
+    <div style={{ height: isMobile ? '100%' : 'calc(100dvh - 104px)', minHeight: isMobile ? 0 : 460, paddingBottom: isMobile ? 'calc(64px + env(safe-area-inset-bottom))' : 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.2)', color: 'var(--signal)', fontSize: 13, marginBottom: 12 }}>
           {error}
@@ -2248,9 +2218,7 @@ export function MessagesPage() {
           <div
             data-tour="message-compose"
             style={{
-              padding: isMobile
-                ? `5px 14px calc(${keyboardInset}px + 7px + env(safe-area-inset-bottom))`
-                : '12px clamp(14px, 4vw, 46px) 14px',
+              padding: isMobile ? '5px 14px calc(7px + env(safe-area-inset-bottom))' : '12px clamp(14px, 4vw, 46px) 14px',
               borderTop: '0.5px solid rgba(26,24,21,0.07)',
               background: 'rgba(255,252,246,0.96)',
               display: selectedId ? 'block' : 'none',
