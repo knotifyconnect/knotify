@@ -60,6 +60,24 @@ export async function getPushSubscriptionState(): Promise<'unsupported' | 'defau
   return subscription ? 'granted-subscribed' : 'granted-unsubscribed'
 }
 
+// Dismisses tray/status-bar notifications for items the user has now read —
+// in-app or on another device — mirroring how Instagram clears a push once
+// its content has been seen. Notifications are tagged with their DB id in
+// sw.js's push handler, so they can be found and closed here by that id.
+export async function closeDeliveredNotifications(ids: string[]): Promise<void> {
+  if (!isPushSupported() || !ids.length) return
+  try {
+    const registration = await navigator.serviceWorker.ready
+    const shown = await registration.getNotifications()
+    const idSet = new Set(ids)
+    shown.forEach((notification) => {
+      if (notification.tag && idSet.has(notification.tag)) notification.close()
+    })
+  } catch {
+    /* best-effort — a tray notification lingering is not worth surfacing an error for */
+  }
+}
+
 const AUTO_PROMPT_KEY = 'knotify:push-auto-prompted'
 
 // Requests push permission automatically once per browser, right after login,

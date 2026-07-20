@@ -17,6 +17,7 @@ import { Bell, MessageSquare, Briefcase, Check, X, Inbox, ClipboardList, UserRou
 import { apiGetCached, apiPatch, apiPost } from '../lib/api'
 import { KAvatar } from '../lib/knotify'
 import { runWhenIdle } from '../lib/schedule'
+import { closeDeliveredNotifications } from '../lib/push'
 import { AskDrawer, type Ask } from './asks/AskDrawer'
 import { CreateAskModal } from './asks/CreateAskModal'
 import { useNotificationsUnreadCount } from '../hooks/useNotifications'
@@ -89,6 +90,10 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
     try {
       const data = await apiGetCached<{ notifications: NotificationItem[] }>('/api/notifications', { ttlMs: 10_000 })
       setNotifications(data.notifications ?? [])
+      // Covers reads that happened elsewhere (another device, or in-app
+      // earlier this session) — their tray notification here is now stale.
+      const alreadyRead = (data.notifications ?? []).filter((n) => n.read_at).map((n) => n.id)
+      if (alreadyRead.length) void closeDeliveredNotifications(alreadyRead)
     } catch {
       /* silent — notifications degrade gracefully */
     }
@@ -161,6 +166,7 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
     setOpen(false)
     if (!n.read_at) {
       setNotifications((prev) => prev.map((item) => (item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item)))
+      void closeDeliveredNotifications([n.id])
       try {
         await apiPatch(`/api/notifications/${n.id}/read`, {})
       } catch {
@@ -171,7 +177,9 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
   }
 
   async function markAllNotificationsRead() {
+    const unreadIds = notifications.filter((item) => !item.read_at).map((item) => item.id)
     setNotifications((prev) => prev.map((item) => (item.read_at ? item : { ...item, read_at: new Date().toISOString() })))
+    if (unreadIds.length) void closeDeliveredNotifications(unreadIds)
     try {
       await apiPost('/api/notifications/read-all', {})
     } catch {

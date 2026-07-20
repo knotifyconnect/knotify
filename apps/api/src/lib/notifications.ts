@@ -27,7 +27,7 @@ function ensureVapidConfigured(): boolean {
   return true
 }
 
-type PushPayload = { title: string; body?: string; url?: string }
+type PushPayload = { title: string; body?: string; url?: string; id?: string }
 
 async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
   if (!ensureVapidConfigured()) return
@@ -78,15 +78,19 @@ export async function createNotification(opts: {
 }): Promise<void> {
   const { userId, actorId, type, title, body, entityType, entityId } = opts
 
-  const insert = await supabase.from('notifications').insert({
-    user_id: userId,
-    actor_id: actorId ?? null,
-    type,
-    title,
-    body: body ?? null,
-    entity_type: entityType ?? null,
-    entity_id: entityId ?? null,
-  })
+  const insert = await supabase
+    .from('notifications')
+    .insert({
+      user_id: userId,
+      actor_id: actorId ?? null,
+      type,
+      title,
+      body: body ?? null,
+      entity_type: entityType ?? null,
+      entity_id: entityId ?? null,
+    })
+    .select('id')
+    .single()
 
   if (insert.error) {
     console.error('Failed to create notification', insert.error)
@@ -95,6 +99,7 @@ export async function createNotification(opts: {
 
   try {
     await sendPushToUser(userId, {
+      id: insert.data.id,
       title,
       body: body ?? undefined,
       url: entityType && entityId ? entityUrl(entityType, entityId) : undefined,

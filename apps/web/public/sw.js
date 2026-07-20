@@ -77,9 +77,17 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title || 'knotify', {
       body: data.body || '',
-      icon: '/mark.png',
-      badge: '/mark.png',
-      data: { url: data.url || '/' },
+      // mark.png is 160x146 (non-square) and renders poorly once Android
+      // crops/masks it for the tray and status-bar badge — app-icon-192.png
+      // is the square asset meant for exactly this.
+      icon: '/app-icon-192.png',
+      badge: '/app-icon-192.png',
+      vibrate: [80, 40, 80],
+      // The DB notification id, so a later read (in-app or on another
+      // device) can find and dismiss this exact tray entry by tag.
+      tag: data.id ? String(data.id) : undefined,
+      renotify: Boolean(data.id),
+      data: { url: data.url || '/', id: data.id ?? null },
     })
   )
 })
