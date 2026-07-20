@@ -1465,28 +1465,26 @@ export function MessagesPage() {
   const QUICK_REACTIONS = ['❤️', '👍', '😂', '🙌', '🔥']
   const EMOJI_KEYBOARD = ['😊', '😂', '❤️', '👍', '🙌', '🔥', '🎉', '🤔', '😎', '👏', '✨', '💪', '🚀', '💯', '🙏']
 
-  // With interactive-widget=overlays-content (index.html), the keyboard no
-  // longer resizes the layout on its own — visualViewport.height is the one
-  // signal that actually shrinks when it opens, so the chat column is sized
-  // to it explicitly instead of a static '100%' that would run under the
-  // keyboard. rootRef's own top offset is constant (it's inside AppLayout's
-  // fixed, non-scrolling shell), so it only needs remeasuring on layout
-  // changes, not on every keyboard transition.
-  const rootRef = useRef<HTMLDivElement>(null)
+  // With interactive-widget=overlays-content (index.html), the keyboard
+  // draws on top of the page instead of resizing anything — including the
+  // fixed AppLayout shell this page lives in, so nothing here can lean on
+  // that shell having shrunk. window.visualViewport.height is the one
+  // number that actually reflects the keyboard: the delta from
+  // window.innerHeight is the keyboard's own height in px. Applying that
+  // straight onto the composer's existing bottom padding pushes it up by
+  // exactly that much, and the message list (flex: 1) naturally shrinks to
+  // make room for it, the same way it already does for the safe-area inset.
   const visualViewportHeight = useVisualViewportHeight()
-  const [chatHeight, setChatHeight] = useState<number | null>(null)
-  useEffect(() => {
-    if (!isMobile || visualViewportHeight == null || !rootRef.current) { setChatHeight(null); return }
-    setChatHeight(Math.max(0, visualViewportHeight - rootRef.current.getBoundingClientRect().top))
-  }, [isMobile, visualViewportHeight])
+  const keyboardInset = isMobile && visualViewportHeight != null
+    ? Math.max(0, Math.round(window.innerHeight - visualViewportHeight))
+    : 0
   // Real keyboards are 200px+; a small delta is just address-bar/UI chrome.
-  const keyboardOpen = isMobile && visualViewportHeight != null && window.innerHeight - visualViewportHeight > 120
+  const keyboardOpen = keyboardInset > 120
 
   return (
     <div
-      ref={rootRef}
       style={{
-        height: isMobile ? (chatHeight != null ? `${chatHeight}px` : '100%') : 'calc(100dvh - 104px)',
+        height: isMobile ? '100%' : 'calc(100dvh - 104px)',
         minHeight: isMobile ? 0 : 460,
         // The tab bar only needs bottom clearance while it's actually
         // visible above the keyboard — once the keyboard is open it covers
@@ -2250,7 +2248,9 @@ export function MessagesPage() {
           <div
             data-tour="message-compose"
             style={{
-              padding: isMobile ? '5px 14px calc(7px + env(safe-area-inset-bottom))' : '12px clamp(14px, 4vw, 46px) 14px',
+              padding: isMobile
+                ? `5px 14px calc(${keyboardInset}px + 7px + env(safe-area-inset-bottom))`
+                : '12px clamp(14px, 4vw, 46px) 14px',
               borderTop: '0.5px solid rgba(26,24,21,0.07)',
               background: 'rgba(255,252,246,0.96)',
               display: selectedId ? 'block' : 'none',
