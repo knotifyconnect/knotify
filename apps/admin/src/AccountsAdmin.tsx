@@ -62,9 +62,10 @@ type AccountsResponse = {
   stats: AccountStats
   pagination: { total: number; loaded: number }
   authAvailable: boolean
+  activityAvailable: boolean
   warning: string | null
 }
-type AccountDetailResponse = { account: Account; activity: Activity; warning?: string | null }
+type AccountDetailResponse = { account: Account; activity: Activity; activityAvailable?: boolean; warning?: string | null }
 type StatusFilter = 'all' | 'active' | 'deactivated' | 'unverified' | 'incomplete'
 type RoleFilter = 'all' | 'admin' | 'hr' | 'premium' | 'member'
 type Sort = 'newest' | 'last-seen' | 'usage' | 'name' | 'completion'
@@ -210,7 +211,10 @@ export function AccountsAdmin() {
       setAccounts(response.accounts ?? [])
       setStats(response.stats)
       setLoaded(response.pagination.loaded)
-      setServerWarning(response.warning ?? '')
+      setServerWarning([
+        response.warning,
+        !response.activityAvailable ? 'Account management is available, but usage analytics are paused until the product-activity database migration is applied.' : null,
+      ].filter(Boolean).join(' '))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load accounts.')
     } finally {

@@ -66,6 +66,7 @@ type JobDetail = JobListItem & {
   posted_by?: string
   updated_at?: string
   submittedReferrals?: number
+  capabilities?: JobCapabilities
 }
 
 type OwnedJob = {
@@ -79,6 +80,8 @@ type OwnedJobRequest = {
   requester: { id: string; full_name: string; username: string; avatar_url: string | null } | null
   via: { id: string; full_name: string; username: string; avatar_url: string | null } | null
 }
+
+type JobCapabilities = { visibility: boolean; referralRequests: boolean }
 
 type CompanyConnection = {
   id: string
@@ -219,6 +222,7 @@ export function JobsPage() {
   const [expandedOwnedJobId, setExpandedOwnedJobId] = useState<string | null>(null)
   const [ownedRequests, setOwnedRequests] = useState<Record<string, OwnedJobRequest[]>>({})
   const [managingJobId, setManagingJobId] = useState<string | null>(null)
+  const [jobCapabilities, setJobCapabilities] = useState<JobCapabilities>({ visibility: false, referralRequests: false })
 
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -280,8 +284,9 @@ export function JobsPage() {
       if (opts?.type ?? filterType) params.set('type', opts?.type ?? filterType)
       if (opts?.remote ?? filterRemote) params.set('remote', opts?.remote ?? filterRemote)
       if (opts?.location ?? filterLocation) params.set('location', opts?.location ?? filterLocation)
-      const data = await apiGetCached<{ jobs: JobListItem[] }>(`/api/jobs?${params.toString()}`, { ttlMs: 10_000 })
+      const data = await apiGetCached<{ jobs: JobListItem[]; capabilities?: JobCapabilities }>(`/api/jobs?${params.toString()}`, { ttlMs: 10_000 })
       setJobs(data.jobs ?? [])
+      if (data.capabilities) setJobCapabilities(data.capabilities)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load jobs')
       setJobs([])
@@ -292,36 +297,53 @@ export function JobsPage() {
 
   async function loadOwnedJobs() {
     try {
-      const data = await apiGet<{ jobs: OwnedJob[] }>('/api/jobs/mine')
+      const data = await apiGet<{ jobs: OwnedJob[]; capabilities?: JobCapabilities }>('/api/jobs/mine')
       setOwnedJobs(data.jobs ?? [])
+      if (data.capabilities) setJobCapabilities(data.capabilities)
     } catch { setOwnedJobs([]) }
   }
 
   async function loadOwnedRequests(jobId: string) {
-    const data = await apiGet<{ requests: OwnedJobRequest[] }>(`/api/jobs/mine/${jobId}/requests`)
-    setOwnedRequests(current => ({ ...current, [jobId]: data.requests ?? [] }))
+    try {
+      const data = await apiGet<{ requests: OwnedJobRequest[]; available?: boolean }>(`/api/jobs/mine/${jobId}/requests`)
+      setOwnedRequests(current => ({ ...current, [jobId]: data.requests ?? [] }))
+      if (data.available === false) setJobCapabilities(current => ({ ...current, referralRequests: false }))
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : 'Could not load referral requests')
+    }
   }
 
   async function updateOwnedJob(jobId: string, patch: { status?: OwnedJob['status']; visibility?: OwnedJob['visibility'] }) {
     setManagingJobId(jobId)
+    setRequestError(null)
     try {
       await apiPatch(`/api/jobs/${jobId}`, patch)
       await Promise.all([loadOwnedJobs(), loadJobs()])
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : 'Could not update this posting')
     } finally { setManagingJobId(null) }
   }
 
   async function deleteOwnedJob(job: OwnedJob) {
     if (!window.confirm(`Delete “${job.title}”? This also removes its pending referral requests.`)) return
     setManagingJobId(job.id)
+    setRequestError(null)
     try {
       await apiDelete(`/api/jobs/${job.id}`)
       await Promise.all([loadOwnedJobs(), loadJobs()])
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : 'Could not delete this posting')
     } finally { setManagingJobId(null) }
   }
 
   async function respondToOwnedRequest(jobId: string, requestId: string, status: 'accepted' | 'declined' | 'completed') {
-    await apiPatch(`/api/jobs/mine/${jobId}/requests/${requestId}`, { status })
-    await Promise.all([loadOwnedRequests(jobId), loadOwnedJobs()])
+    setRequestError(null)
+    try {
+      await apiPatch(`/api/jobs/mine/${jobId}/requests/${requestId}`, { status })
+      await Promise.all([loadOwnedRequests(jobId), loadOwnedJobs()])
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : 'Could not update the referral request')
+    }
   }
 
   async function loadPendingReferrals() {
@@ -456,7 +478,7 @@ export function JobsPage() {
         salaryMin: shareDraft.salaryMin ?? undefined,
         salaryMax: shareDraft.salaryMax ?? undefined,
         employmentType: shareDraft.employmentType ?? undefined,
-        visibility: shareVisibility,
+        visibility: jobCapabilities.visibility ? shareVisibility : 'public',
       })
       trackEvent('job_link_shared')
       setShowShareForm(false)
@@ -504,6 +526,7 @@ export function JobsPage() {
         : Promise.resolve({ eligible: false, users: [] as CompanyConnection[] })
       const detail = await apiGet<{ job: JobDetail }>(`/api/jobs/${jobId}`)
       setSelectedJob(detail.job)
+      if (detail.job.capabilities) setJobCapabilities(detail.job.capabilities)
       setConnectionsAtCompany(detail.job.referral_connections ?? detail.job.connection_context?.direct ?? [])
 
       if (companyId) {
@@ -548,6 +571,10 @@ export function JobsPage() {
 
   async function requestPosterReferral() {
     if (!selectedJob || selectedJob.owned_by_me) return
+    if (!jobCapabilities.referralRequests) {
+      setRequestError('Posting-owner referral requests are temporarily unavailable while the database upgrade completes. Direct company referrals still work.')
+      return
+    }
     setRequesting(true); setRequestError(null); setRequestMessage(null)
     try {
       await apiPost(`/api/jobs/${selectedJob.id}/referral-request`, { note: note.trim() || undefined })
@@ -743,6 +770,11 @@ export function JobsPage() {
       {requestMessage && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--verd-soft)', border: '0.5px solid rgba(31,107,94,0.2)', color: 'var(--verd)', fontSize: 13, marginBottom: 14 }}>
           {requestMessage}
+        </div>
+      )}
+      {(!jobCapabilities.visibility || !jobCapabilities.referralRequests) && !loading && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--ochre-soft)', border: '0.5px solid rgba(184,130,15,.22)', color: 'var(--ochre)', fontSize: 12.5, lineHeight: 1.5, marginBottom: 14 }}>
+          Jobs are available. Network-only visibility and posting-owner referral requests will activate automatically after the database upgrade; direct company referrals, applications, saving, sharing and posting management remain operational.
         </div>
       )}
 
@@ -1046,9 +1078,9 @@ export function JobsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <button type="button" onClick={() => openJob(job.id)} style={{ flex: 1, minWidth: 190, textAlign: 'left', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}><div style={{ fontSize: 13.5, fontWeight: 650, color: 'var(--ink)' }}>{job.title}</div><div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2 }}>{job.status} · {job.visibility === 'network' ? 'Your network only' : 'Public'} · {job.requests} request{job.requests === 1 ? '' : 's'}</div></button>
                     {job.pendingRequests > 0 && <KPill color="signal">{job.pendingRequests} new</KPill>}
-                    <select aria-label={`Visibility for ${job.title}`} value={job.visibility} disabled={managingJobId === job.id} onChange={event => void updateOwnedJob(job.id, { visibility: event.target.value as OwnedJob['visibility'] })} style={{ padding: '6px 8px', borderRadius: 8, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', color: 'var(--ink)', fontSize: 11.5 }}><option value="network">Network only</option><option value="public">Public</option></select>
+                    {jobCapabilities.visibility ? <select aria-label={`Visibility for ${job.title}`} value={job.visibility} disabled={managingJobId === job.id} onChange={event => void updateOwnedJob(job.id, { visibility: event.target.value as OwnedJob['visibility'] })} style={{ padding: '6px 8px', borderRadius: 8, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', color: 'var(--ink)', fontSize: 11.5 }}><option value="network">Network only</option><option value="public">Public</option></select> : <KPill color="default">Public</KPill>}
                     <KBtn variant="ghost" size="sm" onClick={() => void updateOwnedJob(job.id, { status: job.status === 'open' ? 'closed' : 'open' })}>{job.status === 'open' ? 'Close' : 'Reopen'}</KBtn>
-                    <KBtn variant="ghost" size="sm" onClick={() => { const next = expandedOwnedJobId === job.id ? null : job.id; setExpandedOwnedJobId(next); if (next) void loadOwnedRequests(job.id) }}>Requests</KBtn>
+                    {jobCapabilities.referralRequests && <KBtn variant="ghost" size="sm" onClick={() => { const next = expandedOwnedJobId === job.id ? null : job.id; setExpandedOwnedJobId(next); if (next) void loadOwnedRequests(job.id) }}>Requests</KBtn>}
                     <button type="button" onClick={() => void deleteOwnedJob(job)} style={{ border: 'none', background: 'transparent', color: 'var(--signal)', cursor: 'pointer', fontSize: 11.5 }}>Delete</button>
                   </div>
                   {expandedOwnedJobId === job.id && (
@@ -1210,9 +1242,9 @@ export function JobsPage() {
 
                 <div style={{ padding: '12px 13px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)' }}>
                   <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 7 }}>Who should see this?</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 8 }}>
+                  {jobCapabilities.visibility ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 8 }}>
                     {([['network', 'My network', 'Only direct and second-degree members, with a visible referral path.'], ['public', 'Public', 'Every Knotify member can discover it and request context from you.']] as const).map(([value, label, detail]) => <label key={value} style={{ padding: '10px 11px', borderRadius: 9, border: `1px solid ${shareVisibility === value ? 'var(--signal)' : 'var(--rule)'}`, background: shareVisibility === value ? 'var(--signal-soft)' : 'white', cursor: 'pointer' }}><input type="radio" name="job-visibility" value={value} checked={shareVisibility === value} onChange={() => setShareVisibility(value)} style={{ marginRight: 7 }} /><strong style={{ fontSize: 12.5, color: 'var(--ink)' }}>{label}</strong><span style={{ display: 'block', margin: '5px 0 0 21px', fontSize: 11, lineHeight: 1.4, color: 'var(--ink-muted)' }}>{detail}</span></label>)}
-                  </div>
+                  </div> : <div style={{ padding: '9px 10px', borderRadius: 9, background: 'white', color: 'var(--ink-muted)', fontSize: 11.5 }}>This posting will be public. Network-only distribution activates automatically after the database upgrade.</div>}
                 </div>
 
                 <div className="k-job-share-actions">
@@ -1545,9 +1577,11 @@ export function JobsPage() {
                       {selectedJob.owned_by_me ? 'You own this posting. Manage its reach and incoming requests from Your postings at the top of the page.' : 'Ask them what they know before you apply — they can give you context or point you to the right person.'}
                     </p>
                     {!selectedJob.owned_by_me && <>
-                      {selectedJob.network_path_to_poster && <div style={{ marginBottom: 10, fontSize: 11.5, color: 'var(--verd)' }}>{selectedJob.network_path_to_poster.degree === 1 ? `Direct path to ${selectedJob.poster?.full_name ?? 'the poster'}` : `Path via ${selectedJob.network_path_to_poster.via?.full_name ?? 'a mutual connection'} → ${selectedJob.poster?.full_name ?? 'the poster'}`}</div>}
-                      <textarea value={note} onChange={event => setNote(event.target.value.slice(0, 500))} placeholder="Why are you interested, and what help would be useful?" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', marginBottom: 8, borderRadius: 9, border: '0.5px solid var(--rule)', background: 'white', resize: 'vertical', color: 'var(--ink)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12.5 }} />
-                      <KBtn variant="verd" size="sm" fullWidth onClick={requestPosterReferral} disabled={requesting}>{requesting ? 'Sending…' : 'Request referral path'}</KBtn>
+                      {jobCapabilities.referralRequests ? <>
+                        {selectedJob.network_path_to_poster && <div style={{ marginBottom: 10, fontSize: 11.5, color: 'var(--verd)' }}>{selectedJob.network_path_to_poster.degree === 1 ? `Direct path to ${selectedJob.poster?.full_name ?? 'the poster'}` : `Path via ${selectedJob.network_path_to_poster.via?.full_name ?? 'a mutual connection'} → ${selectedJob.poster?.full_name ?? 'the poster'}`}</div>}
+                        <textarea value={note} onChange={event => setNote(event.target.value.slice(0, 500))} placeholder="Why are you interested, and what help would be useful?" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', marginBottom: 8, borderRadius: 9, border: '0.5px solid var(--rule)', background: 'white', resize: 'vertical', color: 'var(--ink)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12.5 }} />
+                        <KBtn variant="verd" size="sm" fullWidth onClick={requestPosterReferral} disabled={requesting}>{requesting ? 'Sending…' : 'Request referral path'}</KBtn>
+                      </> : <div style={{ marginBottom: 10, fontSize: 11.5, color: 'var(--ink-muted)' }}>Referral-path requests are temporarily paused. You can still message the person who shared this opening directly.</div>}
                     </>}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <KBtn
@@ -1671,7 +1705,7 @@ export function JobsPage() {
                       Connect with someone at {selectedJob.company?.name ?? 'this company'} first.
                     </p>
                   )}
-                  {!hasConnections && !selectedJob.owned_by_me && <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--rule)' }}><textarea value={note} onChange={event => setNote(event.target.value.slice(0, 500))} placeholder="Tell the posting owner why this role fits you…" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', marginBottom: 8, borderRadius: 9, border: '0.5px solid var(--rule)', background: 'white', resize: 'vertical', color: 'var(--ink)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12.5 }} /><KBtn variant="signal" size="sm" fullWidth onClick={requestPosterReferral} disabled={requesting}>{requesting ? 'Sending…' : secondDegreeAtCompany.length ? 'Forward referral request' : 'Ask posting owner for a path'}</KBtn></div>}
+                  {!hasConnections && !selectedJob.owned_by_me && jobCapabilities.referralRequests && <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--rule)' }}><textarea value={note} onChange={event => setNote(event.target.value.slice(0, 500))} placeholder="Tell the posting owner why this role fits you…" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', marginBottom: 8, borderRadius: 9, border: '0.5px solid var(--rule)', background: 'white', resize: 'vertical', color: 'var(--ink)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12.5 }} /><KBtn variant="signal" size="sm" fullWidth onClick={requestPosterReferral} disabled={requesting}>{requesting ? 'Sending…' : secondDegreeAtCompany.length ? 'Forward referral request' : 'Ask posting owner for a path'}</KBtn></div>}
                 </div>
                 )}
 

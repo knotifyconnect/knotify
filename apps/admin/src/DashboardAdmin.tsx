@@ -36,6 +36,7 @@ type Kpis = {
   }[]
   growth: { rangeDays: number; usersPerDay: Point[]; signupsPerDay: Point[]; messagesPerDay: Point[] }
   engagement: {
+    available: boolean
     onlineNow: number; opensToday: number; opensYesterday: number; uniqueUsersToday: number; uniqueUsersYesterday: number
     totalMinutesToday: number; totalMinutesYesterday: number; averageSessionMinutesToday: number; averageSessionMinutesYesterday: number
     sessionsPerDay: Point[]; minutesPerDay: Point[]
@@ -380,20 +381,26 @@ export function DashboardAdmin() {
       </div>
 
       <SectionTitle title="Live usage" subtitle="First-party session telemetry: app opens, active time and who is using Knotify now" accent={C.blue} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-        <MetricCard label="Online now" value={engagement.onlineNow} detail="Heartbeat received in the last 2½ minutes" color={C.verd} />
-        <MetricCard label="App opens today" value={engagement.opensToday} current={engagement.opensToday} previous={engagement.opensYesterday} />
-        <MetricCard label="Unique users today" value={engagement.uniqueUsersToday} current={engagement.uniqueUsersToday} previous={engagement.uniqueUsersYesterday} color={C.blue} />
-        <MetricCard label="Active minutes today" value={engagement.totalMinutesToday} current={engagement.totalMinutesToday} previous={engagement.totalMinutesYesterday} />
-        <MetricCard label="Avg. session" value={`${engagement.averageSessionMinutesToday}m`} detail="Foreground active time per app open" />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12, marginTop: 12 }}>
-        <TrendChart series={[
-          { label: 'App opens', color: C.blue, points: engagement.sessionsPerDay },
-          { label: 'Active minutes', color: C.verd, points: engagement.minutesPerDay },
-        ]} />
-        <MostEngagedMembers users={engagement.topUsers} />
-      </div>
+      {!engagement.available ? (
+        <div style={{ ...card, padding: 18, color: C.ochre, background: 'rgba(184,130,15,.09)', borderColor: 'rgba(154,103,24,.2)', fontSize: 12.5, lineHeight: 1.55 }}>
+          The dashboard remains operational, but live usage analytics are paused until the product-activity Supabase migration is applied. Existing member, activity, work-queue and platform metrics below are unaffected.
+        </div>
+      ) : <>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+          <MetricCard label="Online now" value={engagement.onlineNow} detail="Heartbeat received in the last 2½ minutes" color={C.verd} />
+          <MetricCard label="App opens today" value={engagement.opensToday} current={engagement.opensToday} previous={engagement.opensYesterday} />
+          <MetricCard label="Unique users today" value={engagement.uniqueUsersToday} current={engagement.uniqueUsersToday} previous={engagement.uniqueUsersYesterday} color={C.blue} />
+          <MetricCard label="Active minutes today" value={engagement.totalMinutesToday} current={engagement.totalMinutesToday} previous={engagement.totalMinutesYesterday} />
+          <MetricCard label="Avg. session" value={`${engagement.averageSessionMinutesToday}m`} detail="Foreground active time per app open" />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12, marginTop: 12 }}>
+          <TrendChart series={[
+            { label: 'App opens', color: C.blue, points: engagement.sessionsPerDay },
+            { label: 'Active minutes', color: C.verd, points: engagement.minutesPerDay },
+          ]} />
+          <MostEngagedMembers users={engagement.topUsers} />
+        </div>
+      </>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginTop: 12 }}>
         <Breakdown title="Members by persona" rows={users.personas} total={users.total} />

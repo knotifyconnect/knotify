@@ -5,6 +5,7 @@ import { supabase } from '../lib.js'
 import { fetchUrlSafely, withDeadline } from '../lib/safeFetchUrl.js'
 import { extractJobFromHtml } from '../services/jobLinkExtractor.js'
 import { createNotification, getUserFirstName } from '../lib/notifications.js'
+import { getProductSchemaCapabilitiesSafe } from '../services/productSchema.js'
 
 const employmentTypeSchema = z.enum(['full_time', 'part_time', 'contract', 'internship', 'freelance'])
 
@@ -66,6 +67,17 @@ const jobsQuerySchema = z.object({
 const jobIdParamSchema = z.object({
   id: z.string().uuid(),
 })
+
+const JOB_COLUMNS = 'id, company_id, company_name, company_logo_url, apply_url, source, posted_by, title, description, required_skills, location, is_remote, salary_min, salary_max, employment_type, status, is_featured, created_at, updated_at'
+const OWNED_JOB_COLUMNS = 'id, title, company_name, company_id, source, status, created_at, updated_at, apply_url'
+
+function jobColumns(includeVisibility: boolean, base = JOB_COLUMNS) {
+  return includeVisibility ? `${base}, visibility` : base
+}
+
+function withDefaultVisibility<T extends Record<string, any>>(job: T) {
+  return { ...job, visibility: job.visibility === 'network' ? 'network' as const : 'public' as const }
+}
 
 function sanitizeSkills(skills: string[]) {
   return [...new Set(skills.map((skill) => skill.trim()).filter(Boolean))]
@@ -260,10 +272,11 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
   const skill = queryParams.data.skill.toLowerCase()
   const companyId = queryParams.data.companyId?.trim() ?? ''
   const { location, type, remote, search } = queryParams.data
+  const productSchema = await getProductSchemaCapabilitiesSafe('jobs/list')
 
   let query = supabase
     .from('jobs')
-    .select('id, company_id, company_name, company_logo_url, apply_url, source, posted_by, title, description, required_skills, location, is_remote, salary_min, salary_max, employment_type, status, visibility, is_featured, created_at, updated_at')
+    .select(jobColumns(productSchema.jobsVisibility))
     .order('created_at', { ascending: false })
 
   if (status && status !== 'all' && ['open', 'closed', 'draft'].includes(status)) {
@@ -287,7 +300,7 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
   const jobsResult = await query
   if (jobsResult.error) return res.status(500).json({ error: jobsResult.error.message })
 
-  const allJobs = jobsResult.data ?? []
+  const allJobs = ((jobsResult.data ?? []) as unknown as Record<string, any>[]).map(withDefaultVisibility)
   let posterPaths = new Map<string, PosterPath>()
   if (req.appUserId) {
     try { posterPaths = await networkPathsToUsers(req.appUserId, [...new Set(allJobs.map(job => job.posted_by))]) }
@@ -338,7 +351,7 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
     }
   }
 
-  const mapped = jobs.map((job) => {
+  const mapped: any[] = jobs.map((job) => {
     const required: string[] = (job.required_skills ?? []).map((s: unknown) => String(s).toLowerCase())
     const matched = required.filter((s: string) => verifiedSkillNames.has(s)).length
     const matchScore = required.length ? Math.round((matched / required.length) * 100) : 0
@@ -366,35 +379,39 @@ jobsRouter.get('/', requireAuth, async (req, res) => {
   if (skill) {
     const filtered = mapped.filter((j) => (j.required_skills ?? []).some((s: unknown) => String(s).toLowerCase().includes(skill)))
     filtered.sort((a, b) => Number(b.owned_by_me) - Number(a.owned_by_me) || b.matchScore - a.matchScore || (a.created_at < b.created_at ? 1 : -1))
-    return res.json({ jobs: filtered })
+    return res.json({ jobs: filtered, capabilities: { visibility: productSchema.jobsVisibility, referralRequests: productSchema.jobReferralRequests } })
   }
 
   mapped.sort((a, b) => Number(b.owned_by_me) - Number(a.owned_by_me) || b.matchScore - a.matchScore || (a.created_at < b.created_at ? 1 : -1))
-  return res.json({ jobs: mapped })
+  return res.json({ jobs: mapped, capabilities: { visibility: productSchema.jobsVisibility, referralRequests: productSchema.jobReferralRequests } })
 })
 
 jobsRouter.get('/mine', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const productSchema = await getProductSchemaCapabilitiesSafe('jobs/mine')
   const jobs = await supabase
     .from('jobs')
-    .select('id, title, company_name, company_id, source, visibility, status, created_at, updated_at, apply_url')
+    .select(jobColumns(productSchema.jobsVisibility, OWNED_JOB_COLUMNS))
     .eq('posted_by', req.appUserId)
     .order('created_at', { ascending: false })
   if (jobs.error) return res.status(500).json({ error: jobs.error.message })
-  const ids = (jobs.data ?? []).map(job => job.id)
-  const requests = ids.length
+  const ownedJobs = ((jobs.data ?? []) as unknown as Record<string, any>[]).map(withDefaultVisibility)
+  const ids = ownedJobs.map(job => job.id)
+  const requests = productSchema.jobReferralRequests && ids.length
     ? await supabase.from('job_referral_requests').select('job_id, status').in('job_id', ids)
     : { data: [], error: null }
   if (requests.error) return res.status(500).json({ error: requests.error.message })
-  return res.json({ jobs: (jobs.data ?? []).map(job => ({
+  return res.json({ jobs: ownedJobs.map(job => ({
     ...job,
     requests: (requests.data ?? []).filter(request => request.job_id === job.id).length,
     pendingRequests: (requests.data ?? []).filter(request => request.job_id === job.id && request.status === 'pending').length,
-  })) })
+  })), capabilities: { visibility: productSchema.jobsVisibility, referralRequests: productSchema.jobReferralRequests } })
 })
 
 jobsRouter.get('/mine/:id/requests', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const productSchema = await getProductSchemaCapabilitiesSafe('jobs/owned-requests')
+  if (!productSchema.jobReferralRequests) return res.json({ requests: [], available: false })
   const params = jobIdParamSchema.safeParse(req.params)
   if (!params.success) return res.status(422).json({ error: 'Invalid job id' })
   const job = await supabase.from('jobs').select('id, posted_by').eq('id', params.data.id).maybeSingle()
@@ -411,6 +428,8 @@ jobsRouter.get('/mine/:id/requests', requireAuth, async (req, res) => {
 
 jobsRouter.patch('/mine/:jobId/requests/:requestId', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const productSchema = await getProductSchemaCapabilitiesSafe('jobs/respond-request')
+  if (!productSchema.jobReferralRequests) return res.status(503).json({ code: 'SCHEMA_UPGRADE_PENDING', error: 'Referral request management is temporarily unavailable while the database upgrade completes.' })
   const jobId = z.string().uuid().safeParse(req.params.jobId)
   const requestId = z.string().uuid().safeParse(req.params.requestId)
   const parsed = referralResponseSchema.safeParse(req.body)
@@ -440,37 +459,39 @@ jobsRouter.get('/:id([0-9a-fA-F-]{36})', requireAuth, async (req, res) => {
     return res.status(422).json({ error: 'Invalid job id', fields: params.error.flatten() })
   }
 
+  const productSchema = await getProductSchemaCapabilitiesSafe('jobs/detail')
   const job = await supabase
     .from('jobs')
-    .select('id, company_id, company_name, company_logo_url, apply_url, source, posted_by, title, description, required_skills, location, is_remote, salary_min, salary_max, employment_type, status, visibility, is_featured, created_at, updated_at')
+    .select(jobColumns(productSchema.jobsVisibility))
     .eq('id', params.data.id)
     .maybeSingle()
 
   if (job.error) return res.status(500).json({ error: job.error.message })
   if (!job.data) return res.status(404).json({ error: 'Job not found' })
+  const jobData = withDefaultVisibility(job.data as unknown as Record<string, any>)
   let posterPath: PosterPath | null = null
-  if (req.appUserId && job.data.posted_by !== req.appUserId) {
-    try { posterPath = (await networkPathsToUsers(req.appUserId, [job.data.posted_by])).get(job.data.posted_by) ?? null }
+  if (req.appUserId && jobData.posted_by !== req.appUserId) {
+    try { posterPath = (await networkPathsToUsers(req.appUserId, [jobData.posted_by])).get(jobData.posted_by) ?? null }
     catch (error) { console.warn('[jobs/:id] poster path unavailable:', error) }
   }
-  if (job.data.visibility === 'network' && job.data.posted_by !== req.appUserId && !posterPath) return res.status(404).json({ error: 'Job not found' })
+  if (jobData.visibility === 'network' && jobData.posted_by !== req.appUserId && !posterPath) return res.status(404).json({ error: 'Job not found' })
 
-  const company = job.data.company_id
-    ? await supabase.from('companies').select('id, name, logo_url, website, city').eq('id', job.data.company_id).maybeSingle()
-    : { data: { id: null, name: job.data.company_name, logo_url: job.data.company_logo_url, website: job.data.apply_url, city: null }, error: null }
+  const company = jobData.company_id
+    ? await supabase.from('companies').select('id, name, logo_url, website, city').eq('id', jobData.company_id).maybeSingle()
+    : { data: { id: null, name: jobData.company_name, logo_url: jobData.company_logo_url, website: jobData.apply_url, city: null }, error: null }
   if (company.error) return res.status(500).json({ error: company.error.message })
 
   // Link-shared jobs have no verified company — the member who shared it is
   // the contact/referral point instead of a "no warm-intro flow" dead end.
-  const poster = !job.data.company_id
-    ? await supabase.from('users').select('id, full_name, username, avatar_url').eq('id', job.data.posted_by).maybeSingle()
+  const poster = !jobData.company_id
+    ? await supabase.from('users').select('id, full_name, username, avatar_url').eq('id', jobData.posted_by).maybeSingle()
     : { data: null, error: null }
   if (poster.error) return res.status(500).json({ error: poster.error.message })
 
   const referralsCount = await supabase
     .from('referrals')
     .select('id', { count: 'exact', head: true })
-    .eq('job_id', job.data.id)
+    .eq('job_id', jobData.id)
     .in('status', ['submitted', 'under_review', 'interview', 'rejected', 'hired', 'converted'])
   if (referralsCount.error) return res.status(500).json({ error: referralsCount.error.message })
 
@@ -486,14 +507,15 @@ jobsRouter.get('/:id([0-9a-fA-F-]{36})', requireAuth, async (req, res) => {
 
   return res.json({
     job: {
-      ...job.data,
+      ...jobData,
       company: company.data ?? null,
       poster: poster.data ?? null,
-      owned_by_me: job.data.posted_by === req.appUserId,
+      owned_by_me: jobData.posted_by === req.appUserId,
       network_path_to_poster: posterPath,
       submittedReferrals: referralsCount.count ?? 0,
       referral_connections: network.direct,
       connection_context: network,
+      capabilities: { visibility: productSchema.jobsVisibility, referralRequests: productSchema.jobReferralRequests },
     },
   })
 })
@@ -537,6 +559,7 @@ jobsRouter.post('/', requireAuth, async (req, res) => {
   const parsed = createJobSchema.safeParse(req.body)
   if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
   const data = parsed.data
+  const productSchema = await getProductSchemaCapabilitiesSafe('jobs/create')
 
   // Peer-to-peer: any member can share a job link they found elsewhere. No
   // company row, no HR gate — it posts as its own listing with an external
@@ -559,7 +582,7 @@ jobsRouter.post('/', requireAuth, async (req, res) => {
         salary_min: data.salaryMin ?? null,
         salary_max: data.salaryMax ?? null,
         employment_type: data.employmentType ?? null,
-        visibility: data.visibility,
+        ...(productSchema.jobsVisibility ? { visibility: data.visibility } : {}),
         status: data.status ?? 'open',
       })
       .select('*')
@@ -594,7 +617,7 @@ jobsRouter.post('/', requireAuth, async (req, res) => {
       salary_min: data.salaryMin ?? null,
       salary_max: data.salaryMax ?? null,
       employment_type: data.employmentType ?? null,
-      visibility: data.visibility,
+      ...(productSchema.jobsVisibility ? { visibility: data.visibility } : {}),
       status: data.status ?? 'open',
     })
     .select('*')
@@ -606,24 +629,27 @@ jobsRouter.post('/', requireAuth, async (req, res) => {
 
 jobsRouter.post('/:id/referral-request', requireAuth, async (req, res) => {
   if (!req.appUserId) return res.status(404).json({ error: 'Profile not found' })
+  const productSchema = await getProductSchemaCapabilitiesSafe('jobs/request-referral')
+  if (!productSchema.jobReferralRequests) return res.status(503).json({ code: 'SCHEMA_UPGRADE_PENDING', error: 'Posting-owner referral requests are temporarily unavailable while the database upgrade completes. Direct company referrals still work.' })
   const params = jobIdParamSchema.safeParse(req.params)
   const parsed = referralRequestSchema.safeParse(req.body)
   if (!params.success || !parsed.success) return res.status(422).json({ error: 'Invalid referral request' })
-  const job = await supabase.from('jobs').select('id, title, posted_by, visibility, status').eq('id', params.data.id).maybeSingle()
+  const job = await supabase.from('jobs').select(jobColumns(productSchema.jobsVisibility, 'id, title, posted_by, status')).eq('id', params.data.id).maybeSingle()
   if (job.error) return res.status(500).json({ error: job.error.message })
   if (!job.data) return res.status(404).json({ error: 'Job not found' })
-  if (job.data.status !== 'open') return res.status(422).json({ error: 'Requests can only be sent for open jobs' })
-  if (job.data.posted_by === req.appUserId) return res.status(422).json({ error: 'You manage this posting yourself' })
+  const jobData = withDefaultVisibility(job.data as unknown as Record<string, any>)
+  if (jobData.status !== 'open') return res.status(422).json({ error: 'Requests can only be sent for open jobs' })
+  if (jobData.posted_by === req.appUserId) return res.status(422).json({ error: 'You manage this posting yourself' })
 
   let path: PosterPath | null = null
-  try { path = (await networkPathsToUsers(req.appUserId, [job.data.posted_by])).get(job.data.posted_by) ?? null }
+  try { path = (await networkPathsToUsers(req.appUserId, [jobData.posted_by])).get(jobData.posted_by) ?? null }
   catch (error) { console.warn('[jobs/referral-request] path unavailable:', error) }
-  if (job.data.visibility === 'network' && !path) return res.status(403).json({ error: 'This posting is limited to the owner’s network' })
+  if (jobData.visibility === 'network' && !path) return res.status(403).json({ error: 'This posting is limited to the owner’s network' })
 
   const insert = await supabase.from('job_referral_requests').insert({
-    job_id: job.data.id,
+    job_id: jobData.id,
     requester_id: req.appUserId,
-    recipient_id: job.data.posted_by,
+    recipient_id: jobData.posted_by,
     via_user_id: path?.degree === 2 ? path.via?.id ?? null : null,
     note: parsed.data.note?.trim() || null,
   }).select('*').single()
@@ -632,13 +658,13 @@ jobsRouter.post('/:id/referral-request', requireAuth, async (req, res) => {
 
   const requesterName = await getUserFirstName(req.appUserId)
   await createNotification({
-    userId: job.data.posted_by,
+    userId: jobData.posted_by,
     actorId: req.appUserId,
     type: 'job_referral_request',
     title: `${requesterName} requested help with a job you shared`,
-    body: job.data.title,
+    body: jobData.title,
     entityType: 'job',
-    entityId: job.data.id,
+    entityId: jobData.id,
   })
   return res.status(201).json({ request: insert.data, path })
 })
@@ -654,6 +680,10 @@ jobsRouter.patch('/:id', requireAuth, async (req, res) => {
   const parsed = patchJobSchema.safeParse(req.body)
   if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
   if (Object.keys(parsed.data).length === 0) return res.status(400).json({ error: 'No fields provided' })
+  const productSchema = await getProductSchemaCapabilitiesSafe('jobs/update')
+  if (parsed.data.visibility !== undefined && !productSchema.jobsVisibility) {
+    return res.status(503).json({ code: 'SCHEMA_UPGRADE_PENDING', error: 'Job visibility controls are temporarily unavailable while the database upgrade completes.' })
+  }
 
   const job = await supabase.from('jobs').select('id, company_id, posted_by').eq('id', params.data.id).maybeSingle()
   if (job.error) return res.status(500).json({ error: job.error.message })

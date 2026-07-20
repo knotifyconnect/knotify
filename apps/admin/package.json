@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "smoke:deployment": "node scripts/smoke-deployment.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "echo No lint configured for admin"
   },
   "dependencies": {
     "react": "^18.3.1",
