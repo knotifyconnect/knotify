@@ -80,7 +80,7 @@ export function LiveUsersPanel({ snapshot, error }: { snapshot: LiveUsersSnapsho
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 24, lineHeight: 1, color: P.verd }}>{users.length}</div>
-          <div style={{ marginTop: 3, fontSize: 10, color: P.inkFaint }}>5s refresh · synced {syncAge}</div>
+          <div style={{ marginTop: 3, fontSize: 10, color: P.inkFaint }}>3s refresh · synced {syncAge}</div>
         </div>
       </div>
 

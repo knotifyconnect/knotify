@@ -2,6 +2,7 @@ import { supabase } from '../lib.js'
 
 export type ProductSchemaCapabilities = {
   activitySessions: boolean
+  activityHourly: boolean
   jobsVisibility: boolean
   jobReferralRequests: boolean
   checkedAt: string
@@ -36,14 +37,16 @@ async function supports(label: string, query: PromiseLike<{ error: SchemaError |
 export async function getProductSchemaCapabilities(force = false): Promise<ProductSchemaCapabilities> {
   if (!force && cached && cached.expiresAt > Date.now()) return cached.value
 
-  const [activitySessions, jobsVisibility, jobReferralRequests] = await Promise.all([
+  const [activitySessions, activityHourly, jobsVisibility, jobReferralRequests] = await Promise.all([
     supports('activity session schema', supabase.from('user_activity_sessions').select('id, user_id, session_key, started_at, last_seen_at, active_seconds, is_active, page_views, last_path, device_type, updated_at').limit(1)),
+    supports('hourly activity schema', supabase.from('user_activity_hourly').select('bucket_start, user_id, session_key, active_seconds, page_views, heartbeats, exits, last_path, device_type, is_backfill, last_seen_at').limit(1)),
     supports('job visibility schema', supabase.from('jobs').select('id, visibility').limit(1)),
     supports('job referral request schema', supabase.from('job_referral_requests').select('id, job_id, requester_id, recipient_id, via_user_id, note, status, created_at, updated_at').limit(1)),
   ])
 
   const value = {
     activitySessions,
+    activityHourly,
     jobsVisibility,
     jobReferralRequests,
     checkedAt: new Date().toISOString(),
@@ -59,6 +62,7 @@ export async function getProductSchemaCapabilitiesSafe(context: string): Promise
     console.warn(`[${context}] product schema capability check failed; using legacy-compatible behavior:`, error)
     return {
       activitySessions: false,
+      activityHourly: false,
       jobsVisibility: false,
       jobReferralRequests: false,
       checkedAt: new Date().toISOString(),

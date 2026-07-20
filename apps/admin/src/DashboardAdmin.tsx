@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { api } from './api'
 import { LiveUsersPanel, type LiveUsersSnapshot } from './LiveUsersPanel'
+import { ActivityAnalyticsPanel, MetricInsightDrawer, type ActivityPeriod, type ActivityTrendSnapshot, type MetricInsight } from './ActivityAnalyticsPanel'
 
 const C = {
   signal: '#D8442B', ink: '#1a1410', inkMuted: '#6b5f55', inkFaint: '#a09287',
@@ -50,6 +51,8 @@ type Kpis = {
   platform: { messagesTotal: number; connectionsAccepted: number; conversationsTotal: number; upcomingEvents: number; openGigs: number; activeCafes: number; publishedQuests: number }
 }
 
+const MetricInsightContext = createContext<((insight: MetricInsight) => void) | null>(null)
+
 const KPI_RANGES = [7, 14, 30, 90] as const
 
 function pct(value: number, total: number) {
@@ -84,14 +87,16 @@ function Delta({ current, previous, label = 'vs yesterday' }: { current: number;
 function MetricCard({ label, value, detail, current, previous, color, large = false }: {
   label: string; value: number | string; detail?: ReactNode; current?: number; previous?: number; color?: string; large?: boolean
 }) {
+  const openInsight = useContext(MetricInsightContext)
   return (
-    <div style={{ ...card, padding: large ? '21px 22px' : '17px 18px', minWidth: 0 }}>
+    <button type="button" onClick={() => openInsight?.({ label, value, detail, current, previous, color })} style={{ ...card, padding: large ? '21px 22px' : '17px 18px', minWidth: 0, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer', transition: 'transform .15s ease, box-shadow .15s ease' }} title={`Open detailed ${label} insight`}>
       <div style={{ color: C.inkFaint, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.075em', marginBottom: 9 }}>{label}</div>
       <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: large ? 36 : 29, lineHeight: 1, letterSpacing: '-0.03em', color: color ?? C.ink }}>{value}</div>
       <div style={{ marginTop: 9, minHeight: 17, fontSize: 11.5, color: C.inkFaint }}>
         {current !== undefined && previous !== undefined ? <Delta current={current} previous={previous} /> : detail}
       </div>
-    </div>
+      <div style={{ marginTop: 8, color: C.blue, fontSize: 9.5, fontWeight: 650 }}>Open details →</div>
+    </button>
   )
 }
 
@@ -166,8 +171,9 @@ function TrendChart({ series }: { series: { label: string; color: string; points
 
 function Breakdown({ title, rows, total }: { title: string; rows: { label: string; count: number }[]; total: number }) {
   const max = Math.max(1, ...rows.map(row => row.count))
+  const openInsight = useContext(MetricInsightContext)
   return (
-    <div style={{ ...card, padding: 18 }}>
+    <button type="button" onClick={() => openInsight?.({ label: title, value: total, detail: `${rows.length} visible segments` })} style={{ ...card, padding: 18, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer' }} title={`Open detailed ${title} insight`}>
       <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 15 }}>{title}</div>
       <div style={{ display: 'grid', gap: 11 }}>
         {rows.map(row => (
@@ -182,7 +188,8 @@ function Breakdown({ title, rows, total }: { title: string; rows: { label: strin
           </div>
         ))}
       </div>
-    </div>
+      <div style={{ marginTop: 12, color: C.blue, fontSize: 9.5, fontWeight: 650 }}>Open details →</div>
+    </button>
   )
 }
 
@@ -236,8 +243,9 @@ function LatestMembers({ users, timeZone }: { users: Kpis['latestUsers']; timeZo
 
 function MostEngagedMembers({ users }: { users: Kpis['engagement']['topUsers'] }) {
   const maxMinutes = Math.max(1, ...users.map(user => user.minutes))
+  const openInsight = useContext(MetricInsightContext)
   return (
-    <div style={{ ...card, padding: 18 }}>
+    <button type="button" onClick={() => openInsight?.({ label: 'Most engaged members', value: users.length, detail: 'Members ranked by foreground active time in the selected range' })} style={{ ...card, padding: 18, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer' }} title="Open detailed Most engaged members insight">
       <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 13 }}>Most engaged members · selected range</div>
       <div style={{ display: 'grid', gap: 10 }}>
         {users.map((user, index) => (
@@ -250,11 +258,13 @@ function MostEngagedMembers({ users }: { users: Kpis['engagement']['topUsers'] }
         ))}
         {!users.length && <div style={{ color: C.inkFaint, fontSize: 12 }}>Usage telemetry will appear after members open the updated app.</div>}
       </div>
-    </div>
+      <div style={{ marginTop: 12, color: C.blue, fontSize: 9.5, fontWeight: 650 }}>Open details →</div>
+    </button>
   )
 }
 
 function WorkQueue({ queue }: { queue: Kpis['workQueue'] }) {
+  const openInsight = useContext(MetricInsightContext)
   const rows = [
     ['Beta approvals', queue.betaPending, 'Signups waiting for a decision'],
     ['Open feedback', queue.feedbackOpen, `${queue.bugsOpen} marked as bugs`],
@@ -264,21 +274,22 @@ function WorkQueue({ queue }: { queue: Kpis['workQueue'] }) {
   return (
     <div style={{ ...card, overflow: 'hidden' }}>
       {rows.map(([label, value, note], index) => (
-        <div key={label} style={{ padding: '14px 16px', display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto', alignItems: 'center', gap: 12, borderTop: index ? `0.5px solid ${C.rule}` : undefined }}>
+        <button type="button" key={label} onClick={() => openInsight?.({ label, value, detail: note })} style={{ padding: '14px 16px', width: '100%', display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto', alignItems: 'center', gap: 12, border: 'none', borderTop: index ? `0.5px solid ${C.rule}` : undefined, background: 'transparent', textAlign: 'left', cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }} title={`Open detailed ${label} insight`}>
           <div><div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{label}</div><div style={{ fontSize: 11.5, color: C.inkFaint, marginTop: 2 }}>{note}</div></div>
           <span style={{ minWidth: 30, height: 30, padding: '0 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', background: value ? 'rgba(216,68,43,.10)' : C.paperSoft, color: value ? C.signal : C.inkFaint, fontWeight: 700, fontSize: 12 }}>{value}</span>
-        </div>
+        </button>
       ))}
     </div>
   )
 }
 
 function BetaFunnel({ funnel }: { funnel: Kpis['betaFunnel'] }) {
+  const openInsight = useContext(MetricInsightContext)
   const rows = [
     ['Approved', funnel.approved, C.verd], ['Pending', funnel.pending, C.ochre], ['Rejected', funnel.rejected, C.signal],
   ] as const
   return (
-    <div style={{ ...card, padding: 18 }}>
+    <button type="button" onClick={() => openInsight?.({ label: 'Beta waitlist', value: funnel.total, detail: `${funnel.pending} pending · ${funnel.approved} approved · ${funnel.rejected} rejected` })} style={{ ...card, padding: 18, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer' }} title="Open detailed Beta waitlist insight">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}><span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Beta waitlist</span><span style={{ fontSize: 12, color: C.inkMuted }}>{funnel.total} total</span></div>
       <div style={{ height: 12, display: 'flex', overflow: 'hidden', borderRadius: 999, background: C.paperSoft, marginBottom: 14 }}>
         {rows.map(([label, value, color]) => <div key={label} title={`${label}: ${value}`} style={{ width: `${pct(value, funnel.total)}%`, background: color }} />)}
@@ -286,7 +297,8 @@ function BetaFunnel({ funnel }: { funnel: Kpis['betaFunnel'] }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
         {rows.map(([label, value, color]) => <div key={label}><div style={{ color, fontSize: 18, fontFamily: "'Fraunces', Georgia, serif" }}>{value}</div><div style={{ color: C.inkFaint, fontSize: 10.5 }}>{label} · {pct(value, funnel.total)}%</div></div>)}
       </div>
-    </div>
+      <div style={{ marginTop: 12, color: C.blue, fontSize: 9.5, fontWeight: 650 }}>Open details →</div>
+    </button>
   )
 }
 
@@ -318,6 +330,11 @@ export function DashboardAdmin() {
   const [kpis, setKpis] = useState<Kpis | null>(null)
   const [liveUsers, setLiveUsers] = useState<LiveUsersSnapshot | null>(null)
   const [liveError, setLiveError] = useState('')
+  const [activityPeriod, setActivityPeriod] = useState<ActivityPeriod>('week')
+  const [activityTrends, setActivityTrends] = useState<ActivityTrendSnapshot | null>(null)
+  const [activityLoading, setActivityLoading] = useState(true)
+  const [activityError, setActivityError] = useState('')
+  const [selectedInsight, setSelectedInsight] = useState<MetricInsight | null>(null)
   const [range, setRange] = useState(14)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -350,7 +367,7 @@ export function DashboardAdmin() {
     }
     const onVisibility = () => { if (!document.hidden) void refreshLiveUsers() }
     void refreshLiveUsers()
-    const timer = window.setInterval(() => { void refreshLiveUsers() }, 5000)
+    const timer = window.setInterval(() => { void refreshLiveUsers() }, 3000)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       disposed = true
@@ -358,6 +375,30 @@ export function DashboardAdmin() {
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])
+
+  useEffect(() => {
+    let disposed = false
+    let inFlight = false
+    const refreshActivity = async () => {
+      if (disposed || inFlight || document.hidden) return
+      inFlight = true
+      try {
+        const snapshot = await api.activityTrends(activityPeriod) as ActivityTrendSnapshot
+        if (!disposed) { setActivityTrends(snapshot); setActivityError('') }
+      } catch (caught) {
+        if (!disposed) setActivityError(caught instanceof Error ? caught.message : 'Activity intelligence could not be refreshed.')
+      } finally {
+        inFlight = false
+        if (!disposed) setActivityLoading(false)
+      }
+    }
+    setActivityLoading(true)
+    void refreshActivity()
+    const timer = window.setInterval(() => void refreshActivity(), 60_000)
+    const onVisibility = () => { if (!document.hidden) void refreshActivity() }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { disposed = true; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility) }
+  }, [activityPeriod])
 
   if (loading && !kpis) return <div style={{ padding: 48, textAlign: 'center', color: C.inkFaint, fontSize: 13 }}>Loading company dashboard…</div>
   if (error && !kpis) return <div style={{ ...card, padding: 20, color: C.signal, fontSize: 13 }}>{error}</div>
@@ -377,7 +418,9 @@ export function DashboardAdmin() {
   const timeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: kpis.context.timeZone, hour: '2-digit', minute: '2-digit' })
 
   return (
-    <div>
+    <MetricInsightContext.Provider value={setSelectedInsight}>
+    <div className="dashboard-admin">
+      <style>{`.dashboard-admin button[title^="Open detailed"]:hover { transform: translateY(-2px); box-shadow: 0 9px 24px rgba(35,25,17,.08); border-color: rgba(56,106,138,.32) !important; }`}</style>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
         <div>
           <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 25, fontWeight: 400, letterSpacing: '-0.025em', margin: '0 0 4px', color: C.ink }}>Today at Knotify</h2>
@@ -415,19 +458,14 @@ export function DashboardAdmin() {
       ) : <>
         <LiveUsersPanel snapshot={liveUsers} error={liveError} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-          <MetricCard label="Online now" value={liveUsers?.users.length ?? engagement.onlineNow} detail="Live heartbeat · refreshes every 5 seconds" color={C.verd} />
+          <MetricCard label="Online now" value={liveUsers?.users.length ?? engagement.onlineNow} detail="Live heartbeat · refreshes every 3 seconds" color={C.verd} />
           <MetricCard label="App opens today" value={engagement.opensToday} current={engagement.opensToday} previous={engagement.opensYesterday} />
           <MetricCard label="Unique users today" value={engagement.uniqueUsersToday} current={engagement.uniqueUsersToday} previous={engagement.uniqueUsersYesterday} color={C.blue} />
           <MetricCard label="Active minutes today" value={engagement.totalMinutesToday} current={engagement.totalMinutesToday} previous={engagement.totalMinutesYesterday} />
           <MetricCard label="Avg. session" value={`${engagement.averageSessionMinutesToday}m`} detail="Foreground active time per app open" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12, marginTop: 12 }}>
-          <TrendChart series={[
-            { label: 'App opens', color: C.blue, points: engagement.sessionsPerDay },
-            { label: 'Active minutes', color: C.verd, points: engagement.minutesPerDay },
-          ]} />
-          <MostEngagedMembers users={engagement.topUsers} />
-        </div>
+        <ActivityAnalyticsPanel data={activityTrends} period={activityPeriod} loading={activityLoading} error={activityError} onPeriodChange={setActivityPeriod} onInsight={setSelectedInsight} />
+        <div style={{ marginTop: 12 }}><MostEngagedMembers users={engagement.topUsers} /></div>
       </>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginTop: 12 }}>
@@ -457,12 +495,14 @@ export function DashboardAdmin() {
       </div>
 
       <SectionTitle title="Platform footprint" subtitle="Current inventory and all-time network volume" accent={C.inkMuted} />
-      <div style={{ ...card, padding: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 10 }}>
         {[
           ['Messages', kpis.platform.messagesTotal], ['Connections', kpis.platform.connectionsAccepted], ['Conversations', kpis.platform.conversationsTotal],
           ['Upcoming events', kpis.platform.upcomingEvents], ['Open gigs', kpis.platform.openGigs], ['Active cafés', kpis.platform.activeCafes], ['Published quests', kpis.platform.publishedQuests],
-        ].map(([label, value]) => <div key={label}><div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 23, color: C.ink }}>{value}</div><div style={{ fontSize: 10.5, color: C.inkFaint, marginTop: 3 }}>{label}</div></div>)}
+        ].map(([label, value]) => <MetricCard key={label} label={String(label)} value={value} detail="Current platform inventory or all-time volume" />)}
       </div>
+      <MetricInsightDrawer insight={selectedInsight} activity={activityTrends} onClose={() => setSelectedInsight(null)} />
     </div>
+    </MetricInsightContext.Provider>
   )
 }

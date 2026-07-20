@@ -45,6 +45,7 @@ export const api = {
   stats: () => request('/api/admin-panel/stats'),
   kpis: (range?: number) => request(`/api/admin-panel/kpis${range ? `?range=${range}` : ''}`),
   liveUsers: () => request('/api/admin-panel/live-users'),
+  activityTrends: (period: 'day' | 'week' | 'month' | 'year') => request(`/api/admin-panel/activity-trends?period=${period}`),
 
   // User accounts and access
   accounts: () => request('/api/admin-panel/accounts?perPage=1000'),

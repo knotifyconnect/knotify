@@ -115,6 +115,7 @@ type ApiRequestOptions = {
 type MutationCachePolicy = boolean | string | string[]
 type MutationRequestOptions = ApiRequestOptions & {
   invalidate?: MutationCachePolicy
+  keepalive?: boolean
 }
 
 const DEFAULT_API_TIMEOUT_MS = 15_000
@@ -359,6 +360,7 @@ export async function apiPost<T>(path: string, body: unknown, options: MutationR
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
+    keepalive: options.keepalive,
   }, options)
   if (!res.ok) throw await buildError(res)
   const data = await res.json() as T

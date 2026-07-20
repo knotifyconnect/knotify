@@ -59,7 +59,7 @@ function accountProfileCompletion(profile: any) {
 
 type AccountUsage = { activeSeconds: number; sessions: number; pageViews: number; lastSeenAt: string | null; isOnline: boolean }
 
-const ONLINE_WINDOW_MS = 90_000
+const ONLINE_WINDOW_MS = 35_000
 
 function liveSection(path: string | null | undefined) {
   const normalized = (path ?? '/').split('?')[0]
@@ -150,7 +150,7 @@ adminPanelRouter.get('/live-users', async (_req, res) => {
       available: false,
       generatedAt: generatedAt.toISOString(),
       onlineWindowSeconds: ONLINE_WINDOW_MS / 1000,
-      refreshAfterSeconds: 5,
+      refreshAfterSeconds: 3,
       users: [],
     })
   }
@@ -171,7 +171,7 @@ adminPanelRouter.get('/live-users', async (_req, res) => {
       available: true,
       generatedAt: generatedAt.toISOString(),
       onlineWindowSeconds: ONLINE_WINDOW_MS / 1000,
-      refreshAfterSeconds: 5,
+      refreshAfterSeconds: 3,
       users: [],
     })
   }
@@ -217,9 +217,219 @@ adminPanelRouter.get('/live-users', async (_req, res) => {
     available: true,
     generatedAt: generatedAt.toISOString(),
     onlineWindowSeconds: ONLINE_WINDOW_MS / 1000,
-    refreshAfterSeconds: 5,
+    refreshAfterSeconds: 3,
     users,
   })
+})
+
+const activityTrendPeriodSchema = z.enum(['day', 'week', 'month', 'year'])
+
+type ActivityTrendRow = {
+  bucket_start: string
+  user_id: string
+  session_key: string
+  active_seconds: number
+  page_views: number
+  heartbeats: number
+  exits: number
+  last_path: string
+  device_type: string
+  is_backfill: boolean
+  last_seen_at: string
+}
+
+function monthStartInZone(now: Date, timeZone: string, offsetMonths = 0) {
+  const current = zonedParts(now, timeZone)
+  const shifted = new Date(Date.UTC(current.year, current.month - 1 + offsetMonths, 1))
+  return zonedMidnightUtc(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 1, timeZone)
+}
+
+function activityTrendWindows(period: z.infer<typeof activityTrendPeriodSchema>, now: Date, timeZone: string) {
+  const base = period === 'day'
+    ? { currentStart: reportDayStart(now, timeZone), previousStart: reportDayStart(now, timeZone, -1), resolution: 'hour' as const }
+    : period === 'week'
+      ? { currentStart: reportDayStart(now, timeZone, -6), previousStart: reportDayStart(now, timeZone, -13), resolution: 'day' as const }
+      : period === 'month'
+        ? { currentStart: reportDayStart(now, timeZone, -29), previousStart: reportDayStart(now, timeZone, -59), resolution: 'day' as const }
+        : { currentStart: monthStartInZone(now, timeZone, -11), previousStart: monthStartInZone(now, timeZone, -23), resolution: 'month' as const }
+  return { ...base, previousEnd: new Date(base.previousStart.getTime() + (now.getTime() - base.currentStart.getTime())) }
+}
+
+function activityAggregate(rows: ActivityTrendRow[]) {
+  const users = new Set<string>()
+  const sessions = new Set<string>()
+  let activeSeconds = 0
+  let pageViews = 0
+  let heartbeats = 0
+  let exits = 0
+  for (const row of rows) {
+    users.add(row.user_id)
+    sessions.add(`${row.user_id}:${row.session_key}`)
+    activeSeconds += row.active_seconds ?? 0
+    pageViews += row.page_views ?? 0
+    heartbeats += row.heartbeats ?? 0
+    exits += row.exits ?? 0
+  }
+  return { activeUsers: users.size, sessions: sessions.size, activeMinutes: Math.round(activeSeconds / 60), pageViews, heartbeats, exits }
+}
+
+function activityPointKey(value: string | Date, resolution: 'hour' | 'day' | 'month', timeZone: string) {
+  const parts = zonedParts(typeof value === 'string' ? new Date(value) : value, timeZone)
+  const day = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+  if (resolution === 'hour') return `${day}T${String(parts.hour).padStart(2, '0')}`
+  if (resolution === 'month') return `${parts.year}-${String(parts.month).padStart(2, '0')}`
+  return day
+}
+
+function normalizedActivityTotals(value: any) {
+  return {
+    activeUsers: Number(value?.activeUsers ?? value?.active_users ?? 0),
+    sessions: Number(value?.sessions ?? 0),
+    activeMinutes: Number(value?.activeMinutes ?? value?.active_minutes ?? 0),
+    pageViews: Number(value?.pageViews ?? value?.page_views ?? 0),
+    heartbeats: Number(value?.heartbeats ?? 0),
+    exits: Number(value?.exits ?? 0),
+  }
+}
+
+adminPanelRouter.get('/activity-trends', async (req, res) => {
+  const parsed = activityTrendPeriodSchema.safeParse(req.query.period ?? 'week')
+  if (!parsed.success) return res.status(422).json({ error: 'Invalid activity trend period.' })
+
+  const period = parsed.data
+  const now = new Date()
+  const timeZone = dashboardTimeZone()
+  const { currentStart, previousStart, previousEnd, resolution } = activityTrendWindows(period, now, timeZone)
+  const schema = await getProductSchemaCapabilitiesSafe('admin-panel/activity-trends')
+  if (!schema.activitySessions) return res.json({ available: false, period, generatedAt: now.toISOString(), timeZone })
+
+  try {
+    let source: 'hourly' | 'mixed' | 'session-estimate' = 'hourly'
+    let rows: ActivityTrendRow[] = []
+    let compact: any | null = null
+    if (schema.activityHourly) {
+      const result = await supabase.rpc('get_admin_activity_analytics', {
+        p_previous_start: previousStart.toISOString(),
+        p_previous_end: previousEnd.toISOString(),
+        p_current_start: currentStart.toISOString(),
+        p_end: now.toISOString(),
+        p_resolution: resolution,
+        p_timezone: timeZone,
+      })
+      if (result.error) throw new Error(`activity analytics aggregation: ${result.error.message}`)
+      compact = result.data
+      source = compact?.source === 'mixed' ? 'mixed' : 'hourly'
+    } else {
+      source = 'session-estimate'
+      const sessions = await fetchAllDashboardRows<any>('activity trend fallback', () => supabase
+        .from('user_activity_sessions')
+        .select('user_id, session_key, started_at, last_seen_at, active_seconds, page_views, last_path, device_type')
+        .gte('last_seen_at', previousStart.toISOString())
+        .order('last_seen_at'))
+      rows = sessions.map(session => ({
+        bucket_start: session.last_seen_at,
+        user_id: session.user_id,
+        session_key: session.session_key,
+        active_seconds: session.active_seconds ?? 0,
+        page_views: session.page_views ?? 0,
+        heartbeats: 0,
+        exits: 0,
+        last_path: session.last_path ?? '/',
+        device_type: session.device_type ?? 'desktop',
+        is_backfill: true,
+        last_seen_at: session.last_seen_at,
+      }))
+    }
+
+    const currentRows = rows.filter(row => new Date(row.bucket_start) >= currentStart && new Date(row.bucket_start) <= now)
+    const previousRows = rows.filter(row => new Date(row.bucket_start) >= previousStart && new Date(row.bucket_start) < previousEnd)
+    const pointStarts: Date[] = []
+    if (resolution === 'hour') {
+      for (let hour = 0; hour < 24; hour++) pointStarts.push(new Date(currentStart.getTime() + hour * 3600_000))
+    } else if (resolution === 'day') {
+      const days = period === 'week' ? 7 : 30
+      for (let day = 0; day < days; day++) pointStarts.push(reportDayStart(now, timeZone, -(days - 1) + day))
+    } else {
+      for (let month = -11; month <= 0; month++) pointStarts.push(monthStartInZone(now, timeZone, month))
+    }
+
+    const rowsByPoint = new Map<string, ActivityTrendRow[]>()
+    for (const row of currentRows) {
+      const key = activityPointKey(row.bucket_start, resolution, timeZone)
+      const bucket = rowsByPoint.get(key) ?? []
+      bucket.push(row)
+      rowsByPoint.set(key, bucket)
+    }
+    const points = pointStarts.map(start => {
+      const key = activityPointKey(start, resolution, timeZone)
+      const compactPoint = compact?.points?.find((point: any) => point.key === key)
+      const summary = compactPoint ? normalizedActivityTotals(compactPoint) : activityAggregate(rowsByPoint.get(key) ?? [])
+      const parts = zonedParts(start, timeZone)
+      const label = resolution === 'hour'
+        ? `${String(parts.hour).padStart(2, '0')}:00`
+        : resolution === 'month'
+          ? new Intl.DateTimeFormat('en-GB', { timeZone, month: 'short', year: '2-digit' }).format(start)
+          : new Intl.DateTimeFormat('en-GB', { timeZone, day: '2-digit', month: 'short' }).format(start)
+      return { key, label, start: start.toISOString(), ...summary }
+    })
+
+    const timeOfDay = Array.from({ length: 24 }, (_, hour) => {
+      const compactHour = compact?.timeOfDay?.find((row: any) => Number(row.hour) === hour)
+      if (compactHour) return { hour, label: `${String(hour).padStart(2, '0')}:00`, ...normalizedActivityTotals(compactHour) }
+      const hourRows = currentRows.filter(row => zonedParts(new Date(row.bucket_start), timeZone).hour === hour)
+      return { hour, label: `${String(hour).padStart(2, '0')}:00`, ...activityAggregate(hourRows) }
+    })
+    const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const weekdays = weekdayNames.map((label, day) => ({ day, label, ...activityAggregate([]) }))
+    // Intl does not expose a numeric weekday; aggregate using the stable label.
+    for (const weekday of weekdays) {
+      const compactDay = compact?.weekdays?.find((row: any) => Number(row.day) === weekday.day)
+      if (compactDay) { Object.assign(weekday, normalizedActivityTotals(compactDay)); continue }
+      const matching = currentRows.filter(row => new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(new Date(row.bucket_start)) === weekday.label)
+      Object.assign(weekday, activityAggregate(matching))
+    }
+
+    const devices = compact?.devices?.map((item: any) => ({ label: String(item.label), count: Number(item.count) })) ?? ['desktop', 'mobile', 'tablet'].map(label => ({
+      label,
+      count: new Set(currentRows.filter(row => row.device_type === label).map(row => `${row.user_id}:${row.session_key}`)).size,
+    })).filter(item => item.count > 0)
+    const sectionCounts = new Map<string, Set<string>>()
+    for (const row of currentRows) {
+      const section = liveSection(row.last_path)
+      const sessions = sectionCounts.get(section) ?? new Set<string>()
+      sessions.add(`${row.user_id}:${row.session_key}`)
+      sectionCounts.set(section, sessions)
+    }
+    const sections = compact?.sections?.map((item: any) => ({ label: String(item.label), count: Number(item.count) })) ?? [...sectionCounts.entries()]
+      .map(([label, sessions]) => ({ label, count: sessions.size }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8)
+    const peakCandidate = [...points].sort((a, b) => b.activeUsers - a.activeUsers || b.activeMinutes - a.activeMinutes)[0] ?? null
+    const peak = peakCandidate && (peakCandidate.activeUsers || peakCandidate.activeMinutes || peakCandidate.pageViews) ? peakCandidate : null
+
+    return res.json({
+      available: true,
+      period,
+      generatedAt: now.toISOString(),
+      timeZone,
+      source,
+      window: { start: currentStart.toISOString(), end: now.toISOString(), previousStart: previousStart.toISOString(), previousEnd: previousEnd.toISOString() },
+      summary: {
+        current: compact?.current ? normalizedActivityTotals(compact.current) : activityAggregate(currentRows),
+        previous: compact?.previous ? normalizedActivityTotals(compact.previous) : activityAggregate(previousRows),
+      },
+      points,
+      timeOfDay,
+      weekdays,
+      devices,
+      sections,
+      peak,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown activity trend query error'
+    console.error(`[admin-panel/activity-trends] ${message}`)
+    return res.status(500).json({ error: `Activity trends could not be loaded. ${message}` })
+  }
 })
 
 adminPanelRouter.get('/accounts', async (req, res) => {
@@ -1299,7 +1509,7 @@ adminPanelRouter.get('/kpis', async (req, res) => {
     const [
       users, betaRecent, messagesRecent, connectionsCreated, connectionsAcceptedRecent,
       conversationsRecent, rsvpsRecent, questsRecent, checkinsRecent, gigRequestsRecent,
-      feedbackRecent, invitesRecent, eventsRecent, activitySessions,
+      feedbackRecent, invitesRecent, eventsRecent, activitySessions, activityHourlySummary,
       betaTotal, betaPending, betaApproved, betaRejected,
       workFeedback, workBugs, workGigs, workRoles,
       totalMessages, totalConnectionsAccepted, totalConversations,
@@ -1321,6 +1531,19 @@ adminPanelRouter.get('/kpis', async (req, res) => {
       productSchema.activitySessions
         ? fetchAllDashboardRows<any>('app activity sessions', () => supabase.from('user_activity_sessions').select('user_id, started_at, last_seen_at, active_seconds, is_active, page_views, last_path, device_type').gte('last_seen_at', rangeStart.toISOString()).order('last_seen_at'))
         : Promise.resolve([]),
+      productSchema.activityHourly
+        ? supabase.rpc('get_admin_activity_analytics', {
+            p_previous_start: yesterdayStart.toISOString(),
+            p_previous_end: yesterdayComparisonEnd.toISOString(),
+            p_current_start: todayStart.toISOString(),
+            p_end: now.toISOString(),
+            p_resolution: 'hour',
+            p_timezone: timeZone,
+          }).then(result => {
+            if (result.error) throw new Error(`today activity aggregation: ${result.error.message}`)
+            return result.data
+          })
+        : Promise.resolve(null),
       dashboardCount('beta signups total', 'beta_signups'),
       dashboardCount('beta signups pending', 'beta_signups', query => query.eq('status', 'pending')),
       dashboardCount('beta signups approved', 'beta_signups', query => query.eq('status', 'approved')),
@@ -1348,10 +1571,14 @@ adminPanelRouter.get('/kpis', async (req, res) => {
     const completionTotal = users.reduce((sum, user) => sum + accountProfileCompletion(user), 0)
     const sessionsToday = activitySessions.filter(session => inWindow(session.started_at, todayStart, now))
     const sessionsYesterday = activitySessions.filter(session => inWindow(session.started_at, yesterdayStart, yesterdayComparisonEnd))
-    const onlineCutoff = now.getTime() - 150_000
+    const hourlyToday = activityHourlySummary?.current ? normalizedActivityTotals(activityHourlySummary.current) : null
+    const hourlyYesterday = activityHourlySummary?.previous ? normalizedActivityTotals(activityHourlySummary.previous) : null
+    const onlineCutoff = now.getTime() - ONLINE_WINDOW_MS
     const onlineUserIds = new Set(activitySessions.filter(session => session.is_active && new Date(session.last_seen_at).getTime() >= onlineCutoff).map(session => session.user_id))
-    const sessionSecondsToday = sessionsToday.reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
-    const sessionSecondsYesterday = sessionsYesterday.reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
+    const sessionSecondsToday = hourlyToday ? hourlyToday.activeMinutes * 60 : sessionsToday.reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
+    const sessionSecondsYesterday = hourlyYesterday ? hourlyYesterday.activeMinutes * 60 : sessionsYesterday.reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
+    const activeSessionsToday = hourlyToday?.sessions ?? sessionsToday.length
+    const activeSessionsYesterday = hourlyYesterday?.sessions ?? sessionsYesterday.length
     const usageByUser = new Map<string, { seconds: number; sessions: number; lastSeenAt: string }>()
     for (const session of activitySessions) {
       const usage = usageByUser.get(session.user_id) ?? { seconds: 0, sessions: 0, lastSeenAt: session.last_seen_at }
@@ -1475,12 +1702,12 @@ adminPanelRouter.get('/kpis', async (req, res) => {
         onlineNow: onlineUserIds.size,
         opensToday: sessionsToday.length,
         opensYesterday: sessionsYesterday.length,
-        uniqueUsersToday: new Set(sessionsToday.map(session => session.user_id)).size,
-        uniqueUsersYesterday: new Set(sessionsYesterday.map(session => session.user_id)).size,
+        uniqueUsersToday: hourlyToday?.activeUsers ?? new Set(sessionsToday.map(session => session.user_id)).size,
+        uniqueUsersYesterday: hourlyYesterday?.activeUsers ?? new Set(sessionsYesterday.map(session => session.user_id)).size,
         totalMinutesToday: Math.round(sessionSecondsToday / 60),
         totalMinutesYesterday: Math.round(sessionSecondsYesterday / 60),
-        averageSessionMinutesToday: sessionsToday.length ? Math.round(sessionSecondsToday / sessionsToday.length / 6) / 10 : 0,
-        averageSessionMinutesYesterday: sessionsYesterday.length ? Math.round(sessionSecondsYesterday / sessionsYesterday.length / 6) / 10 : 0,
+        averageSessionMinutesToday: activeSessionsToday ? Math.round(sessionSecondsToday / activeSessionsToday / 6) / 10 : 0,
+        averageSessionMinutesYesterday: activeSessionsYesterday ? Math.round(sessionSecondsYesterday / activeSessionsYesterday / 6) / 10 : 0,
         sessionsPerDay: bucketByReportDay(activitySessions.map(session => ({ at: session.started_at })), rangeDays, now, timeZone),
         minutesPerDay: bucketMetricByReportDay(activitySessions.map(session => ({ at: session.started_at, value: Math.round((session.active_seconds ?? 0) / 60) })), rangeDays, now, timeZone),
         topUsers,
