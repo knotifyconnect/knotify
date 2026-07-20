@@ -262,7 +262,7 @@ export function AccountsAdmin() {
 
     const onVisibility = () => { if (document.visibilityState === 'visible') void refreshPresence() }
     void refreshPresence()
-    const timer = window.setInterval(() => void refreshPresence(), 5_000)
+    const timer = window.setInterval(() => void refreshPresence(), 3_000)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       disposed = true
@@ -415,7 +415,7 @@ export function AccountsAdmin() {
 
       <div className="account-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 10, marginBottom: 18 }}>
         <StatCard label="Total accounts" value={stats.total} sub={`${loaded} loaded`} />
-        <StatCard label="Online now" value={stats.onlineNow} sub="Live · refreshes every 5s" tone={C.verd} />
+        <StatCard label="Online now" value={stats.onlineNow} sub="Live · refreshes every 3s" tone={C.verd} />
         <StatCard label="Used in 30 days" value={stats.active30d} sub={`${stats.total ? Math.round(stats.active30d / stats.total * 100) : 0}% of accounts`} tone={C.blue} />
         <StatCard label="Deactivated" value={stats.deactivated} sub={stats.profileOnly ? `${stats.profileOnly} profile only` : 'Sign-in blocked'} tone={C.signal} />
         <StatCard label="Access grants" value={stats.admins + stats.hr} sub={`${stats.admins} admin · ${stats.hr} HR`} tone={C.plum} />

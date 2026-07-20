@@ -38,10 +38,9 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ de
 
 const LAST_ACTIVE_AT_KEY = 'knotify:lastActiveAt'
 const INACTIVITY_REENTRY_MS = 2 * 24 * 60 * 60 * 1000
-// Presence is operator-facing and should feel live without turning ordinary
-// mouse activity into write amplification. One heartbeat every 20 seconds is
-// enough for a five-second admin feed and still bounded to three writes/minute.
-const ACTIVE_WRITE_THROTTLE_MS = 20 * 1000
+// Ten-second heartbeats let operators evict an unresponsive foreground session
+// after three missed beats while keeping writes bounded to six per minute.
+const ACTIVE_WRITE_THROTTLE_MS = 10 * 1000
 const ACTIVITY_SESSION_GAP_MS = 30 * 60 * 1000
 const ACTIVITY_EVENTS = ['click', 'keydown', 'scroll', 'touchstart', 'mousemove'] as const
 const ONBOARDING_STATUS_TTL_MS = 60_000
@@ -410,7 +409,7 @@ function ProductActivityTracker({ enabled }: { enabled: boolean }) {
   const lastWrite = useRef(0)
   const lastPath = useRef(location.pathname)
 
-  const recordActivity = useCallback((force = false, active = !document.hidden, pathOverride?: string) => {
+  const recordActivity = useCallback((force = false, active = !document.hidden, pathOverride?: string, keepalive = false) => {
     if (!enabled) return
     const now = Date.now()
     if (!force && now - lastWrite.current < ACTIVE_WRITE_THROTTLE_MS) return
@@ -426,7 +425,7 @@ function ProductActivityTracker({ enabled }: { enabled: boolean }) {
       active,
       pageView,
       deviceType: activityDeviceType(),
-    }, { invalidate: false }).catch(() => {})
+    }, { invalidate: false, keepalive }).catch(() => {})
   }, [enabled])
 
   useEffect(() => {
@@ -439,6 +438,7 @@ function ProductActivityTracker({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     if (!enabled) return
     const recordVisibility = () => recordActivity(true, !document.hidden)
+    const recordExit = () => recordActivity(true, false, undefined, true)
     const onUserActivity = () => recordActivity()
     const heartbeat = window.setInterval(() => {
       if (!document.hidden) recordActivity(true, true)
@@ -446,11 +446,13 @@ function ProductActivityTracker({ enabled }: { enabled: boolean }) {
 
     ACTIVITY_EVENTS.forEach((eventName) => window.addEventListener(eventName, onUserActivity, { passive: true }))
     document.addEventListener('visibilitychange', recordVisibility)
+    window.addEventListener('pagehide', recordExit)
     return () => {
       window.clearInterval(heartbeat)
-      recordActivity(true, false)
+      recordExit()
       ACTIVITY_EVENTS.forEach((eventName) => window.removeEventListener(eventName, onUserActivity))
       document.removeEventListener('visibilitychange', recordVisibility)
+      window.removeEventListener('pagehide', recordExit)
     }
   }, [enabled, recordActivity])
 

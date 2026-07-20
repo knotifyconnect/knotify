@@ -141,7 +141,8 @@ usersRouter.post('/me/activity', requireAuth, async (req, res) => {
 
   const now = new Date()
   const nowIso = now.toISOString()
-  const activitySessionsAvailable = (await getProductSchemaCapabilitiesSafe('activity')).activitySessions
+  const activitySchema = await getProductSchemaCapabilitiesSafe('activity')
+  const activitySessionsAvailable = activitySchema.activitySessions
 
   // Keep last-seen reliable even when application code reaches production a
   // few minutes before its Supabase migration. This was the original presence
@@ -164,10 +165,15 @@ usersRouter.post('/me/activity', requireAuth, async (req, res) => {
 
   if (existing.error) return res.status(500).json({ error: existing.error.message })
 
+  let creditedSeconds = 0
+  let pageViewIncrement = 0
   if (existing.data) {
     const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(existing.data.last_seen_at).getTime()) / 1000))
-    const creditedSeconds = existing.data.is_active && parsed.data.active ? Math.min(elapsed, 90) : 0
+    // Credit the bounded foreground interval on an explicit exit as well as a
+    // heartbeat. Otherwise closing the app discards the final active slice.
+    creditedSeconds = existing.data.is_active ? Math.min(elapsed, 30) : 0
     const changedPage = parsed.data.pageView && existing.data.last_path !== parsed.data.path
+    pageViewIncrement = changedPage ? 1 : 0
     const update = await supabase
       .from('user_activity_sessions')
       .update({
@@ -190,6 +196,21 @@ usersRouter.post('/me/activity', requireAuth, async (req, res) => {
       device_type: parsed.data.deviceType,
     })
     if (insert.error) return res.status(500).json({ error: insert.error.message })
+    pageViewIncrement = 1
+  }
+
+  if (activitySchema.activityHourly) {
+    const hourly = await supabase.rpc('record_user_activity_hourly', {
+      p_user_id: req.appUserId,
+      p_session_key: parsed.data.sessionKey,
+      p_observed_at: nowIso,
+      p_active_seconds: creditedSeconds,
+      p_page_views: pageViewIncrement,
+      p_active: parsed.data.active,
+      p_last_path: parsed.data.path,
+      p_device_type: parsed.data.deviceType,
+    })
+    if (hourly.error) return res.status(500).json({ error: hourly.error.message })
   }
 
   const liveSessions = await supabase
@@ -197,7 +218,7 @@ usersRouter.post('/me/activity', requireAuth, async (req, res) => {
     .select('id')
     .eq('user_id', req.appUserId)
     .eq('is_active', true)
-    .gte('last_seen_at', new Date(now.getTime() - 90_000).toISOString())
+    .gte('last_seen_at', new Date(now.getTime() - 35_000).toISOString())
     .limit(1)
   if (liveSessions.error) return res.status(500).json({ error: liveSessions.error.message })
 
