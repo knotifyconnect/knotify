@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { api } from './api'
+import type { LiveUser, LiveUsersSnapshot } from './LiveUsersPanel'
 
 const C = {
   signal: '#D8442B', signalSoft: 'rgba(216,68,43,0.08)', ink: '#1a1410', inkMuted: '#6b5f55',
@@ -95,6 +96,14 @@ function fullDate(iso: string | null) {
   return new Date(iso).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
+}
+
+function sessionDuration(iso: string) {
+  const totalSeconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  return hours ? `${hours}h ${minutes}m` : minutes ? `${minutes}m ${seconds}s` : `${seconds}s`
 }
 
 function initials(account: Account) {
@@ -199,6 +208,7 @@ export function AccountsAdmin() {
   const [busy, setBusy] = useState('')
   const [confirmMode, setConfirmMode] = useState<'deactivate' | 'delete' | null>(null)
   const [confirmation, setConfirmation] = useState('')
+  const [liveByProfileId, setLiveByProfileId] = useState<Record<string, LiveUser>>({})
 
   const selected = accounts.find((account) => account.authId === selectedId) ?? null
 
@@ -224,6 +234,42 @@ export function AccountsAdmin() {
   }
 
   useEffect(() => { void load() }, [])
+
+  useEffect(() => {
+    let disposed = false
+    let inFlight = false
+
+    const refreshPresence = async () => {
+      if (disposed || inFlight || document.visibilityState === 'hidden') return
+      inFlight = true
+      try {
+        const snapshot = await api.liveUsers() as LiveUsersSnapshot
+        if (disposed) return
+        const users = snapshot.available ? snapshot.users : []
+        const next = Object.fromEntries(users.map((user) => [user.profileId, user]))
+        setLiveByProfileId(next)
+        setAccounts((current) => current.map((account) => {
+          const live = account.profileId ? next[account.profileId] : undefined
+          return { ...account, isOnline: Boolean(live), lastSeenAt: live?.lastSeenAt ?? account.lastSeenAt }
+        }))
+        setStats((current) => ({ ...current, onlineNow: users.length }))
+      } catch {
+        // Keep the last successful presence snapshot during a transient refresh failure.
+      } finally {
+        inFlight = false
+      }
+    }
+
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refreshPresence() }
+    void refreshPresence()
+    const timer = window.setInterval(() => void refreshPresence(), 5_000)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
 
   useEffect(() => {
     if (!selectedId) { setDetail(null); return }
@@ -324,6 +370,7 @@ export function AccountsAdmin() {
   }
 
   const shownAccount = detail?.account ?? selected
+  const shownLive = shownAccount?.profileId ? liveByProfileId[shownAccount.profileId] : undefined
   const isVerified = shownAccount ? Boolean(shownAccount.emailConfirmedAt || shownAccount.phoneConfirmedAt) : false
 
   return (
@@ -368,7 +415,7 @@ export function AccountsAdmin() {
 
       <div className="account-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 10, marginBottom: 18 }}>
         <StatCard label="Total accounts" value={stats.total} sub={`${loaded} loaded`} />
-        <StatCard label="Online now" value={stats.onlineNow} sub="Seen in the last 2½ min" tone={C.verd} />
+        <StatCard label="Online now" value={stats.onlineNow} sub="Live · refreshes every 5s" tone={C.verd} />
         <StatCard label="Used in 30 days" value={stats.active30d} sub={`${stats.total ? Math.round(stats.active30d / stats.total * 100) : 0}% of accounts`} tone={C.blue} />
         <StatCard label="Deactivated" value={stats.deactivated} sub={stats.profileOnly ? `${stats.profileOnly} profile only` : 'Sign-in blocked'} tone={C.signal} />
         <StatCard label="Access grants" value={stats.admins + stats.hr} sub={`${stats.admins} admin · ${stats.hr} HR`} tone={C.plum} />
@@ -398,6 +445,7 @@ export function AccountsAdmin() {
         ) : filtered.map((account) => {
           const verified = Boolean(account.emailConfirmedAt || account.phoneConfirmedAt)
           const colors = roleColors(account)
+          const live = account.profileId ? liveByProfileId[account.profileId] : undefined
           return (
             <button key={account.authId} className="account-row" onClick={() => { setSelectedId(account.authId); setConfirmMode(null); setConfirmation('') }} style={{ width: '100%', display: 'grid', gridTemplateColumns: 'minmax(240px,1.4fr) minmax(150px,.8fr) minmax(150px,.8fr) 130px 26px', alignItems: 'center', gap: 14, padding: '13px 15px', border: 'none', borderBottom: `0.5px solid ${C.ruleSoft}`, background: 'transparent', textAlign: 'left', cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif', minWidth: 820 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
@@ -406,7 +454,7 @@ export function AccountsAdmin() {
               </div>
               <div><div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}><Pill {...colors}>{roleLabel(account)}</Pill>{!account.authAvailable ? <Pill color={C.amber} background={C.amberSoft}>Profile only</Pill> : account.accountStatus === 'deactivated' ? <Pill color={C.signal} background={C.signalSoft}>● Deactivated</Pill> : <Pill color={C.verd} background={C.verdSoft}>● Active</Pill>}</div><div style={{ marginTop: 5, color: verified ? C.inkFaint : C.amber, fontSize: 10.5 }}>{account.authAvailable ? (verified ? '✓ Identity verified' : '⚠ Not verified') : 'Auth metadata unavailable'}</div></div>
               <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.inkMuted, marginBottom: 5 }}><span>Profile health</span><strong style={{ color: account.profileCompletion >= 75 ? C.verd : account.profileCompletion >= 40 ? C.amber : C.signal }}>{account.profileCompletion}%</strong></div><div style={{ height: 4, background: C.paperSoft, borderRadius: 99, overflow: 'hidden' }}><div style={{ height: '100%', width: `${account.profileCompletion}%`, background: account.profileCompletion >= 75 ? C.verd : account.profileCompletion >= 40 ? C.amber : C.signal, borderRadius: 99 }} /></div><div style={{ marginTop: 5, fontSize: 10, color: C.inkFaint }}>{account.providers.join(', ') || 'Unknown provider'}</div></div>
-              <div><div style={{ fontSize: 11.5, color: account.isOnline ? C.verd : C.ink }}>{account.isOnline ? 'Online now' : timeAgo(account.lastSeenAt)}</div><div style={{ fontSize: 10, color: C.inkFaint, marginTop: 3 }}>{account.usage30d.minutes}m · {account.usage30d.sessions} opens (30d)</div></div>
+              <div><div style={{ fontSize: 11.5, color: live ? C.verd : C.ink }}>{live ? `Online · ${live.currentSection}` : timeAgo(account.lastSeenAt)}</div><div style={{ fontSize: 10, color: C.inkFaint, marginTop: 3 }}>{live ? `${live.deviceTypes.join(', ') || 'Unknown device'} · ${live.openSessions} session${live.openSessions === 1 ? '' : 's'}` : `${account.usage30d.minutes}m · ${account.usage30d.sessions} opens (30d)`}</div></div>
               <span style={{ color: C.inkFaint, fontSize: 17 }}>›</span>
             </button>
           )
@@ -427,7 +475,7 @@ export function AccountsAdmin() {
 
               <section style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 13, padding: '14px 15px', marginBottom: 12 }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 6 }}>Identity & profile</div><DetailRow label="Username" value={shownAccount.username ? `@${shownAccount.username}` : null} /><DetailRow label="Headline" value={shownAccount.headline} /><DetailRow label="Company" value={shownAccount.currentCompany} /><DetailRow label="University" value={shownAccount.university} /><DetailRow label="Location" value={[shownAccount.locationCity, shownAccount.homeCountry].filter(Boolean).join(' · ')} /><DetailRow label="Persona" value={shownAccount.persona} /><DetailRow label="Interests" value={shownAccount.interests.length ? shownAccount.interests.join(', ') : null} /><DetailRow label="Profile health" value={`${shownAccount.profileCompletion}% · ${shownAccount.onboardingComplete ? 'Onboarding complete' : 'Onboarding incomplete'}`} /><DetailRow label="Terms" value={shownAccount.termsAcceptedAt ? `${shownAccount.termsVersion || 'Accepted'} · ${fullDate(shownAccount.termsAcceptedAt)}` : 'Not recorded'} /></section>
 
-              <section style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 13, padding: '14px 15px', marginBottom: 12 }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 6 }}>Usage · last 30 days</div><DetailRow label="Presence" value={shownAccount.isOnline ? <span style={{ color: C.verd }}>● Online now</span> : timeAgo(shownAccount.lastSeenAt)} /><DetailRow label="Active time" value={`${shownAccount.usage30d.minutes} minutes`} /><DetailRow label="App opens" value={shownAccount.usage30d.sessions} /><DetailRow label="Page views" value={shownAccount.usage30d.pageViews} /></section>
+              <section style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 13, padding: '14px 15px', marginBottom: 12 }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 6 }}>Live presence & usage</div><DetailRow label="Presence" value={shownLive ? <span style={{ color: C.verd }}>● Online now · {shownLive.currentSection}</span> : timeAgo(shownAccount.lastSeenAt)} />{shownLive && <><DetailRow label="Current page" value={shownLive.currentPath} mono /><DetailRow label="Device" value={shownLive.deviceTypes.join(', ') || 'Unknown'} /><DetailRow label="Current session" value={sessionDuration(shownLive.sessionStartedAt)} /><DetailRow label="Heartbeat" value={timeAgo(shownLive.lastSeenAt)} /><DetailRow label="Open sessions" value={shownLive.openSessions} /></>}<DetailRow label="Active time · 30d" value={`${shownAccount.usage30d.minutes} minutes`} /><DetailRow label="App opens · 30d" value={shownAccount.usage30d.sessions} /><DetailRow label="Page views · 30d" value={shownAccount.usage30d.pageViews} /></section>
 
               <section style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 13, padding: '14px 15px', marginBottom: 12 }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 6 }}>Authentication</div><DetailRow label="Provider" value={shownAccount.providers.join(', ') || 'Unknown'} /><DetailRow label="Last sign-in" value={fullDate(shownAccount.lastSignInAt)} /><DetailRow label="Last seen" value={fullDate(shownAccount.lastSeenAt)} /><DetailRow label="Account created" value={fullDate(shownAccount.authCreatedAt)} /><DetailRow label="Email verified" value={fullDate(shownAccount.emailConfirmedAt)} /><DetailRow label="Auth ID" value={<span>{shownAccount.authId} <button onClick={() => copy(shownAccount.authId)} style={{ border: 'none', background: 'none', color: C.blue, padding: 0, marginLeft: 5, cursor: 'pointer', fontSize: 10 }}>Copy</button></span>} mono /><DetailRow label="Profile ID" value={shownAccount.profileId ? <span>{shownAccount.profileId} <button onClick={() => copy(shownAccount.profileId!)} style={{ border: 'none', background: 'none', color: C.blue, padding: 0, marginLeft: 5, cursor: 'pointer', fontSize: 10 }}>Copy</button></span> : null} mono /></section>
 

@@ -59,6 +59,24 @@ function accountProfileCompletion(profile: any) {
 
 type AccountUsage = { activeSeconds: number; sessions: number; pageViews: number; lastSeenAt: string | null; isOnline: boolean }
 
+const ONLINE_WINDOW_MS = 90_000
+
+function liveSection(path: string | null | undefined) {
+  const normalized = (path ?? '/').split('?')[0]
+  if (normalized === '/' || normalized === '/home') return 'Home'
+  if (normalized === '/map') return 'Your Knot'
+  if (normalized === '/discover') return 'Discover'
+  if (normalized === '/jobs' || normalized === '/gigs') return 'Jobs & Gigs'
+  if (normalized === '/cafes' || normalized.startsWith('/cafes/')) return 'Cafés'
+  if (normalized === '/messages') return 'Messages'
+  if (normalized === '/events') return 'Events'
+  if (normalized === '/quests') return 'Quests'
+  if (normalized === '/settings') return 'Settings'
+  if (normalized === '/asks') return 'Asks'
+  if (normalized === '/profile' || normalized.startsWith('/profile/')) return 'Profile'
+  return 'Knotify'
+}
+
 function serializeAccount(authUser: any | null, profile: any | null, usage?: AccountUsage) {
   const providers = Array.isArray(authUser?.app_metadata?.providers)
     ? authUser.app_metadata.providers
@@ -89,7 +107,7 @@ function serializeAccount(authUser: any | null, profile: any | null, usage?: Acc
     isPremium: Boolean(profile?.is_premium),
     isOnline: usage
       ? usage.isOnline
-      : Boolean(profile?.is_online && profile?.last_seen_at && Date.now() - new Date(profile.last_seen_at).getTime() < 150_000),
+      : Boolean(profile?.is_online && profile?.last_seen_at && Date.now() - new Date(profile.last_seen_at).getTime() < ONLINE_WINDOW_MS),
     lastSeenAt: usage?.lastSeenAt ?? profile?.last_seen_at ?? null,
     usage30d: {
       minutes: Math.round((usage?.activeSeconds ?? 0) / 60),
@@ -120,6 +138,89 @@ function serializeAccount(authUser: any | null, profile: any | null, usage?: Acc
     ),
   }
 }
+
+// Lightweight presence feed for the operator dashboard. This intentionally
+// avoids the expensive Supabase Auth enrichment used by the account manager,
+// so the admin can poll it every few seconds without fan-out or rate spikes.
+adminPanelRouter.get('/live-users', async (_req, res) => {
+  const generatedAt = new Date()
+  const productSchema = await getProductSchemaCapabilitiesSafe('admin-panel/live-users')
+  if (!productSchema.activitySessions) {
+    return res.json({
+      available: false,
+      generatedAt: generatedAt.toISOString(),
+      onlineWindowSeconds: ONLINE_WINDOW_MS / 1000,
+      refreshAfterSeconds: 5,
+      users: [],
+    })
+  }
+
+  const sessionsResult = await supabase
+    .from('user_activity_sessions')
+    .select('user_id, session_key, started_at, last_seen_at, active_seconds, page_views, last_path, device_type')
+    .eq('is_active', true)
+    .gte('last_seen_at', new Date(generatedAt.getTime() - ONLINE_WINDOW_MS).toISOString())
+    .order('last_seen_at', { ascending: false })
+    .limit(1000)
+  if (sessionsResult.error) return res.status(500).json({ error: sessionsResult.error.message })
+
+  const sessions = (sessionsResult.data ?? []) as any[]
+  const userIds = [...new Set(sessions.map((session) => session.user_id).filter(Boolean))]
+  if (!userIds.length) {
+    return res.json({
+      available: true,
+      generatedAt: generatedAt.toISOString(),
+      onlineWindowSeconds: ONLINE_WINDOW_MS / 1000,
+      refreshAfterSeconds: 5,
+      users: [],
+    })
+  }
+
+  const profilesResult = await supabase
+    .from('users')
+    .select('id, full_name, username, avatar_url, headline, current_company, location_city')
+    .in('id', userIds)
+  if (profilesResult.error) return res.status(500).json({ error: profilesResult.error.message })
+  const profilesById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile]))
+  const sessionsByUser = new Map<string, any[]>()
+  for (const session of sessions) {
+    const userSessions = sessionsByUser.get(session.user_id) ?? []
+    userSessions.push(session)
+    sessionsByUser.set(session.user_id, userSessions)
+  }
+
+  const users = [...sessionsByUser.entries()].map(([userId, userSessions]) => {
+    userSessions.sort((a, b) => String(b.last_seen_at).localeCompare(String(a.last_seen_at)))
+    const latest = userSessions[0]
+    const profile = profilesById.get(userId) as any
+    return {
+      id: userId,
+      profileId: userId,
+      fullName: profile?.full_name ?? 'Unknown member',
+      username: profile?.username ?? null,
+      avatarUrl: profile?.avatar_url ?? null,
+      headline: profile?.headline ?? null,
+      currentCompany: profile?.current_company ?? null,
+      locationCity: profile?.location_city ?? null,
+      currentPath: latest.last_path ?? '/',
+      currentSection: liveSection(latest.last_path),
+      deviceTypes: [...new Set(userSessions.map((session) => session.device_type).filter(Boolean))],
+      sessionStartedAt: latest.started_at,
+      lastSeenAt: latest.last_seen_at,
+      activeSeconds: userSessions.reduce((total, session) => total + (session.active_seconds ?? 0), 0),
+      pageViews: userSessions.reduce((total, session) => total + (session.page_views ?? 0), 0),
+      openSessions: userSessions.length,
+    }
+  }).sort((a, b) => String(b.lastSeenAt).localeCompare(String(a.lastSeenAt)))
+
+  return res.json({
+    available: true,
+    generatedAt: generatedAt.toISOString(),
+    onlineWindowSeconds: ONLINE_WINDOW_MS / 1000,
+    refreshAfterSeconds: 5,
+    users,
+  })
+})
 
 adminPanelRouter.get('/accounts', async (req, res) => {
   const parsed = accountQuerySchema.safeParse(req.query)
@@ -154,7 +255,7 @@ adminPanelRouter.get('/accounts', async (req, res) => {
       usage.sessions += 1
       usage.pageViews += session.page_views ?? 0
       if (!usage.lastSeenAt || session.last_seen_at > usage.lastSeenAt) usage.lastSeenAt = session.last_seen_at
-      if (session.is_active && Date.now() - new Date(session.last_seen_at).getTime() < 150_000) usage.isOnline = true
+      if (session.is_active && Date.now() - new Date(session.last_seen_at).getTime() < ONLINE_WINDOW_MS) usage.isOnline = true
       usageByUser.set(session.user_id, usage)
   }
   let authById = new Map<string, any>()
@@ -259,7 +360,7 @@ adminPanelRouter.get('/accounts/:authId', async (req, res) => {
         sessions: summary.sessions + 1,
         pageViews: summary.pageViews + (session.page_views ?? 0),
         lastSeenAt: !summary.lastSeenAt || session.last_seen_at > summary.lastSeenAt ? session.last_seen_at : summary.lastSeenAt,
-        isOnline: summary.isOnline || Boolean(session.is_active && Date.now() - new Date(session.last_seen_at).getTime() < 150_000),
+        isOnline: summary.isOnline || Boolean(session.is_active && Date.now() - new Date(session.last_seen_at).getTime() < ONLINE_WINDOW_MS),
       }), { activeSeconds: 0, sessions: 0, pageViews: 0, lastSeenAt: null, isOnline: false })
     }
   }

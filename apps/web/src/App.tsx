@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useSessionStore } from './store/session'
@@ -38,7 +38,10 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ de
 
 const LAST_ACTIVE_AT_KEY = 'knotify:lastActiveAt'
 const INACTIVITY_REENTRY_MS = 2 * 24 * 60 * 60 * 1000
-const ACTIVE_WRITE_THROTTLE_MS = 60 * 1000
+// Presence is operator-facing and should feel live without turning ordinary
+// mouse activity into write amplification. One heartbeat every 20 seconds is
+// enough for a five-second admin feed and still bounded to three writes/minute.
+const ACTIVE_WRITE_THROTTLE_MS = 20 * 1000
 const ACTIVITY_SESSION_GAP_MS = 30 * 60 * 1000
 const ACTIVITY_EVENTS = ['click', 'keydown', 'scroll', 'touchstart', 'mousemove'] as const
 const ONBOARDING_STATUS_TTL_MS = 60_000
@@ -401,6 +404,59 @@ function AppLoadingScreen() {
   )
 }
 
+function ProductActivityTracker({ enabled }: { enabled: boolean }) {
+  const location = useLocation()
+  const sessionKey = useRef(activitySessionKey())
+  const lastWrite = useRef(0)
+  const lastPath = useRef(location.pathname)
+
+  const recordActivity = useCallback((force = false, active = !document.hidden, pathOverride?: string) => {
+    if (!enabled) return
+    const now = Date.now()
+    if (!force && now - lastWrite.current < ACTIVE_WRITE_THROTTLE_MS) return
+
+    lastWrite.current = now
+    writeLastActiveAt(now)
+    const path = (pathOverride ?? window.location.pathname).slice(0, 160) || '/'
+    const pageView = path !== lastPath.current
+    lastPath.current = path
+    void apiPost('/api/users/me/activity', {
+      sessionKey: sessionKey.current,
+      path,
+      active,
+      pageView,
+      deviceType: activityDeviceType(),
+    }, { invalidate: false }).catch(() => {})
+  }, [enabled])
+
+  useEffect(() => {
+    if (!enabled) return
+    // Route changes bypass the general activity throttle so the operator view
+    // reflects the current section on its very next five-second poll.
+    recordActivity(true, true, location.pathname)
+  }, [enabled, location.pathname, recordActivity])
+
+  useEffect(() => {
+    if (!enabled) return
+    const recordVisibility = () => recordActivity(true, !document.hidden)
+    const onUserActivity = () => recordActivity()
+    const heartbeat = window.setInterval(() => {
+      if (!document.hidden) recordActivity(true, true)
+    }, ACTIVE_WRITE_THROTTLE_MS)
+
+    ACTIVITY_EVENTS.forEach((eventName) => window.addEventListener(eventName, onUserActivity, { passive: true }))
+    document.addEventListener('visibilitychange', recordVisibility)
+    return () => {
+      window.clearInterval(heartbeat)
+      recordActivity(true, false)
+      ACTIVITY_EVENTS.forEach((eventName) => window.removeEventListener(eventName, onUserActivity))
+      document.removeEventListener('visibilitychange', recordVisibility)
+    }
+  }, [enabled, recordActivity])
+
+  return null
+}
+
 export default function App() {
   const token = useSessionStore((s) => s.token)
   const setToken = useSessionStore((s) => s.setToken)
@@ -508,58 +564,6 @@ export default function App() {
     })
   }, [token])
 
-  useEffect(() => {
-    if (!token || reentryState.showLanding) return
-
-    let lastWrite = 0
-    let lastPath = window.location.pathname
-    const sessionKey = activitySessionKey()
-
-    const recordActivity = (force = false, active = !document.hidden) => {
-      const now = Date.now()
-
-      if (!force && now - lastWrite < ACTIVE_WRITE_THROTTLE_MS) return
-
-      lastWrite = now
-      writeLastActiveAt(now)
-      const path = window.location.pathname.slice(0, 160) || '/'
-      const pageView = path !== lastPath
-      lastPath = path
-      void apiPost('/api/users/me/activity', {
-        sessionKey,
-        path,
-        active,
-        pageView,
-        deviceType: activityDeviceType(),
-      }, { invalidate: false }).catch(() => {})
-    }
-
-    const recordVisibilityReturn = () => {
-      recordActivity(true, !document.hidden)
-    }
-    const onUserActivity = () => recordActivity()
-
-    const heartbeat = window.setInterval(() => {
-      if (!document.hidden) recordActivity(true, true)
-    }, ACTIVE_WRITE_THROTTLE_MS)
-
-    ACTIVITY_EVENTS.forEach((eventName) => {
-      window.addEventListener(eventName, onUserActivity, { passive: true })
-    })
-    document.addEventListener('visibilitychange', recordVisibilityReturn)
-
-    recordActivity(true, true)
-
-    return () => {
-      window.clearInterval(heartbeat)
-      recordActivity(true, false)
-      ACTIVITY_EVENTS.forEach((eventName) => {
-        window.removeEventListener(eventName, onUserActivity)
-      })
-      document.removeEventListener('visibilitychange', recordVisibilityReturn)
-    }
-  }, [token, reentryState.showLanding])
-
   const onReentryContinue = useCallback(() => {
     writeLastActiveAt()
 
@@ -582,6 +586,7 @@ export default function App() {
   return (
     <AppErrorBoundary>
       <BrowserRouter>
+        <ProductActivityTracker enabled={Boolean(token && !reentryState.showLanding)} />
         <AnimatedRoutes
           // Withhold the authenticated route tree while AuthPage is still
           // resolving profile setup (see useSessionStore.profileSetupBlocking),
