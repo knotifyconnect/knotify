@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'knotify-shell-v1'
+const CACHE_VERSION = 'knotify-shell-v2'
 const SHELL = ['/', '/manifest.webmanifest', '/app-icon-192.png', '/app-icon-512.png']
 
 self.addEventListener('install', (event) => {
@@ -27,11 +27,13 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           if (response.ok) {
             const copy = response.clone()
+            // Registered synchronously, before respondWith's own promise settles,
+            // so the event is still guaranteed to be alive when this fires.
             event.waitUntil(caches.open(CACHE_VERSION).then((cache) => cache.put('/', copy)))
           }
           return response
         })
-        .catch(() => caches.match('/'))
+        .catch(() => caches.match(request).then((cached) => cached || caches.match('/')))
     )
     return
   }
@@ -39,14 +41,26 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/assets/') || /\.(?:png|svg|jpg|jpeg|webp|woff2?)$/i.test(url.pathname)) {
     event.respondWith(
       caches.match(request).then((cached) => {
-        const network = fetch(request).then((response) => {
+        if (cached) {
+          // Revalidate in the background via its own waitUntil, called here
+          // while the event is still active — not inside the fetch's .then(),
+          // which only runs after respondWith already settled with `cached`
+          // and the event may have already finished (InvalidStateError).
+          event.waitUntil(
+            fetch(request)
+              .then((response) => (response.ok ? caches.open(CACHE_VERSION).then((cache) => cache.put(request, response)) : null))
+              .catch(() => {})
+          )
+          return cached
+        }
+
+        return fetch(request).then((response) => {
           if (response.ok) {
             const copy = response.clone()
             event.waitUntil(caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy)))
           }
           return response
         })
-        return cached || network
       })
     )
   }
