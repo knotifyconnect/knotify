@@ -197,7 +197,7 @@ usersRouter.post('/me/activity', requireAuth, async (req, res) => {
     .select('id')
     .eq('user_id', req.appUserId)
     .eq('is_active', true)
-    .gte('last_seen_at', new Date(now.getTime() - 150_000).toISOString())
+    .gte('last_seen_at', new Date(now.getTime() - 90_000).toISOString())
     .limit(1)
   if (liveSessions.error) return res.status(500).json({ error: liveSessions.error.message })
 

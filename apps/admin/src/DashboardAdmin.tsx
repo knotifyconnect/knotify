@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { api } from './api'
+import { LiveUsersPanel, type LiveUsersSnapshot } from './LiveUsersPanel'
 
 const C = {
   signal: '#D8442B', ink: '#1a1410', inkMuted: '#6b5f55', inkFaint: '#a09287',
@@ -315,6 +316,8 @@ function exportDashboard(kpis: Kpis) {
 
 export function DashboardAdmin() {
   const [kpis, setKpis] = useState<Kpis | null>(null)
+  const [liveUsers, setLiveUsers] = useState<LiveUsersSnapshot | null>(null)
+  const [liveError, setLiveError] = useState('')
   const [range, setRange] = useState(14)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -331,6 +334,30 @@ export function DashboardAdmin() {
   }, [])
 
   useEffect(() => { void load(range) }, [load, range])
+
+  useEffect(() => {
+    let disposed = false
+    let inFlight = false
+    const refreshLiveUsers = async () => {
+      if (disposed || inFlight || document.hidden) return
+      inFlight = true
+      try {
+        const snapshot = await api.liveUsers() as LiveUsersSnapshot
+        if (!disposed) { setLiveUsers(snapshot); setLiveError('') }
+      } catch (caught) {
+        if (!disposed) setLiveError(caught instanceof Error ? caught.message : 'Live presence could not be refreshed.')
+      } finally { inFlight = false }
+    }
+    const onVisibility = () => { if (!document.hidden) void refreshLiveUsers() }
+    void refreshLiveUsers()
+    const timer = window.setInterval(() => { void refreshLiveUsers() }, 5000)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
 
   if (loading && !kpis) return <div style={{ padding: 48, textAlign: 'center', color: C.inkFaint, fontSize: 13 }}>Loading company dashboard…</div>
   if (error && !kpis) return <div style={{ ...card, padding: 20, color: C.signal, fontSize: 13 }}>{error}</div>
@@ -386,8 +413,9 @@ export function DashboardAdmin() {
           The dashboard remains operational, but live usage analytics are paused until the product-activity Supabase migration is applied. Existing member, activity, work-queue and platform metrics below are unaffected.
         </div>
       ) : <>
+        <LiveUsersPanel snapshot={liveUsers} error={liveError} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-          <MetricCard label="Online now" value={engagement.onlineNow} detail="Heartbeat received in the last 2½ minutes" color={C.verd} />
+          <MetricCard label="Online now" value={liveUsers?.users.length ?? engagement.onlineNow} detail="Live heartbeat · refreshes every 5 seconds" color={C.verd} />
           <MetricCard label="App opens today" value={engagement.opensToday} current={engagement.opensToday} previous={engagement.opensYesterday} />
           <MetricCard label="Unique users today" value={engagement.uniqueUsersToday} current={engagement.uniqueUsersToday} previous={engagement.uniqueUsersYesterday} color={C.blue} />
           <MetricCard label="Active minutes today" value={engagement.totalMinutesToday} current={engagement.totalMinutesToday} previous={engagement.totalMinutesYesterday} />

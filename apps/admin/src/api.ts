@@ -44,6 +44,7 @@ async function uploadRequest(path: string, file: File) {
 export const api = {
   stats: () => request('/api/admin-panel/stats'),
   kpis: (range?: number) => request(`/api/admin-panel/kpis${range ? `?range=${range}` : ''}`),
+  liveUsers: () => request('/api/admin-panel/live-users'),
 
   // User accounts and access
   accounts: () => request('/api/admin-panel/accounts?perPage=1000'),
