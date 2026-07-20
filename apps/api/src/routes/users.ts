@@ -5,6 +5,7 @@ import { analyseCv } from '../services/cvAnalysis.js'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
 import { allocateUsername, profileNameFromIdentity } from '../services/usernames.js'
+import { getProductSchemaCapabilitiesSafe } from '../services/productSchema.js'
 
 const uploadCv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 
@@ -140,6 +141,20 @@ usersRouter.post('/me/activity', requireAuth, async (req, res) => {
 
   const now = new Date()
   const nowIso = now.toISOString()
+  const activitySessionsAvailable = (await getProductSchemaCapabilitiesSafe('activity')).activitySessions
+
+  // Keep last-seen reliable even when application code reaches production a
+  // few minutes before its Supabase migration. This was the original presence
+  // contract and prevents a telemetry rollout from breaking the whole app.
+  if (!activitySessionsAvailable) {
+    const fallbackUpdate = await supabase
+      .from('users')
+      .update({ last_seen_at: nowIso, is_online: parsed.data.active, updated_at: nowIso })
+      .eq('id', req.appUserId)
+    if (fallbackUpdate.error) return res.status(500).json({ error: fallbackUpdate.error.message })
+    return res.json({ ok: true, lastSeenAt: nowIso, activityTracking: 'profile_only' })
+  }
+
   const existing = await supabase
     .from('user_activity_sessions')
     .select('id, last_seen_at, active_seconds, is_active, page_views, last_path')

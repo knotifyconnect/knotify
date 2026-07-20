@@ -42,6 +42,7 @@ import {
   deploymentConfig,
   isRequestOriginAllowed,
 } from './config/deployment.js'
+import { getProductSchemaCapabilities } from './services/productSchema.js'
 
 export const app = express()
 
@@ -121,6 +122,22 @@ app.get('/health/db', async (_req, res) => {
   } catch (error) {
     console.error('[health/db] check failed:', error)
     res.status(500).json({ ok: false, error: 'DB health check failed' })
+  }
+})
+
+// Deployment-readiness probe. This deliberately returns capability booleans,
+// never connection details, so operations can verify that Vercel code and the
+// Supabase schema are compatible before sending users to a new release.
+app.get('/api/health/product-schema', async (_req, res) => {
+  try {
+    const capabilities = await getProductSchemaCapabilities(true)
+    const missing = Object.entries(capabilities)
+      .filter(([key, value]) => key !== 'checkedAt' && value === false)
+      .map(([key]) => key)
+    return res.status(missing.length ? 503 : 200).json({ ok: missing.length === 0, capabilities, missing })
+  } catch (error) {
+    console.warn('[health/product-schema] readiness check failed:', error)
+    return res.status(503).json({ ok: false, error: 'Schema readiness check failed' })
   }
 })
 

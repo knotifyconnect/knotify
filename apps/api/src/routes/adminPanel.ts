@@ -5,6 +5,7 @@ import { supabase } from '../lib.js'
 import { ADMIN_EMAILS, invalidateAccessCache } from '../lib/access.js'
 import { sendBetaApprovalEmail } from '../lib/email.js'
 import { deleteAuthUser, describeAdminAuthError, getAuthUser, getAuthUsersByIds, setAuthUserBan } from '../lib/supabaseAdminAuth.js'
+import { getProductSchemaCapabilitiesSafe } from '../services/productSchema.js'
 
 export const adminPanelRouter = Router()
 
@@ -135,13 +136,18 @@ adminPanelRouter.get('/accounts', async (req, res) => {
   const profiles = (profileResult.data ?? []) as any[]
   const profileIds = new Set(profiles.map((profile) => profile.id))
   const usageByUser = new Map<string, AccountUsage>()
-  const activityResult = await supabase
-    .from('user_activity_sessions')
-    .select('user_id, active_seconds, is_active, page_views, last_seen_at')
-    .gte('last_seen_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
-    .limit(10000)
-  if (!activityResult.error) {
-    for (const session of activityResult.data ?? []) {
+  const productSchema = await getProductSchemaCapabilitiesSafe('admin-panel/accounts')
+  let activityRows: any[] = []
+  if (productSchema.activitySessions) {
+    const activityResult = await supabase
+      .from('user_activity_sessions')
+      .select('user_id, active_seconds, is_active, page_views, last_seen_at')
+      .gte('last_seen_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
+      .limit(10000)
+    if (activityResult.error) console.warn('[admin-panel/accounts] activity rows unavailable:', activityResult.error)
+    else activityRows = activityResult.data ?? []
+  }
+  for (const session of activityRows) {
       if (!profileIds.has(session.user_id)) continue
       const usage = usageByUser.get(session.user_id) ?? { activeSeconds: 0, sessions: 0, pageViews: 0, lastSeenAt: null, isOnline: false }
       usage.activeSeconds += session.active_seconds ?? 0
@@ -150,7 +156,6 @@ adminPanelRouter.get('/accounts', async (req, res) => {
       if (!usage.lastSeenAt || session.last_seen_at > usage.lastSeenAt) usage.lastSeenAt = session.last_seen_at
       if (session.is_active && Date.now() - new Date(session.last_seen_at).getTime() < 150_000) usage.isOnline = true
       usageByUser.set(session.user_id, usage)
-    }
   }
   let authById = new Map<string, any>()
   let authAvailable = true
@@ -186,6 +191,7 @@ adminPanelRouter.get('/accounts', async (req, res) => {
   return res.json({
     accounts,
     authAvailable,
+    activityAvailable: productSchema.activitySessions,
     warning,
     pagination: {
       page: parsed.data.page,
@@ -244,7 +250,8 @@ adminPanelRouter.get('/accounts/:authId', async (req, res) => {
     }
   }
   let usage: AccountUsage | undefined
-  if (profile?.id) {
+  const productSchema = await getProductSchemaCapabilitiesSafe('admin-panel/account-detail')
+  if (profile?.id && productSchema.activitySessions) {
     const sessions = await supabase.from('user_activity_sessions').select('active_seconds, is_active, page_views, last_seen_at').eq('user_id', profile.id).gte('last_seen_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
     if (!sessions.error) {
       usage = (sessions.data ?? []).reduce<AccountUsage>((summary, session) => ({
@@ -256,7 +263,7 @@ adminPanelRouter.get('/accounts/:authId', async (req, res) => {
       }), { activeSeconds: 0, sessions: 0, pageViews: 0, lastSeenAt: null, isOnline: false })
     }
   }
-  return res.json({ account: serializeAccount(authUser, profile, usage), activity, warning: authWarning })
+  return res.json({ account: serializeAccount(authUser, profile, usage), activity, activityAvailable: productSchema.activitySessions, warning: authWarning })
 })
 
 adminPanelRouter.patch('/accounts/:authId/roles', async (req, res) => {
@@ -1187,6 +1194,7 @@ adminPanelRouter.get('/kpis', async (req, res) => {
   const countWindow = (rows: any[], column: string, start: Date, end: Date) => rows.filter(row => inWindow(row[column], start, end)).length
 
   try {
+    const productSchema = await getProductSchemaCapabilitiesSafe('admin-panel/kpis')
     const [
       users, betaRecent, messagesRecent, connectionsCreated, connectionsAcceptedRecent,
       conversationsRecent, rsvpsRecent, questsRecent, checkinsRecent, gigRequestsRecent,
@@ -1209,7 +1217,9 @@ adminPanelRouter.get('/kpis', async (req, res) => {
       fetchAllDashboardRows<any>('feedback activity', () => supabase.from('feedback').select('user_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
       fetchAllDashboardRows<any>('invite activity', () => supabase.from('invites').select('inviter_id, invitee_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
       fetchAllDashboardRows<any>('event creation activity', () => supabase.from('events').select('host_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
-      fetchAllDashboardRows<any>('app activity sessions', () => supabase.from('user_activity_sessions').select('user_id, started_at, last_seen_at, active_seconds, is_active, page_views, last_path, device_type').gte('last_seen_at', rangeStart.toISOString()).order('last_seen_at')),
+      productSchema.activitySessions
+        ? fetchAllDashboardRows<any>('app activity sessions', () => supabase.from('user_activity_sessions').select('user_id, started_at, last_seen_at, active_seconds, is_active, page_views, last_path, device_type').gte('last_seen_at', rangeStart.toISOString()).order('last_seen_at'))
+        : Promise.resolve([]),
       dashboardCount('beta signups total', 'beta_signups'),
       dashboardCount('beta signups pending', 'beta_signups', query => query.eq('status', 'pending')),
       dashboardCount('beta signups approved', 'beta_signups', query => query.eq('status', 'approved')),
@@ -1360,6 +1370,7 @@ adminPanelRouter.get('/kpis', async (req, res) => {
         messagesPerDay: bucketByReportDay(messagesRecent.map(row => ({ at: row.created_at })), rangeDays, now, timeZone),
       },
       engagement: {
+        available: productSchema.activitySessions,
         onlineNow: onlineUserIds.size,
         opensToday: sessionsToday.length,
         opensYesterday: sessionsYesterday.length,
