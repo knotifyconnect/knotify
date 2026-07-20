@@ -19,8 +19,14 @@ export function AppLayout({ children }: PropsWithChildren) {
     if (!lockViewport || !isMobile) return
     const previousBodyOverflow = document.body.style.overflow
     const previousHtmlOverflow = document.documentElement.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.documentElement.style.overflow = 'hidden'
+    // 'hidden' visually clips scrolling but mobile browsers can still force
+    // a scroll past it to bring a focused input into view — which is
+    // exactly what was shoving this whole page upward when the message
+    // composer's textarea got focus. 'clip' explicitly disallows all
+    // scrolling, including that forced kind, which is what this page
+    // actually wants (it isn't meant to scroll at all).
+    document.body.style.overflow = 'clip'
+    document.documentElement.style.overflow = 'clip'
     return () => {
       document.body.style.overflow = previousBodyOverflow
       document.documentElement.style.overflow = previousHtmlOverflow
@@ -46,7 +52,7 @@ export function AppLayout({ children }: PropsWithChildren) {
         style={
           lockViewport
             ? isMobile
-              ? { position: 'fixed', inset: `${topClearance} 0 0`, overflow: 'hidden', overscrollBehavior: 'none', paddingBottom: 0 }
+              ? { position: 'fixed', inset: `${topClearance} 0 0`, overflow: 'clip', overscrollBehavior: 'none', paddingBottom: 0 }
               : { height: '100dvh', overflow: 'hidden', paddingBottom: 0 }
             : { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))', paddingTop: isMobile ? `calc(${topClearance} + 8px)` : 32 }
         }

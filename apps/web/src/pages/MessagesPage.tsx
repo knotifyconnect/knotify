@@ -1473,7 +1473,11 @@ export function MessagesPage() {
         // once a conversation is open — no need to reserve its ~64px here
         // too, or the gap it used to leave behind comes right back.
         paddingBottom: isMobile ? (selectedId ? 'env(safe-area-inset-bottom)' : 'calc(64px + env(safe-area-inset-bottom))') : 0,
-        overflow: 'hidden',
+        // 'clip' (not 'hidden') — this page is never meant to scroll, and
+        // 'hidden' alone doesn't stop a mobile browser from forcibly
+        // scrolling it anyway to bring the composer's textarea into view
+        // on focus (see AppLayout.tsx for the matching body/html change).
+        overflow: 'clip',
         display: 'flex',
         flexDirection: 'column',
       }}
