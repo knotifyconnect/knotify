@@ -1498,7 +1498,7 @@ export function MessagesPage() {
           width: 'min(100%, 1440px)',
           margin: '0 auto',
           borderRadius: isMobile ? 20 : 24,
-          overflow: 'hidden',
+          overflow: 'clip',
           background: 'rgba(255,252,246,0.92)',
           border: '0.5px solid rgba(26,24,21,0.07)',
           boxShadow: '0 18px 54px rgba(26,24,21,0.11)',
@@ -1714,7 +1714,7 @@ export function MessagesPage() {
         {/* On mobile: hidden when no chat selected */}
         <div
           className={selectedId ? 'flex' : 'hidden md:flex'}
-          style={{ flexDirection: 'column', overflow: 'hidden', background: 'rgba(255,252,246,0.94)' }}
+          style={{ flexDirection: 'column', overflow: 'clip', background: 'rgba(255,252,246,0.94)' }}
         >
           {/* Thread header */}
           <div

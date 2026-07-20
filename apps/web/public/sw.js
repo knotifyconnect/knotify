@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'knotify-shell-v5'
+const CACHE_VERSION = 'knotify-shell-v6'
 const SHELL = ['/', '/manifest.webmanifest', '/app-icon-192.png', '/app-icon-512.png']
 
 self.addEventListener('install', (event) => {
