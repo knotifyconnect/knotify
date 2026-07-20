@@ -1465,7 +1465,19 @@ export function MessagesPage() {
   const EMOJI_KEYBOARD = ['😊', '😂', '❤️', '👍', '🙌', '🔥', '🎉', '🤔', '😎', '👏', '✨', '💪', '🚀', '💯', '🙏']
 
   return (
-    <div style={{ height: isMobile ? '100%' : 'calc(100dvh - 104px)', minHeight: isMobile ? 0 : 460, paddingBottom: isMobile ? 'calc(64px + env(safe-area-inset-bottom))' : 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    <div
+      style={{
+        height: isMobile ? '100%' : 'calc(100dvh - 104px)',
+        minHeight: isMobile ? 0 : 460,
+        // The tab bar is hidden (globals.css, body[data-message-thread-open])
+        // once a conversation is open — no need to reserve its ~64px here
+        // too, or the gap it used to leave behind comes right back.
+        paddingBottom: isMobile ? (selectedId ? 'env(safe-area-inset-bottom)' : 'calc(64px + env(safe-area-inset-bottom))') : 0,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.2)', color: 'var(--signal)', fontSize: 13, marginBottom: 12 }}>
           {error}

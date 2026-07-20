@@ -190,6 +190,20 @@ body {
     display: none !important;
   }
 
+  /* Same signal as above, extended to the tab bar. On a real device, the
+     bar doesn't overlap anything once the keyboard opens — Android
+     correctly pushes it up to sit right above the keyboard — but that
+     still burns ~64px+ of an already-tiny screen for navigation icons
+     nobody needs mid-conversation. Hiding it while a thread is open frees
+     that space for the actual messages, the same way Instagram/WhatsApp
+     drop their own bottom nav once you're inside a chat. MessagesPage.tsx
+     drops the matching bottom padding reserved for it at the same time,
+     so this doesn't leave a gap behind (that was the earlier bug).
+  */
+  body[data-message-thread-open='true'] .k-tab-bar {
+    display: none !important;
+  }
+
   /* The shell already names the active page. These rules keep the page-level
      voice and primary action, without spending a second full hero on context. */
   .k-relationship-home-page .k-desk-header-row {
