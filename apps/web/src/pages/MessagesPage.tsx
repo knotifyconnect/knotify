@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase'
 import { runWhenIdle } from '../lib/schedule'
 import { useEscapeClose } from '../hooks/useEscapeClose'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { useVisualViewportHeight } from '../hooks/useVisualViewportHeight'
 
 type UserPreview = {
   id: string
@@ -835,7 +836,10 @@ export function MessagesPage() {
 
   async function markRead(id: string) {
     try {
-      await apiPost(`/api/conversations/${id}/read`, {})
+      // Reading the thread here also clears any matching entry server-side
+      // (see conversations.ts /:id/read) — invalidate so the notification
+      // bell reflects that on its next load instead of serving a stale count.
+      await apiPost(`/api/conversations/${id}/read`, {}, { invalidate: '/api/notifications' })
       updateConversations(
         (prev) => prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c))
       )
@@ -1461,8 +1465,39 @@ export function MessagesPage() {
   const QUICK_REACTIONS = ['❤️', '👍', '😂', '🙌', '🔥']
   const EMOJI_KEYBOARD = ['😊', '😂', '❤️', '👍', '🙌', '🔥', '🎉', '🤔', '😎', '👏', '✨', '💪', '🚀', '💯', '🙏']
 
+  // With interactive-widget=overlays-content (index.html), the keyboard no
+  // longer resizes the layout on its own — visualViewport.height is the one
+  // signal that actually shrinks when it opens, so the chat column is sized
+  // to it explicitly instead of a static '100%' that would run under the
+  // keyboard. rootRef's own top offset is constant (it's inside AppLayout's
+  // fixed, non-scrolling shell), so it only needs remeasuring on layout
+  // changes, not on every keyboard transition.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const visualViewportHeight = useVisualViewportHeight()
+  const [chatHeight, setChatHeight] = useState<number | null>(null)
+  useEffect(() => {
+    if (!isMobile || visualViewportHeight == null || !rootRef.current) { setChatHeight(null); return }
+    setChatHeight(Math.max(0, visualViewportHeight - rootRef.current.getBoundingClientRect().top))
+  }, [isMobile, visualViewportHeight])
+  // Real keyboards are 200px+; a small delta is just address-bar/UI chrome.
+  const keyboardOpen = isMobile && visualViewportHeight != null && window.innerHeight - visualViewportHeight > 120
+
   return (
-    <div style={{ height: isMobile ? '100%' : 'calc(100dvh - 104px)', minHeight: isMobile ? 0 : 460, paddingBottom: isMobile ? 'calc(64px + env(safe-area-inset-bottom))' : 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    <div
+      ref={rootRef}
+      style={{
+        height: isMobile ? (chatHeight != null ? `${chatHeight}px` : '100%') : 'calc(100dvh - 104px)',
+        minHeight: isMobile ? 0 : 460,
+        // The tab bar only needs bottom clearance while it's actually
+        // visible above the keyboard — once the keyboard is open it covers
+        // the tab bar itself, so reserving space for it here would just
+        // leave a blank gap between the composer and the keyboard.
+        paddingBottom: isMobile ? (keyboardOpen ? 'env(safe-area-inset-bottom)' : 'calc(64px + env(safe-area-inset-bottom))') : 0,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,0.2)', color: 'var(--signal)', fontSize: 13, marginBottom: 12 }}>
           {error}

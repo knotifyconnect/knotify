@@ -2,7 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- interactive-widget=overlays-content: the on-screen keyboard draws on
+         top of the page instead of resizing the layout viewport. Without
+         this, position:fixed bottom elements (tab bar, message composer)
+         each recompute their own "bottom" against the shrinking viewport
+         independently and can desync mid-transition. With it, nothing moves
+         automatically — the messages composer explicitly tracks
+         window.visualViewport itself (see useVisualViewportHeight) to sit
+         above the keyboard, and everything else (the tab bar) simply stays
+         put and gets visually covered by the keyboard, as intended. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=overlays-content" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="192x192" href="/app-icon-192.png" />

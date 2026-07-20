@@ -834,6 +834,17 @@ conversationsRouter.post('/:id/read', requireAuth, async (req, res) => {
 
     if (update.error) return res.status(500).json({ error: update.error.message })
 
+    // Reading the thread directly (not via the notification itself) still
+    // needs to clear it from the notification bell/bar — the two "read"
+    // states aren't otherwise linked.
+    await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('user_id', req.appUserId)
+      .eq('entity_type', 'conversation')
+      .eq('entity_id', conversationId)
+      .is('read_at', null)
+
     return res.json({ ok: true })
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed updating read state' })
