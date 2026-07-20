@@ -2,7 +2,7 @@
 import type { FormEvent } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { apiPost, ApiError } from '../lib/api'
+import { apiGet, apiPost, ApiError } from '../lib/api'
 import { SignInCard2 } from '../components/ui/sign-in-card-2'
 import { useSeo } from '../lib/seo'
 import { readPendingInvite, writePendingInvite } from '../lib/invite'
@@ -100,11 +100,44 @@ export function AuthPage() {
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
+  const [usernameTouched, setUsernameTouched] = useState(false)
+  const [usernameStatus, setUsernameStatus] = useState<{ tone: 'checking' | 'available' | 'taken'; message: string; suggestions: string[] } | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [messageTone, setMessageTone] = useState<MessageTone>('error')
   const setProfileSetupBlocking = useSessionStore((s) => s.setProfileSetupBlocking)
+
+  useEffect(() => {
+    if (mode !== 'signup' || fullName.trim().length < 2) {
+      setUsernameStatus(null)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setUsernameStatus({ tone: 'checking', message: 'Checking username…', suggestions: [] })
+      const params = new URLSearchParams({ fullName: fullName.trim() })
+      // Until the member edits the handle, keep deriving it from their latest
+      // full name instead of freezing an early suggestion mid-typing.
+      if (usernameTouched && username.trim()) params.set('username', username.trim())
+      apiGet<{ available: boolean | null; normalizedPreferred: string | null; suggestions: string[] }>(`/api/auth/username-options?${params}`)
+        .then((result) => {
+          if (!usernameTouched && result.suggestions[0]) {
+            setUsername(result.suggestions[0])
+            setUsernameStatus({ tone: 'available', message: `@${result.suggestions[0]} is ready for you`, suggestions: result.suggestions.slice(1) })
+            return
+          }
+          if (result.available === false) {
+            setUsernameStatus({ tone: 'taken', message: 'That username is taken.', suggestions: result.suggestions })
+          } else if (result.normalizedPreferred) {
+            setUsernameStatus({ tone: 'available', message: `@${result.normalizedPreferred} is available`, suggestions: result.suggestions.filter((item) => item !== result.normalizedPreferred) })
+          } else {
+            setUsernameStatus({ tone: 'available', message: 'Leave this blank and we’ll assign a unique name-based username.', suggestions: result.suggestions })
+          }
+        })
+        .catch(() => setUsernameStatus(null))
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [mode, fullName, username, usernameTouched])
 
   // Set when the username chosen at signup was already taken and the profile
   // row couldn't be created. The session stays alive so the user can pick a
@@ -176,11 +209,11 @@ export function AuthPage() {
     const metadataFullName = typeof metadata.fullName === 'string' ? metadata.fullName.trim() : ''
     const metadataUsername = typeof metadata.username === 'string' ? metadata.username.trim() : ''
 
-    if (!metadataFullName || !metadataUsername) return
+    if (!metadataFullName) return
 
     await apiPost('/api/auth/complete-profile', {
       fullName: metadataFullName,
-      username: metadataUsername,
+      username: metadataUsername || undefined,
       locationCity: 'Munich',
       status: 'open_to_work',
       // Recorded at signup time in the auth identity metadata — the server only
@@ -314,9 +347,10 @@ export function AuthPage() {
       const cleanedFullName = fullName.trim()
       const cleanedUsername = username.trim()
 
-      if (!cleanedFullName || !cleanedUsername) {
-        throw new Error('Full Name and Username are required for sign up')
+      if (!cleanedFullName) {
+        throw new Error('Full name is required for sign up')
       }
+      if (usernameStatus?.tone === 'taken') throw new Error('That username is already taken. Choose one of the available suggestions.')
       if (!normalizedEmail || !trimmedPassword) {
         throw new Error('Email and password are required')
       }
@@ -331,7 +365,7 @@ export function AuthPage() {
           emailRedirectTo: `${import.meta.env.VITE_APP_URL || window.location.origin}/login?verified=1`,
           data: {
             fullName: cleanedFullName,
-            username: cleanedUsername,
+            ...(cleanedUsername ? { username: cleanedUsername } : {}),
             // Travels with the auth identity so the server can validate access
             // server-side at first request, without trusting localStorage.
             ...(inviteCode ? { inviteCode } : {}),
@@ -534,6 +568,7 @@ export function AuthPage() {
       password={password}
       fullName={fullName}
       username={username}
+      usernameStatus={usernameStatus}
       loading={loading}
       message={message}
       messageTone={messageTone}
@@ -541,7 +576,7 @@ export function AuthPage() {
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
       onFullNameChange={setFullName}
-      onUsernameChange={setUsername}
+      onUsernameChange={(value) => { setUsernameTouched(true); setUsername(value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/_+/g, '_').replace(/^_+/, '').slice(0, 32)) }}
       onSubmit={onSubmit}
       inviteBanner={invited ? inviterName : null}
       hideSignupTab={accessMode === 'invite_only' && !inviteValid}

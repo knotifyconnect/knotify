@@ -20,6 +20,38 @@ export function usernameStemFromName(fullName: string) {
   return 'new_member'
 }
 
+export function normalizeUsername(value: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 32)
+}
+
+export async function usernameOptions(fullName: string, preferred?: string, excludeUserId?: string) {
+  const stem = usernameStemFromName(fullName)
+  const normalizedPreferred = preferred ? normalizeUsername(preferred) : ''
+  const candidates = [normalizedPreferred, stem]
+  for (let suffix = 2; candidates.length < 8; suffix += 1) {
+    const suffixText = `_${suffix}`
+    candidates.push(`${stem.slice(0, 32 - suffixText.length)}${suffixText}`)
+  }
+  const validCandidates = [...new Set(candidates.filter((candidate) => /^[a-z0-9_]{3,32}$/.test(candidate)))]
+  let query = supabase.from('users').select('id, username').in('username', validCandidates)
+  if (excludeUserId) query = query.neq('id', excludeUserId)
+  const existing = await query
+  if (existing.error) throw new Error(existing.error.message)
+  const occupied = new Set((existing.data ?? []).map((row) => String(row.username).toLowerCase()))
+  return {
+    normalizedPreferred: normalizedPreferred || null,
+    available: normalizedPreferred ? !occupied.has(normalizedPreferred) : null,
+    suggestions: validCandidates.filter((candidate) => !occupied.has(candidate)).slice(0, 4),
+  }
+}
+
 /**
  * Allocate a readable handle from a person's name. The users.username unique
  * constraint remains the final concurrency guard; callers retry an insert if

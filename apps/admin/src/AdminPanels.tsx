@@ -184,7 +184,11 @@ export function CafesAdmin() {
           <div style={fieldGroup}><label style={fieldLabel}>Type</label><select style={inp} value={form.venueType} onChange={set('venueType')}><option value="cafe">Cafe</option><option value="restaurant">Restaurant</option><option value="bar">Bar</option></select></div>
           <div style={fieldGroup}><label style={fieldLabel}>Area</label><input style={inp} value={form.area} onChange={set('area')} placeholder="Maxvorstadt" /></div>
           <div style={fieldGroup}><label style={fieldLabel}>City</label><input style={inp} value={form.city} onChange={set('city')} /></div>
-          <div style={fieldGroup}><label style={fieldLabel}>Hours</label><input style={inp} value={form.hoursText} onChange={set('hoursText')} /></div>
+          <div style={fieldGroup}>
+            <label style={fieldLabel}>Opening hours</label>
+            <textarea rows={2} maxLength={1000} style={{ ...inp, resize: 'vertical', minHeight: 38 }} value={form.hoursText} onChange={set('hoursText')} placeholder="Monday 08:00–18:30 · Tuesday 08:00–18:30…" />
+            <span style={{ fontSize: 10.5, color: C.inkFaint }}>{form.hoursText.length}/1000</span>
+          </div>
         </div>
         <div style={fieldGroup}><label style={fieldLabel}>Address *</label><input required style={inp} value={form.address} onChange={set('address')} placeholder="Street, number, postal code" /></div>
         <div style={fieldGroup}><label style={fieldLabel}>Description</label><textarea rows={3} style={{ ...inp, resize: 'vertical' }} value={form.description} onChange={set('description')} /></div>

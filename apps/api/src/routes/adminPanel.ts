@@ -56,7 +56,9 @@ function accountProfileCompletion(profile: any) {
   return Math.round((checks.filter(Boolean).length / checks.length) * 100)
 }
 
-function serializeAccount(authUser: any | null, profile: any | null) {
+type AccountUsage = { activeSeconds: number; sessions: number; pageViews: number; lastSeenAt: string | null; isOnline: boolean }
+
+function serializeAccount(authUser: any | null, profile: any | null, usage?: AccountUsage) {
   const providers = Array.isArray(authUser?.app_metadata?.providers)
     ? authUser.app_metadata.providers
     : [...new Set((authUser?.identities ?? []).map((identity: any) => identity.provider).filter(Boolean))]
@@ -84,8 +86,15 @@ function serializeAccount(authUser: any | null, profile: any | null) {
     isAdmin: Boolean(profile?.is_admin),
     isHr: Boolean(profile?.is_hr),
     isPremium: Boolean(profile?.is_premium),
-    isOnline: Boolean(profile?.is_online),
-    lastSeenAt: profile?.last_seen_at ?? null,
+    isOnline: usage
+      ? usage.isOnline
+      : Boolean(profile?.is_online && profile?.last_seen_at && Date.now() - new Date(profile.last_seen_at).getTime() < 150_000),
+    lastSeenAt: usage?.lastSeenAt ?? profile?.last_seen_at ?? null,
+    usage30d: {
+      minutes: Math.round((usage?.activeSeconds ?? 0) / 60),
+      sessions: usage?.sessions ?? 0,
+      pageViews: usage?.pageViews ?? 0,
+    },
     termsAcceptedAt: profile?.terms_accepted_at ?? null,
     termsVersion: profile?.terms_version ?? null,
     profileCreatedAt: profile?.created_at ?? null,
@@ -124,6 +133,25 @@ adminPanelRouter.get('/accounts', async (req, res) => {
   if (profileResult.error) return res.status(500).json({ error: profileResult.error.message })
 
   const profiles = (profileResult.data ?? []) as any[]
+  const profileIds = new Set(profiles.map((profile) => profile.id))
+  const usageByUser = new Map<string, AccountUsage>()
+  const activityResult = await supabase
+    .from('user_activity_sessions')
+    .select('user_id, active_seconds, is_active, page_views, last_seen_at')
+    .gte('last_seen_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
+    .limit(10000)
+  if (!activityResult.error) {
+    for (const session of activityResult.data ?? []) {
+      if (!profileIds.has(session.user_id)) continue
+      const usage = usageByUser.get(session.user_id) ?? { activeSeconds: 0, sessions: 0, pageViews: 0, lastSeenAt: null, isOnline: false }
+      usage.activeSeconds += session.active_seconds ?? 0
+      usage.sessions += 1
+      usage.pageViews += session.page_views ?? 0
+      if (!usage.lastSeenAt || session.last_seen_at > usage.lastSeenAt) usage.lastSeenAt = session.last_seen_at
+      if (session.is_active && Date.now() - new Date(session.last_seen_at).getTime() < 150_000) usage.isOnline = true
+      usageByUser.set(session.user_id, usage)
+    }
+  }
   let authById = new Map<string, any>()
   let authAvailable = true
   let warning: string | null = null
@@ -153,7 +181,7 @@ adminPanelRouter.get('/accounts', async (req, res) => {
 
   const accounts = profiles
     .filter((profile) => profile.auth_id)
-    .map((profile) => serializeAccount(authById.get(profile.auth_id) ?? null, profile))
+    .map((profile) => serializeAccount(authById.get(profile.auth_id) ?? null, profile, usageByUser.get(profile.id)))
   const total = profileResult.count ?? accounts.length
   return res.json({
     accounts,
@@ -175,6 +203,8 @@ adminPanelRouter.get('/accounts', async (req, res) => {
       unverified: accounts.filter((account) => !account.emailConfirmedAt && !account.phoneConfirmedAt).length,
       admins: accounts.filter((account) => account.isAdmin).length,
       hr: accounts.filter((account) => account.isHr).length,
+      onlineNow: accounts.filter((account) => account.isOnline).length,
+      active30d: accounts.filter((account) => account.usage30d.sessions > 0).length,
     },
   })
 })
@@ -213,7 +243,20 @@ adminPanelRouter.get('/accounts/:authId', async (req, res) => {
       gigs: gigs.count ?? 0,
     }
   }
-  return res.json({ account: serializeAccount(authUser, profile), activity, warning: authWarning })
+  let usage: AccountUsage | undefined
+  if (profile?.id) {
+    const sessions = await supabase.from('user_activity_sessions').select('active_seconds, is_active, page_views, last_seen_at').eq('user_id', profile.id).gte('last_seen_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
+    if (!sessions.error) {
+      usage = (sessions.data ?? []).reduce<AccountUsage>((summary, session) => ({
+        activeSeconds: summary.activeSeconds + (session.active_seconds ?? 0),
+        sessions: summary.sessions + 1,
+        pageViews: summary.pageViews + (session.page_views ?? 0),
+        lastSeenAt: !summary.lastSeenAt || session.last_seen_at > summary.lastSeenAt ? session.last_seen_at : summary.lastSeenAt,
+        isOnline: summary.isOnline || Boolean(session.is_active && Date.now() - new Date(session.last_seen_at).getTime() < 150_000),
+      }), { activeSeconds: 0, sessions: 0, pageViews: 0, lastSeenAt: null, isOnline: false })
+    }
+  }
+  return res.json({ account: serializeAccount(authUser, profile, usage), activity, warning: authWarning })
 })
 
 adminPanelRouter.patch('/accounts/:authId/roles', async (req, res) => {
@@ -340,15 +383,17 @@ adminPanelRouter.post('/upload', upload.single('image'), async (req: any, res: a
 // ── Places (admin.knotify.pro only) ─────────────────────────────────────────
 const placeFields = z.object({
   slug: z.string().min(2).max(64).regex(/^[a-z0-9-]+$/).optional(),
-  name: z.string().min(2).max(120),
+  name: z.string().trim().min(2).max(120),
   venueType: z.enum(['cafe', 'restaurant', 'bar']).default('cafe'),
-  address: z.string().max(240).optional().nullable(),
-  city: z.string().max(80).default('Munich'),
-  area: z.string().max(120).optional().nullable(),
-  description: z.string().max(1200).optional().nullable(),
-  perkText: z.string().max(240).optional().nullable(),
-  photoUrl: z.string().max(2048).optional().nullable(),
-  hoursText: z.string().max(120).optional().nullable(),
+  address: z.string().trim().max(240).optional().nullable(),
+  city: z.string().trim().min(2).max(80).default('Munich'),
+  area: z.string().trim().max(120).optional().nullable(),
+  description: z.string().trim().max(1200).optional().nullable(),
+  perkText: z.string().trim().max(240).optional().nullable(),
+  photoUrl: z.string().trim().max(2048).optional().nullable(),
+  // Real weekly schedules routinely exceed 120 characters. Keep the field
+  // bounded, but large enough for seven days plus exceptions/holiday notes.
+  hoursText: z.string().trim().max(1000).optional().nullable(),
   lat: z.number().min(-90).max(90).optional().nullable(),
   lng: z.number().min(-180).max(180).optional().nullable(),
   isPartnered: z.boolean().optional(),
@@ -472,6 +517,19 @@ const placeSchema = placeFields.superRefine((value, ctx) => {
   }
 })
 
+function placeValidationError(res: any, error: z.ZodError) {
+  const flattened = error.flatten()
+  const firstField = Object.entries(flattened.fieldErrors)
+    .find(([, messages]) => Array.isArray(messages) && messages.length)
+  const detail = firstField
+    ? `${firstField[0]}: ${(firstField[1] as string[])[0]}`
+    : flattened.formErrors[0]
+  return res.status(422).json({
+    error: detail ? `Check the place details. ${detail}` : 'Check the place details and try again.',
+    fields: flattened,
+  })
+}
+
 function placePatch(value: z.infer<typeof placeFields>) {
   const patch: Record<string, unknown> = {}
   if (value.slug !== undefined) patch.slug = value.slug
@@ -518,7 +576,7 @@ adminPanelRouter.get('/cafes', async (_req, res) => {
 
 adminPanelRouter.post('/cafes', async (req, res) => {
   const parsed = placeSchema.safeParse(req.body)
-  if (!parsed.success) return res.status(422).json({ error: 'Invalid place', fields: parsed.error.flatten() })
+  if (!parsed.success) return placeValidationError(res, parsed.error)
   try {
     const slug = await uniqueCafeSlug(parsed.data.name)
     const coordinates = await geocodeCafe(parsed.data.address, parsed.data.city)
@@ -530,9 +588,9 @@ adminPanelRouter.post('/cafes', async (req, res) => {
 
 adminPanelRouter.patch('/cafes/:id', async (req, res) => {
   const parsed = placeFields.partial().safeParse(req.body)
-  if (!parsed.success) return res.status(422).json({ error: 'Invalid place', fields: parsed.error.flatten() })
+  if (!parsed.success) return placeValidationError(res, parsed.error)
 
-  const current = await supabase.from('cafes').select('is_partnered, deal_code, deal_code_enabled').eq('id', req.params.id).maybeSingle()
+  const current = await supabase.from('cafes').select('address, city, is_partnered, deal_code, deal_code_enabled').eq('id', req.params.id).maybeSingle()
   if (current.error) return placeSchemaError(res, current.error.message)
   if (!current.data) return res.status(404).json({ error: 'Place not found.' })
   const partnered = parsed.data.isPartnered ?? current.data.is_partnered
@@ -542,10 +600,11 @@ adminPanelRouter.patch('/cafes/:id', async (req, res) => {
 
   let generated: Record<string, unknown> = {}
   try {
-    if (parsed.data.address !== undefined || parsed.data.city !== undefined) {
-      const existing = await supabase.from('cafes').select('address, city').eq('id', req.params.id).single()
-      if (existing.error) return placeSchemaError(res, existing.error.message)
-      generated = { ...generated, ...await geocodeCafe(parsed.data.address ?? existing.data.address, parsed.data.city ?? existing.data.city) }
+    const nextAddress = parsed.data.address ?? current.data.address
+    const nextCity = parsed.data.city ?? current.data.city
+    const locationChanged = nextAddress?.trim() !== current.data.address?.trim() || nextCity.trim() !== current.data.city.trim()
+    if (locationChanged) {
+      generated = { ...generated, ...await geocodeCafe(nextAddress, nextCity) }
     }
   } catch (error) { return res.status(422).json({ error: error instanceof Error ? error.message : 'Could not locate this address.' }) }
   const patch = { ...placePatch(parsed.data as z.infer<typeof placeFields>), ...generated, updated_at: new Date().toISOString() }
@@ -1054,6 +1113,18 @@ function bucketByReportDay(rows: { at: string }[], days: number, now: Date, time
   return [...buckets.entries()].map(([date, count]) => ({ date, count }))
 }
 
+function bucketMetricByReportDay(rows: { at: string; value: number }[], days: number, now: Date, timeZone: string) {
+  const buckets = new Map<string, number>()
+  for (let offset = -(days - 1); offset <= 0; offset++) {
+    buckets.set(dayKeyInZone(reportDayStart(now, timeZone, offset), timeZone), 0)
+  }
+  for (const row of rows) {
+    const key = dayKeyInZone(row.at, timeZone)
+    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + row.value)
+  }
+  return [...buckets.entries()].map(([date, count]) => ({ date, count }))
+}
+
 async function fetchAllDashboardRows<T>(label: string, query: () => any): Promise<T[]> {
   const rows: T[] = []
   for (let from = 0; ; from += DASHBOARD_PAGE_SIZE) {
@@ -1119,7 +1190,7 @@ adminPanelRouter.get('/kpis', async (req, res) => {
     const [
       users, betaRecent, messagesRecent, connectionsCreated, connectionsAcceptedRecent,
       conversationsRecent, rsvpsRecent, questsRecent, checkinsRecent, gigRequestsRecent,
-      feedbackRecent, invitesRecent, eventsRecent,
+      feedbackRecent, invitesRecent, eventsRecent, activitySessions,
       betaTotal, betaPending, betaApproved, betaRejected,
       workFeedback, workBugs, workGigs, workRoles,
       totalMessages, totalConnectionsAccepted, totalConversations,
@@ -1138,6 +1209,7 @@ adminPanelRouter.get('/kpis', async (req, res) => {
       fetchAllDashboardRows<any>('feedback activity', () => supabase.from('feedback').select('user_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
       fetchAllDashboardRows<any>('invite activity', () => supabase.from('invites').select('inviter_id, invitee_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
       fetchAllDashboardRows<any>('event creation activity', () => supabase.from('events').select('host_id, created_at').gte('created_at', yesterdayStart.toISOString()).order('created_at')),
+      fetchAllDashboardRows<any>('app activity sessions', () => supabase.from('user_activity_sessions').select('user_id, started_at, last_seen_at, active_seconds, is_active, page_views, last_path, device_type').gte('last_seen_at', rangeStart.toISOString()).order('last_seen_at')),
       dashboardCount('beta signups total', 'beta_signups'),
       dashboardCount('beta signups pending', 'beta_signups', query => query.eq('status', 'pending')),
       dashboardCount('beta signups approved', 'beta_signups', query => query.eq('status', 'approved')),
@@ -1163,6 +1235,33 @@ adminPanelRouter.get('/kpis', async (req, res) => {
     const previous7d = users.filter(user => new Date(user.created_at) >= d14 && new Date(user.created_at) < d7).length
     const onboardingComplete = users.filter(dashboardOnboardingComplete).length
     const completionTotal = users.reduce((sum, user) => sum + accountProfileCompletion(user), 0)
+    const sessionsToday = activitySessions.filter(session => inWindow(session.started_at, todayStart, now))
+    const sessionsYesterday = activitySessions.filter(session => inWindow(session.started_at, yesterdayStart, yesterdayComparisonEnd))
+    const onlineCutoff = now.getTime() - 150_000
+    const onlineUserIds = new Set(activitySessions.filter(session => session.is_active && new Date(session.last_seen_at).getTime() >= onlineCutoff).map(session => session.user_id))
+    const sessionSecondsToday = sessionsToday.reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
+    const sessionSecondsYesterday = sessionsYesterday.reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
+    const usageByUser = new Map<string, { seconds: number; sessions: number; lastSeenAt: string }>()
+    for (const session of activitySessions) {
+      const usage = usageByUser.get(session.user_id) ?? { seconds: 0, sessions: 0, lastSeenAt: session.last_seen_at }
+      usage.seconds += session.active_seconds ?? 0
+      usage.sessions += 1
+      if (session.last_seen_at > usage.lastSeenAt) usage.lastSeenAt = session.last_seen_at
+      usageByUser.set(session.user_id, usage)
+    }
+    const usersById = new Map(users.map(user => [user.id, user]))
+    const topUsers = [...usageByUser.entries()]
+      .sort((a, b) => b[1].seconds - a[1].seconds || b[1].sessions - a[1].sessions)
+      .slice(0, 8)
+      .map(([id, usage]) => ({
+        id,
+        fullName: usersById.get(id)?.full_name ?? 'Unknown member',
+        username: usersById.get(id)?.username ?? null,
+        minutes: Math.round(usage.seconds / 60),
+        sessions: usage.sessions,
+        lastSeenAt: usage.lastSeenAt,
+        online: onlineUserIds.has(id),
+      }))
 
     const today = {
       messages: countWindow(messagesRecent, 'created_at', todayStart, now),
@@ -1259,6 +1358,20 @@ adminPanelRouter.get('/kpis', async (req, res) => {
         usersPerDay: bucketByReportDay(users.map(user => ({ at: user.created_at })), rangeDays, now, timeZone),
         signupsPerDay: bucketByReportDay(betaRecent.map(row => ({ at: row.created_at })), rangeDays, now, timeZone),
         messagesPerDay: bucketByReportDay(messagesRecent.map(row => ({ at: row.created_at })), rangeDays, now, timeZone),
+      },
+      engagement: {
+        onlineNow: onlineUserIds.size,
+        opensToday: sessionsToday.length,
+        opensYesterday: sessionsYesterday.length,
+        uniqueUsersToday: new Set(sessionsToday.map(session => session.user_id)).size,
+        uniqueUsersYesterday: new Set(sessionsYesterday.map(session => session.user_id)).size,
+        totalMinutesToday: Math.round(sessionSecondsToday / 60),
+        totalMinutesYesterday: Math.round(sessionSecondsYesterday / 60),
+        averageSessionMinutesToday: sessionsToday.length ? Math.round(sessionSecondsToday / sessionsToday.length / 6) / 10 : 0,
+        averageSessionMinutesYesterday: sessionsYesterday.length ? Math.round(sessionSecondsYesterday / sessionsYesterday.length / 6) / 10 : 0,
+        sessionsPerDay: bucketByReportDay(activitySessions.map(session => ({ at: session.started_at })), rangeDays, now, timeZone),
+        minutesPerDay: bucketMetricByReportDay(activitySessions.map(session => ({ at: session.started_at, value: Math.round((session.active_seconds ?? 0) / 60) })), rangeDays, now, timeZone),
+        topUsers,
       },
       today,
       yesterday,

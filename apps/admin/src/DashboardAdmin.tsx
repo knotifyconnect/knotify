@@ -35,6 +35,12 @@ type Kpis = {
     profileCompletion: number; onboardingComplete: boolean
   }[]
   growth: { rangeDays: number; usersPerDay: Point[]; signupsPerDay: Point[]; messagesPerDay: Point[] }
+  engagement: {
+    onlineNow: number; opensToday: number; opensYesterday: number; uniqueUsersToday: number; uniqueUsersYesterday: number
+    totalMinutesToday: number; totalMinutesYesterday: number; averageSessionMinutesToday: number; averageSessionMinutesYesterday: number
+    sessionsPerDay: Point[]; minutesPerDay: Point[]
+    topUsers: { id: string; fullName: string; username: string | null; minutes: number; sessions: number; lastSeenAt: string; online: boolean }[]
+  }
   today: Activity
   yesterday: Activity
   betaFunnel: { total: number; pending: number; approved: number; rejected: number }
@@ -102,8 +108,11 @@ function RangePicker({ value, onChange }: { value: number; onChange: (value: num
 }
 
 function TrendChart({ series }: { series: { label: string; color: string; points: Point[] }[] }) {
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const width = 760, height = 190, left = 30, right = 10, top = 10, bottom = 25
-  const values = series.flatMap(item => item.points.map(point => point.count))
+  const visibleSeries = series.filter(item => !hidden.has(item.label))
+  const values = visibleSeries.flatMap(item => item.points.map(point => point.count))
   const max = Math.max(1, ...values)
   const count = Math.max(1, ...series.map(item => item.points.length))
   const x = (index: number) => left + (index / Math.max(1, count - 1)) * (width - left - right)
@@ -112,24 +121,37 @@ function TrendChart({ series }: { series: { label: string; color: string; points
   const dates = series[0]?.points ?? []
   const middle = Math.floor((dates.length - 1) / 2)
   return (
-    <div style={{ ...card, padding: '18px 18px 12px' }}>
+    <div style={{ ...card, padding: '18px 18px 12px', position: 'relative' }}>
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 8 }}>
         {series.map(item => (
-          <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 }}>
+          <button key={item.label} type="button" onClick={() => setHidden(current => { const next = new Set(current); if (next.has(item.label)) next.delete(item.label); else if (next.size < series.length - 1) next.add(item.label); return next })} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', opacity: hidden.has(item.label) ? .35 : 1 }} title="Toggle series">
             <span style={{ width: 18, height: 2, background: item.color }} />
             <span style={{ color: C.inkMuted }}>{item.label}</span>
             <strong style={{ color: C.ink }}>{item.points.reduce((sum, point) => sum + point.count, 0)}</strong>
-          </div>
+          </button>
         ))}
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', width: '100%', height: 190 }} role="img" aria-label="Growth and activity trend">
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', width: '100%', height: 190, cursor: 'crosshair' }} role="img" aria-label="Interactive growth and activity trend" onMouseLeave={() => setHoverIndex(null)} onMouseMove={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        const svgX = (event.clientX - rect.left) / rect.width * width
+        setHoverIndex(Math.max(0, Math.min(count - 1, Math.round((svgX - left) / (width - left - right) * Math.max(1, count - 1)))))
+      }}>
         {[0, .5, 1].map(fraction => (
           <g key={fraction}>
             <line x1={left} x2={width - right} y1={y(max * fraction)} y2={y(max * fraction)} stroke={C.rule} />
             <text x={left - 7} y={y(max * fraction) + 4} textAnchor="end" fontSize="9" fill={C.inkFaint}>{Math.round(max * fraction)}</text>
           </g>
         ))}
-        {series.map(item => <path key={item.label} d={path(item.points)} fill="none" stroke={item.color} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />)}
+        {visibleSeries.map(item => <path key={item.label} d={path(item.points)} fill="none" stroke={item.color} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />)}
+        {hoverIndex !== null && <>
+          <line x1={x(hoverIndex)} x2={x(hoverIndex)} y1={top} y2={height - bottom} stroke={C.inkFaint} strokeDasharray="3 3" />
+          {visibleSeries.map(item => item.points[hoverIndex] ? <circle key={item.label} cx={x(hoverIndex)} cy={y(item.points[hoverIndex].count)} r="4" fill={C.white} stroke={item.color} strokeWidth="2" /> : null)}
+          <g transform={`translate(${Math.min(width - 150, Math.max(left, x(hoverIndex) - 65))},${top + 4})`}>
+            <rect width="140" height={24 + visibleSeries.length * 15} rx="7" fill={C.ink} opacity="0.94" />
+            <text x="9" y="15" fontSize="9.5" fill={C.white}>{dates[hoverIndex]?.date ?? ''}</text>
+            {visibleSeries.map((item, index) => <text key={item.label} x="9" y={31 + index * 15} fontSize="9.5" fill={item.color}>{item.label}: {item.points[hoverIndex]?.count ?? 0}</text>)}
+          </g>
+        </>}
         {dates.length > 0 && [0, middle, dates.length - 1].map((index, position) => (
           <text key={`${index}-${position}`} x={x(index)} y={height - 5} textAnchor={position === 0 ? 'start' : position === 2 ? 'end' : 'middle'} fontSize="9.5" fill={C.inkFaint}>
             {dates[index]?.date.slice(5)}
@@ -210,6 +232,26 @@ function LatestMembers({ users, timeZone }: { users: Kpis['latestUsers']; timeZo
   )
 }
 
+function MostEngagedMembers({ users }: { users: Kpis['engagement']['topUsers'] }) {
+  const maxMinutes = Math.max(1, ...users.map(user => user.minutes))
+  return (
+    <div style={{ ...card, padding: 18 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 13 }}>Most engaged members · selected range</div>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {users.map((user, index) => (
+          <div key={user.id} style={{ display: 'grid', gridTemplateColumns: '24px minmax(130px,1fr) minmax(90px,1.4fr) auto', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 11, color: C.inkFaint }}>{index + 1}</span>
+            <div style={{ minWidth: 0 }}><div style={{ fontSize: 12, color: C.ink, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.fullName}</div><div style={{ fontSize: 10.5, color: user.online ? C.verd : C.inkFaint }}>{user.online ? '● online now' : user.username ? `@${user.username}` : 'Member'}</div></div>
+            <div style={{ height: 7, borderRadius: 99, background: C.paperSoft, overflow: 'hidden' }}><div style={{ width: `${user.minutes / maxMinutes * 100}%`, height: '100%', borderRadius: 99, background: C.blue }} /></div>
+            <div style={{ textAlign: 'right' }}><div style={{ fontSize: 12, color: C.ink, fontWeight: 700 }}>{user.minutes}m</div><div style={{ fontSize: 10, color: C.inkFaint }}>{user.sessions} opens</div></div>
+          </div>
+        ))}
+        {!users.length && <div style={{ color: C.inkFaint, fontSize: 12 }}>Usage telemetry will appear after members open the updated app.</div>}
+      </div>
+    </div>
+  )
+}
+
 function WorkQueue({ queue }: { queue: Kpis['workQueue'] }) {
   const rows = [
     ['Beta approvals', queue.betaPending, 'Signups waiting for a decision'],
@@ -252,6 +294,9 @@ function exportDashboard(kpis: Kpis) {
     ['Today', 'New members', kpis.users.newToday], ['Today', 'Active members', kpis.users.activeToday],
     ['Today', 'Unique contributors', kpis.today.uniqueContributors], ['Today', 'Messages', kpis.today.messages],
     ['Today', 'Connections accepted', kpis.today.connectionsAccepted], ['Today', 'Event RSVPs', kpis.today.eventRsvps],
+    ['Usage', 'Online now', kpis.engagement.onlineNow], ['Usage', 'App opens today', kpis.engagement.opensToday],
+    ['Usage', 'Unique users today', kpis.engagement.uniqueUsersToday], ['Usage', 'Active minutes today', kpis.engagement.totalMinutesToday],
+    ['Usage', 'Average session minutes', kpis.engagement.averageSessionMinutesToday],
     ['Users', 'Total', kpis.users.total], ['Users', 'Onboarding complete', kpis.users.onboardingComplete],
     ['Users', 'Active 7 days', kpis.users.active7d], ['Users', 'Dormant 30 days', kpis.users.dormant30d],
     ['Users', 'Average profile completion', `${kpis.users.averageProfileCompletion}%`], ['Users', 'Invited', kpis.users.invited],
@@ -290,7 +335,7 @@ export function DashboardAdmin() {
   if (error && !kpis) return <div style={{ ...card, padding: 20, color: C.signal, fontSize: 13 }}>{error}</div>
   if (!kpis) return null
 
-  const { users, today, yesterday, growth } = kpis
+  const { users, today, yesterday, growth, engagement } = kpis
   const activityCards: { label: string; key: keyof Activity; detail: string }[] = [
     { label: 'Messages sent', key: 'messages', detail: 'Chat messages sent by members' },
     { label: 'Connections made', key: 'connectionsAccepted', detail: 'Requests accepted today' },
@@ -332,6 +377,22 @@ export function DashboardAdmin() {
         <MetricCard label="Active · 7 days" value={users.active7d} detail={`${pct(users.active7d, users.total)}% of all members`} color={C.blue} />
         <MetricCard label="Dormant · 30 days" value={users.dormant30d} detail="Not seen in the last 30 days" color={users.dormant30d ? C.ochre : C.verd} />
         <MetricCard label="Invite acquisition" value={`${pct(users.invited, users.total)}%`} detail={`${users.invited} invited · ${users.organic} organic`} />
+      </div>
+
+      <SectionTitle title="Live usage" subtitle="First-party session telemetry: app opens, active time and who is using Knotify now" accent={C.blue} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+        <MetricCard label="Online now" value={engagement.onlineNow} detail="Heartbeat received in the last 2½ minutes" color={C.verd} />
+        <MetricCard label="App opens today" value={engagement.opensToday} current={engagement.opensToday} previous={engagement.opensYesterday} />
+        <MetricCard label="Unique users today" value={engagement.uniqueUsersToday} current={engagement.uniqueUsersToday} previous={engagement.uniqueUsersYesterday} color={C.blue} />
+        <MetricCard label="Active minutes today" value={engagement.totalMinutesToday} current={engagement.totalMinutesToday} previous={engagement.totalMinutesYesterday} />
+        <MetricCard label="Avg. session" value={`${engagement.averageSessionMinutesToday}m`} detail="Foreground active time per app open" />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12, marginTop: 12 }}>
+        <TrendChart series={[
+          { label: 'App opens', color: C.blue, points: engagement.sessionsPerDay },
+          { label: 'Active minutes', color: C.verd, points: engagement.minutesPerDay },
+        ]} />
+        <MostEngagedMembers users={engagement.topUsers} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginTop: 12 }}>

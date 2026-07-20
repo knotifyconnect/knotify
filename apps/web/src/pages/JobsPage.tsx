@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { apiDelete, apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard, KPill } from '../lib/knotify'
 import { T, DeskPage, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
@@ -27,6 +27,9 @@ type JobListItem = {
   salary_max: number | null
   employment_type: 'full_time' | 'part_time' | 'contract' | 'internship' | 'freelance' | null
   status: 'open' | 'closed' | 'draft'
+  visibility: 'public' | 'network'
+  owned_by_me?: boolean
+  network_path_to_poster?: { degree: 1 | 2; via: CompanyConnection | null } | null
   created_at: string
   matchScore: number
   matchedRequiredSkills: number
@@ -63,6 +66,18 @@ type JobDetail = JobListItem & {
   posted_by?: string
   updated_at?: string
   submittedReferrals?: number
+}
+
+type OwnedJob = {
+  id: string; title: string; company_name: string | null; company_id: string | null; source: string
+  visibility: 'public' | 'network'; status: 'open' | 'closed' | 'draft'; created_at: string; updated_at: string
+  apply_url: string | null; requests: number; pendingRequests: number
+}
+
+type OwnedJobRequest = {
+  id: string; note: string | null; status: 'pending' | 'accepted' | 'declined' | 'completed'; created_at: string
+  requester: { id: string; full_name: string; username: string; avatar_url: string | null } | null
+  via: { id: string; full_name: string; username: string; avatar_url: string | null } | null
 }
 
 type CompanyConnection = {
@@ -181,6 +196,8 @@ function historyEventTitle(event: ReferralHistoryEvent) {
 
 export function JobsPage() {
   const navigate = useNavigate()
+  const [pageParams] = useSearchParams()
+  const deepLinkedJobId = pageParams.get('job')
   const [jobs, setJobs] = useState<JobListItem[]>(() => getApiCacheSnapshot<{ jobs: JobListItem[] }>(DEFAULT_JOBS_PATH)?.jobs ?? [])
   const [loading, setLoading] = useState(() => !getApiCacheSnapshot<{ jobs: JobListItem[] }>(DEFAULT_JOBS_PATH))
   const [error, setError] = useState<string | null>(null)
@@ -197,6 +214,11 @@ export function JobsPage() {
   const [shareError, setShareError] = useState<string | null>(null)
   const [shareDraft, setShareDraft] = useState<JobLinkDraft | null>(null)
   const [sharePosting, setSharePosting] = useState(false)
+  const [shareVisibility, setShareVisibility] = useState<'public' | 'network'>('network')
+  const [ownedJobs, setOwnedJobs] = useState<OwnedJob[]>([])
+  const [expandedOwnedJobId, setExpandedOwnedJobId] = useState<string | null>(null)
+  const [ownedRequests, setOwnedRequests] = useState<Record<string, OwnedJobRequest[]>>({})
+  const [managingJobId, setManagingJobId] = useState<string | null>(null)
 
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -234,6 +256,7 @@ export function JobsPage() {
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null)
   const [historyErrorByReferral, setHistoryErrorByReferral] = useState<Record<string, string>>({})
   const skippedInitialFilterLoadRef = useRef(false)
+  const openedDeepLinkRef = useRef<string | null>(null)
 
   const hasConnections = connectionsAtCompany.length > 0
   const secondDegreeAtCompany = selectedJob?.connection_context?.secondDegree ?? []
@@ -265,6 +288,40 @@ export function JobsPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function loadOwnedJobs() {
+    try {
+      const data = await apiGet<{ jobs: OwnedJob[] }>('/api/jobs/mine')
+      setOwnedJobs(data.jobs ?? [])
+    } catch { setOwnedJobs([]) }
+  }
+
+  async function loadOwnedRequests(jobId: string) {
+    const data = await apiGet<{ requests: OwnedJobRequest[] }>(`/api/jobs/mine/${jobId}/requests`)
+    setOwnedRequests(current => ({ ...current, [jobId]: data.requests ?? [] }))
+  }
+
+  async function updateOwnedJob(jobId: string, patch: { status?: OwnedJob['status']; visibility?: OwnedJob['visibility'] }) {
+    setManagingJobId(jobId)
+    try {
+      await apiPatch(`/api/jobs/${jobId}`, patch)
+      await Promise.all([loadOwnedJobs(), loadJobs()])
+    } finally { setManagingJobId(null) }
+  }
+
+  async function deleteOwnedJob(job: OwnedJob) {
+    if (!window.confirm(`Delete “${job.title}”? This also removes its pending referral requests.`)) return
+    setManagingJobId(job.id)
+    try {
+      await apiDelete(`/api/jobs/${job.id}`)
+      await Promise.all([loadOwnedJobs(), loadJobs()])
+    } finally { setManagingJobId(null) }
+  }
+
+  async function respondToOwnedRequest(jobId: string, requestId: string, status: 'accepted' | 'declined' | 'completed') {
+    await apiPatch(`/api/jobs/mine/${jobId}/requests/${requestId}`, { status })
+    await Promise.all([loadOwnedRequests(jobId), loadOwnedJobs()])
   }
 
   async function loadPendingReferrals() {
@@ -332,9 +389,15 @@ export function JobsPage() {
   }
 
   useEffect(() => {
-    void loadJobs()
+    void Promise.all([loadJobs(), loadOwnedJobs()])
     return runWhenIdle(() => void reloadReferralSections(), 1800)
   }, [])
+
+  useEffect(() => {
+    if (!deepLinkedJobId || openedDeepLinkRef.current === deepLinkedJobId) return
+    openedDeepLinkRef.current = deepLinkedJobId
+    void openJob(deepLinkedJobId)
+  }, [deepLinkedJobId])
 
   // Debounced search
   useEffect(() => {
@@ -392,12 +455,14 @@ export function JobsPage() {
         isRemote: shareDraft.isRemote,
         salaryMin: shareDraft.salaryMin ?? undefined,
         salaryMax: shareDraft.salaryMax ?? undefined,
+        employmentType: shareDraft.employmentType ?? undefined,
+        visibility: shareVisibility,
       })
       trackEvent('job_link_shared')
       setShowShareForm(false)
       setShareUrl('')
       setShareDraft(null)
-      await loadJobs()
+      await Promise.all([loadJobs(), loadOwnedJobs()])
     } catch (err) {
       setShareError(err instanceof Error ? err.message : 'Could not post this job')
     } finally {
@@ -479,6 +544,18 @@ export function JobsPage() {
     } finally {
       setRequesting(false)
     }
+  }
+
+  async function requestPosterReferral() {
+    if (!selectedJob || selectedJob.owned_by_me) return
+    setRequesting(true); setRequestError(null); setRequestMessage(null)
+    try {
+      await apiPost(`/api/jobs/${selectedJob.id}/referral-request`, { note: note.trim() || undefined })
+      setRequestMessage('Request sent to the person responsible for this posting.')
+      setNote('')
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : 'Could not send your request')
+    } finally { setRequesting(false) }
   }
 
   async function offerReferral() {
@@ -957,6 +1034,35 @@ export function JobsPage() {
           </KBtn>
         </div>
 
+        {ownedJobs.length > 0 && (
+          <KCard style={{ padding: '16px 18px', marginBottom: 14, border: '1px solid rgba(216,68,43,.22)', background: 'linear-gradient(135deg, rgba(216,68,43,.055), white 60%)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 11 }}>
+              <div><div style={{ fontSize: 10.5, letterSpacing: '.11em', textTransform: 'uppercase', color: 'var(--signal)', fontWeight: 700 }}>Your postings</div><div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>These stay at the top for you. Control reach, availability and incoming requests here.</div></div>
+              <span style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: 'var(--ink)' }}>{ownedJobs.length}</span>
+            </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {ownedJobs.map(job => (
+                <div key={job.id} style={{ padding: '11px 12px', borderRadius: 11, background: 'white', border: '0.5px solid var(--rule)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={() => openJob(job.id)} style={{ flex: 1, minWidth: 190, textAlign: 'left', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}><div style={{ fontSize: 13.5, fontWeight: 650, color: 'var(--ink)' }}>{job.title}</div><div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2 }}>{job.status} · {job.visibility === 'network' ? 'Your network only' : 'Public'} · {job.requests} request{job.requests === 1 ? '' : 's'}</div></button>
+                    {job.pendingRequests > 0 && <KPill color="signal">{job.pendingRequests} new</KPill>}
+                    <select aria-label={`Visibility for ${job.title}`} value={job.visibility} disabled={managingJobId === job.id} onChange={event => void updateOwnedJob(job.id, { visibility: event.target.value as OwnedJob['visibility'] })} style={{ padding: '6px 8px', borderRadius: 8, border: '0.5px solid var(--rule)', background: 'var(--paper-soft)', color: 'var(--ink)', fontSize: 11.5 }}><option value="network">Network only</option><option value="public">Public</option></select>
+                    <KBtn variant="ghost" size="sm" onClick={() => void updateOwnedJob(job.id, { status: job.status === 'open' ? 'closed' : 'open' })}>{job.status === 'open' ? 'Close' : 'Reopen'}</KBtn>
+                    <KBtn variant="ghost" size="sm" onClick={() => { const next = expandedOwnedJobId === job.id ? null : job.id; setExpandedOwnedJobId(next); if (next) void loadOwnedRequests(job.id) }}>Requests</KBtn>
+                    <button type="button" onClick={() => void deleteOwnedJob(job)} style={{ border: 'none', background: 'transparent', color: 'var(--signal)', cursor: 'pointer', fontSize: 11.5 }}>Delete</button>
+                  </div>
+                  {expandedOwnedJobId === job.id && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '0.5px solid var(--rule-soft)', display: 'grid', gap: 7 }}>
+                      {(ownedRequests[job.id] ?? []).map(request => <div key={request.id} style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap', padding: '8px 9px', borderRadius: 9, background: 'var(--paper-soft)' }}><KAvatar name={request.requester?.full_name ?? 'Member'} src={request.requester?.avatar_url} size={28} /><div style={{ flex: 1, minWidth: 160 }}><div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 600 }}>{request.requester?.full_name ?? 'Member'}</div><div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{request.via ? `via ${request.via.full_name}` : 'Direct to you'}{request.note ? ` · ${request.note}` : ''}</div></div><KPill color={request.status === 'pending' ? 'ochre' : request.status === 'accepted' ? 'verd' : 'default'}>{request.status}</KPill>{request.status === 'pending' && <><KBtn variant="verd" size="sm" onClick={() => void respondToOwnedRequest(job.id, request.id, 'accepted')}>Accept</KBtn><KBtn variant="ghost" size="sm" onClick={() => void respondToOwnedRequest(job.id, request.id, 'declined')}>Decline</KBtn></>}</div>)}
+                      {(ownedRequests[job.id] ?? []).length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>No referral requests yet.</div>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </KCard>
+        )}
+
         {/* Search + Filters */}
         <div className="k-jobs-search" style={{ marginBottom: 14 }}>
           <input
@@ -1102,6 +1208,13 @@ export function JobsPage() {
                   Applicants will be sent to: {shareUrl}
                 </div>
 
+                <div style={{ padding: '12px 13px', borderRadius: 10, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)' }}>
+                  <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 7 }}>Who should see this?</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 8 }}>
+                    {([['network', 'My network', 'Only direct and second-degree members, with a visible referral path.'], ['public', 'Public', 'Every Knotify member can discover it and request context from you.']] as const).map(([value, label, detail]) => <label key={value} style={{ padding: '10px 11px', borderRadius: 9, border: `1px solid ${shareVisibility === value ? 'var(--signal)' : 'var(--rule)'}`, background: shareVisibility === value ? 'var(--signal-soft)' : 'white', cursor: 'pointer' }}><input type="radio" name="job-visibility" value={value} checked={shareVisibility === value} onChange={() => setShareVisibility(value)} style={{ marginRight: 7 }} /><strong style={{ fontSize: 12.5, color: 'var(--ink)' }}>{label}</strong><span style={{ display: 'block', margin: '5px 0 0 21px', fontSize: 11, lineHeight: 1.4, color: 'var(--ink-muted)' }}>{detail}</span></label>)}
+                  </div>
+                </div>
+
                 <div className="k-job-share-actions">
                   <KBtn variant="ghost" size="sm" onClick={() => { setShareDraft(null); setShareUrl(''); setShareError(null) }} style={{ flex: 1 }}>
                     Cancel
@@ -1131,7 +1244,7 @@ export function JobsPage() {
         ) : (
           <div data-tour="jobs-feed" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 10 }}>
             {(savedOnly ? jobs.filter((j) => j.saved) : jobs).map((job) => (
-              <KCard key={job.id} style={{ padding: '18px 20px', cursor: 'pointer', position: 'relative' }} onClick={() => openJob(job.id)}>
+              <KCard key={job.id} style={{ padding: '18px 20px', cursor: 'pointer', position: 'relative', border: job.owned_by_me ? '1px solid rgba(216,68,43,.35)' : undefined, background: job.owned_by_me ? 'linear-gradient(145deg, rgba(216,68,43,.045), white 55%)' : undefined }} onClick={() => openJob(job.id)}>
                 {/* Save button */}
                 <button
                   onClick={(e) => { e.stopPropagation(); void toggleSave(job.id) }}
@@ -1164,6 +1277,8 @@ export function JobsPage() {
                     </div>
                     {/* Employment type + salary */}
                     <div style={{ display: 'flex', gap: 5, marginTop: 4, flexWrap: 'wrap' }}>
+                      {job.owned_by_me && <span style={{ padding: '2px 7px', borderRadius: 6, background: 'var(--signal-soft)', border: '0.5px solid rgba(216,68,43,.2)', fontSize: 11, color: 'var(--signal)', fontWeight: 650 }}>Your posting · manage</span>}
+                      <span style={{ padding: '2px 7px', borderRadius: 6, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', fontSize: 11, color: 'var(--ink-faint)' }}>{job.visibility === 'network' ? 'Network only' : 'Public'}</span>
                       {!job.company_id && (
                         <span style={{ padding: '2px 7px', borderRadius: 6, background: 'var(--paper-soft)', border: '0.5px solid var(--rule)', fontSize: 11, color: 'var(--ink-faint)' }}>
                           Shared by {job.poster?.full_name ?? 'a member'}
@@ -1255,7 +1370,7 @@ export function JobsPage() {
                     size="sm"
                     onClick={() => openJob(job.id)}
                   >
-                    {job.company_id ? 'Ask for intro' : 'View & apply'}
+                    {job.owned_by_me ? 'Manage posting' : job.company_id ? 'Ask for intro' : 'View & request path'}
                   </KBtn>
                 </div>
               </KCard>
@@ -1427,15 +1542,20 @@ export function JobsPage() {
                       </div>
                     )}
                     <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 12px' }}>
-                      Ask them what they know before you apply — they can give you context or point you to the right person.
+                      {selectedJob.owned_by_me ? 'You own this posting. Manage its reach and incoming requests from Your postings at the top of the page.' : 'Ask them what they know before you apply — they can give you context or point you to the right person.'}
                     </p>
+                    {!selectedJob.owned_by_me && <>
+                      {selectedJob.network_path_to_poster && <div style={{ marginBottom: 10, fontSize: 11.5, color: 'var(--verd)' }}>{selectedJob.network_path_to_poster.degree === 1 ? `Direct path to ${selectedJob.poster?.full_name ?? 'the poster'}` : `Path via ${selectedJob.network_path_to_poster.via?.full_name ?? 'a mutual connection'} → ${selectedJob.poster?.full_name ?? 'the poster'}`}</div>}
+                      <textarea value={note} onChange={event => setNote(event.target.value.slice(0, 500))} placeholder="Why are you interested, and what help would be useful?" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', marginBottom: 8, borderRadius: 9, border: '0.5px solid var(--rule)', background: 'white', resize: 'vertical', color: 'var(--ink)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12.5 }} />
+                      <KBtn variant="verd" size="sm" fullWidth onClick={requestPosterReferral} disabled={requesting}>{requesting ? 'Sending…' : 'Request referral path'}</KBtn>
+                    </>}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <KBtn
                         variant="signal"
                         size="sm"
                         fullWidth
                         onClick={() => selectedJob.poster && navigate(`/messages?to=${selectedJob.poster.id}`)}
-                        disabled={!selectedJob.poster}
+                        disabled={!selectedJob.poster || selectedJob.owned_by_me}
                       >
                         Message {selectedJob.poster?.full_name?.split(' ')[0] ?? 'them'}
                       </KBtn>
@@ -1551,6 +1671,7 @@ export function JobsPage() {
                       Connect with someone at {selectedJob.company?.name ?? 'this company'} first.
                     </p>
                   )}
+                  {!hasConnections && !selectedJob.owned_by_me && <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--rule)' }}><textarea value={note} onChange={event => setNote(event.target.value.slice(0, 500))} placeholder="Tell the posting owner why this role fits you…" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', marginBottom: 8, borderRadius: 9, border: '0.5px solid var(--rule)', background: 'white', resize: 'vertical', color: 'var(--ink)', fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 12.5 }} /><KBtn variant="signal" size="sm" fullWidth onClick={requestPosterReferral} disabled={requesting}>{requesting ? 'Sending…' : secondDegreeAtCompany.length ? 'Forward referral request' : 'Ask posting owner for a path'}</KBtn></div>}
                 </div>
                 )}
 

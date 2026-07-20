@@ -370,6 +370,10 @@ export function RelationshipHomePage() {
   const [firstName, setFirstName] = useState('')
   const [userId, setUserId] = useState('')
   const [messagingPeer, setMessagingPeer] = useState<string | null>(null)
+  const [moveComposer, setMoveComposer] = useState<{ entry: RankedEntry; text: string } | null>(null)
+  const [moveSending, setMoveSending] = useState(false)
+  const [moveError, setMoveError] = useState<string | null>(null)
+  const [moveSentName, setMoveSentName] = useState<string | null>(null)
   const [showAllMoves, setShowAllMoves] = useState(false)
   const [actedIds, setActedIds] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(sessionStorage.getItem('knotify:acted') ?? '[]')) } catch { return new Set() }
@@ -499,7 +503,7 @@ export function RelationshipHomePage() {
   async function openMessage(peerId: string, draftOpener?: string) {
     setMessagingPeer(peerId)
     try {
-      const result = await apiPost<{ conversation: { id: string } }>('/api/conversations', { peerId })
+      const result = await apiPost<{ conversation: { id: string } }>('/api/conversations', { userId: peerId })
       const url = `/messages?conversation=${result.conversation.id}` + (draftOpener ? `&draft=${encodeURIComponent(draftOpener)}` : '')
       navigate(url)
     } catch {
@@ -507,6 +511,21 @@ export function RelationshipHomePage() {
     } finally {
       setMessagingPeer(null)
     }
+  }
+
+  async function sendSuggestedMove() {
+    if (!moveComposer?.text.trim()) return
+    setMoveSending(true); setMoveError(null)
+    try {
+      const result = await apiPost<{ conversation: { id: string } }>('/api/conversations', { userId: moveComposer.entry.peer.id })
+      await apiPost(`/api/conversations/${result.conversation.id}/messages`, { content: moveComposer.text.trim() })
+      logAndAct(moveComposer.entry, 'acted')
+      setMoveSentName(moveComposer.entry.peer.full_name.split(' ')[0])
+      setMoveComposer(null)
+      window.setTimeout(() => setMoveSentName(null), 3000)
+    } catch (error) {
+      setMoveError(error instanceof Error ? error.message : 'Could not send this message')
+    } finally { setMoveSending(false) }
   }
 
   /** Coffee → the real meeting planner in Messages (deep link opens the modal). */
@@ -647,7 +666,12 @@ export function RelationshipHomePage() {
                 <div style={{ display: 'flex', gap: 6, padding: '0 10px 10px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    onClick={() => { logAndAct(entry, 'acted'); openMessage(entry.peer.id, draft) }}
+                    onClick={() => {
+                      if (hasBookedCoffee) { logAndAct(entry, 'acted'); void openMessage(entry.peer.id); return }
+                      if (entry.suggestedAction === 'meet') { logAndAct(entry, 'acted'); openCoffeePlanner(entry.peer.id); return }
+                      setMoveError(null)
+                      setMoveComposer({ entry, text: draft ?? `Hi ${entry.peer.full_name.split(' ')[0]}, would love to catch up.` })
+                    }}
                     disabled={messagingPeer === entry.peer.id}
                     style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 12px', borderRadius: 999, border: 'none', background: T.ink, color: T.paperSoft, fontSize: 12.5, fontFamily: T.text, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', minWidth: 0 }}
                   >
@@ -892,6 +916,19 @@ export function RelationshipHomePage() {
 
   return (
     <div className="k-relationship-home-page" style={{ paddingBottom: 60 }}>
+      {moveSentName && <div role="status" style={{ position: 'fixed', right: 20, bottom: 22, zIndex: 130, padding: '11px 14px', borderRadius: 11, background: T.ink, color: '#fff', fontSize: 12.5, boxShadow: '0 12px 32px rgba(20,15,10,.2)' }}>Message sent to {moveSentName}.</div>}
+      {moveComposer && (
+        <div onMouseDown={event => { if (event.currentTarget === event.target && !moveSending) setMoveComposer(null) }} style={{ position: 'fixed', inset: 0, zIndex: 125, display: 'grid', placeItems: 'center', padding: 18, background: 'rgba(26,20,16,.28)', backdropFilter: 'blur(3px)' }}>
+          <div style={{ width: '100%', maxWidth: 460, borderRadius: 18, background: T.paper, border: `0.5px solid ${T.rule}`, padding: 20, boxShadow: '0 22px 64px rgba(20,14,10,.22)' }}>
+            <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.1em', color: T.signal, fontWeight: 700 }}>Complete today’s move</div>
+            <h3 style={{ margin: '6px 0 5px', fontFamily: T.display, fontSize: 23, color: T.ink, fontWeight: 500 }}>{CTA_LABEL[moveComposer.entry.suggestedAction]} with {moveComposer.entry.peer.full_name.split(' ')[0]}</h3>
+            <p style={{ margin: '0 0 13px', color: T.inkMuted, fontSize: 12.5, lineHeight: 1.5 }}>Review the suggested note, then send it directly. Nothing is sent until you confirm.</p>
+            <textarea autoFocus value={moveComposer.text} onChange={event => setMoveComposer(current => current ? { ...current, text: event.target.value.slice(0, 4000) } : current)} rows={6} style={{ width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 11, border: `0.5px solid ${T.rule}`, background: '#fff', color: T.ink, fontFamily: T.text, fontSize: 13.5, lineHeight: 1.55, resize: 'vertical', outline: 'none' }} />
+            {moveError && <div style={{ marginTop: 8, color: T.signal, fontSize: 12 }}>{moveError}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 13 }}><KBtn variant="ghost" size="sm" onClick={() => setMoveComposer(null)} disabled={moveSending}>Cancel</KBtn><KBtn variant="signal" size="sm" onClick={sendSuggestedMove} disabled={moveSending || !moveComposer.text.trim()}>{moveSending ? 'Sending…' : 'Send message'}</KBtn></div>
+          </div>
+        </div>
+      )}
       {referralPeer && (
         <ReferralAskModal peer={referralPeer} onClose={() => setReferralPeer(null)} />
       )}

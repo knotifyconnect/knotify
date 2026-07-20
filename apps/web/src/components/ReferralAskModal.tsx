@@ -44,7 +44,7 @@ export function ReferralAskModal({ peer, onClose }: Props) {
     ].filter(Boolean).join('\n\n')
 
     try {
-      const conv = await apiPost<{ conversation: { id: string } }>('/api/conversations', { peerId: peer.id })
+      const conv = await apiPost<{ conversation: { id: string } }>('/api/conversations', { userId: peer.id })
       await apiPost('/api/conversations/' + conv.conversation.id + '/messages', { content: message })
       navigate(`/messages?conversation=${conv.conversation.id}`)
       onClose()

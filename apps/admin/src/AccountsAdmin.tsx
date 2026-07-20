@@ -34,6 +34,7 @@ type Account = {
   isPremium: boolean
   isOnline: boolean
   lastSeenAt: string | null
+  usage30d: { minutes: number; sessions: number; pageViews: number }
   termsAcceptedAt: string | null
   termsVersion: string | null
   profileCreatedAt: string | null
@@ -54,7 +55,7 @@ type Account = {
   onboardingComplete: boolean
 }
 
-type AccountStats = { total: number; active: number; deactivated: number; profileOnly: number; unverified: number; admins: number; hr: number }
+type AccountStats = { total: number; active: number; deactivated: number; profileOnly: number; unverified: number; admins: number; hr: number; onlineNow: number; active30d: number }
 type Activity = { connections: number; posts: number; messages: number; eventRsvps: number; gigs: number }
 type AccountsResponse = {
   accounts: Account[]
@@ -66,7 +67,7 @@ type AccountsResponse = {
 type AccountDetailResponse = { account: Account; activity: Activity; warning?: string | null }
 type StatusFilter = 'all' | 'active' | 'deactivated' | 'unverified' | 'incomplete'
 type RoleFilter = 'all' | 'admin' | 'hr' | 'premium' | 'member'
-type Sort = 'newest' | 'last-sign-in' | 'name' | 'completion'
+type Sort = 'newest' | 'last-seen' | 'usage' | 'name' | 'completion'
 
 const buttonBase: CSSProperties = {
   border: 'none', borderRadius: 9, padding: '9px 13px', fontSize: 12.5, fontWeight: 600,
@@ -162,13 +163,13 @@ function DetailRow({ label, value, mono = false }: { label: string; value: React
 }
 
 function exportAccounts(accounts: Account[]) {
-  const header = ['Name', 'Username', 'Email', 'Status', 'Role', 'Verified', 'Provider', 'Profile completion', 'Last sign-in', 'Created', 'Auth ID', 'Profile ID']
+  const header = ['Name', 'Username', 'Email', 'Status', 'Role', 'Verified', 'Provider', 'Profile completion', 'Last seen', 'Active minutes (30d)', 'Sessions (30d)', 'Created', 'Auth ID', 'Profile ID']
   const rows = accounts.map((a) => [
     a.fullName ?? '', a.username ?? '', a.email ?? '', a.accountStatus, roleLabel(a),
     a.emailConfirmedAt || a.phoneConfirmedAt ? 'Yes' : 'No', a.providers.join('; '), `${a.profileCompletion}%`,
-    a.lastSignInAt ?? '', a.authCreatedAt, a.authId, a.profileId ?? '',
+    a.lastSeenAt ?? '', a.usage30d.minutes, a.usage30d.sessions, a.authCreatedAt, a.authId, a.profileId ?? '',
   ])
-  const escape = (value: string) => `"${String(value).replace(/"/g, '""')}"`
+  const escape = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`
   const csv = [header, ...rows].map((row) => row.map(escape).join(',')).join('\r\n')
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const anchor = document.createElement('a')
@@ -180,7 +181,7 @@ function exportAccounts(accounts: Account[]) {
 
 export function AccountsAdmin() {
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [stats, setStats] = useState<AccountStats>({ total: 0, active: 0, deactivated: 0, profileOnly: 0, unverified: 0, admins: 0, hr: 0 })
+  const [stats, setStats] = useState<AccountStats>({ total: 0, active: 0, deactivated: 0, profileOnly: 0, unverified: 0, admins: 0, hr: 0, onlineNow: 0, active30d: 0 })
   const [loaded, setLoaded] = useState(0)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -254,7 +255,8 @@ export function AccountsAdmin() {
     })
     return result.sort((a, b) => {
       if (sort === 'name') return (a.fullName || a.email || '').localeCompare(b.fullName || b.email || '')
-      if (sort === 'last-sign-in') return new Date(b.lastSignInAt ?? 0).getTime() - new Date(a.lastSignInAt ?? 0).getTime()
+      if (sort === 'last-seen') return new Date(b.lastSeenAt ?? 0).getTime() - new Date(a.lastSeenAt ?? 0).getTime()
+      if (sort === 'usage') return b.usage30d.minutes - a.usage30d.minutes || b.usage30d.sessions - a.usage30d.sessions
       if (sort === 'completion') return b.profileCompletion - a.profileCompletion
       return new Date(b.authCreatedAt).getTime() - new Date(a.authCreatedAt).getTime()
     })
@@ -362,9 +364,9 @@ export function AccountsAdmin() {
 
       <div className="account-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 10, marginBottom: 18 }}>
         <StatCard label="Total accounts" value={stats.total} sub={`${loaded} loaded`} />
-        <StatCard label="Active" value={stats.active} sub="Can sign in" tone={C.verd} />
+        <StatCard label="Online now" value={stats.onlineNow} sub="Seen in the last 2½ min" tone={C.verd} />
+        <StatCard label="Used in 30 days" value={stats.active30d} sub={`${stats.total ? Math.round(stats.active30d / stats.total * 100) : 0}% of accounts`} tone={C.blue} />
         <StatCard label="Deactivated" value={stats.deactivated} sub={stats.profileOnly ? `${stats.profileOnly} profile only` : 'Sign-in blocked'} tone={C.signal} />
-        <StatCard label="Unverified" value={stats.unverified} sub="Email or phone" tone={C.amber} />
         <StatCard label="Access grants" value={stats.admins + stats.hr} sub={`${stats.admins} admin · ${stats.hr} HR`} tone={C.plum} />
       </div>
 
@@ -379,7 +381,7 @@ export function AccountsAdmin() {
           <option value="all">All access</option><option value="admin">Admins</option><option value="hr">HR</option><option value="premium">Premium</option><option value="member">Members</option>
         </select>
         <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} style={{ padding: '9px 10px', border: `0.5px solid ${C.rule}`, borderRadius: 8, outline: 'none', background: C.white, color: C.inkMuted, fontSize: 11.5 }}>
-          <option value="newest">Newest first</option><option value="last-sign-in">Last sign-in</option><option value="name">Name A–Z</option><option value="completion">Profile health</option>
+          <option value="newest">Newest first</option><option value="last-seen">Last seen</option><option value="usage">Most used · 30d</option><option value="name">Name A–Z</option><option value="completion">Profile health</option>
         </select>
       </div>
 
@@ -400,7 +402,7 @@ export function AccountsAdmin() {
               </div>
               <div><div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}><Pill {...colors}>{roleLabel(account)}</Pill>{!account.authAvailable ? <Pill color={C.amber} background={C.amberSoft}>Profile only</Pill> : account.accountStatus === 'deactivated' ? <Pill color={C.signal} background={C.signalSoft}>● Deactivated</Pill> : <Pill color={C.verd} background={C.verdSoft}>● Active</Pill>}</div><div style={{ marginTop: 5, color: verified ? C.inkFaint : C.amber, fontSize: 10.5 }}>{account.authAvailable ? (verified ? '✓ Identity verified' : '⚠ Not verified') : 'Auth metadata unavailable'}</div></div>
               <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.inkMuted, marginBottom: 5 }}><span>Profile health</span><strong style={{ color: account.profileCompletion >= 75 ? C.verd : account.profileCompletion >= 40 ? C.amber : C.signal }}>{account.profileCompletion}%</strong></div><div style={{ height: 4, background: C.paperSoft, borderRadius: 99, overflow: 'hidden' }}><div style={{ height: '100%', width: `${account.profileCompletion}%`, background: account.profileCompletion >= 75 ? C.verd : account.profileCompletion >= 40 ? C.amber : C.signal, borderRadius: 99 }} /></div><div style={{ marginTop: 5, fontSize: 10, color: C.inkFaint }}>{account.providers.join(', ') || 'Unknown provider'}</div></div>
-              <div><div style={{ fontSize: 11.5, color: C.ink }}>{timeAgo(account.lastSignInAt)}</div><div style={{ fontSize: 10, color: C.inkFaint, marginTop: 3 }}>Joined {timeAgo(account.authCreatedAt)}</div></div>
+              <div><div style={{ fontSize: 11.5, color: account.isOnline ? C.verd : C.ink }}>{account.isOnline ? 'Online now' : timeAgo(account.lastSeenAt)}</div><div style={{ fontSize: 10, color: C.inkFaint, marginTop: 3 }}>{account.usage30d.minutes}m · {account.usage30d.sessions} opens (30d)</div></div>
               <span style={{ color: C.inkFaint, fontSize: 17 }}>›</span>
             </button>
           )
@@ -420,6 +422,8 @@ export function AccountsAdmin() {
               <section style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 13, padding: '14px 15px', marginBottom: 12 }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 4 }}>Access & entitlements</div><div style={{ fontSize: 10.5, color: C.inkFaint, marginBottom: 5 }}>Changes apply immediately to the profile.</div><Toggle checked={shownAccount.isAdmin} disabled={Boolean(busy)} onChange={() => void updateRole('isAdmin', !shownAccount.isAdmin)} label="Administrator" description="Full signed-in admin access" /><Toggle checked={shownAccount.isHr} disabled={Boolean(busy)} onChange={() => void updateRole('isHr', !shownAccount.isHr)} label="HR workspace" description="Company and recruiting capabilities" /><Toggle checked={shownAccount.isPremium} disabled={Boolean(busy)} onChange={() => void updateRole('isPremium', !shownAccount.isPremium)} label="Premium member" description="Premium product entitlement" /></section>
 
               <section style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 13, padding: '14px 15px', marginBottom: 12 }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 6 }}>Identity & profile</div><DetailRow label="Username" value={shownAccount.username ? `@${shownAccount.username}` : null} /><DetailRow label="Headline" value={shownAccount.headline} /><DetailRow label="Company" value={shownAccount.currentCompany} /><DetailRow label="University" value={shownAccount.university} /><DetailRow label="Location" value={[shownAccount.locationCity, shownAccount.homeCountry].filter(Boolean).join(' · ')} /><DetailRow label="Persona" value={shownAccount.persona} /><DetailRow label="Interests" value={shownAccount.interests.length ? shownAccount.interests.join(', ') : null} /><DetailRow label="Profile health" value={`${shownAccount.profileCompletion}% · ${shownAccount.onboardingComplete ? 'Onboarding complete' : 'Onboarding incomplete'}`} /><DetailRow label="Terms" value={shownAccount.termsAcceptedAt ? `${shownAccount.termsVersion || 'Accepted'} · ${fullDate(shownAccount.termsAcceptedAt)}` : 'Not recorded'} /></section>
+
+              <section style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 13, padding: '14px 15px', marginBottom: 12 }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 6 }}>Usage · last 30 days</div><DetailRow label="Presence" value={shownAccount.isOnline ? <span style={{ color: C.verd }}>● Online now</span> : timeAgo(shownAccount.lastSeenAt)} /><DetailRow label="Active time" value={`${shownAccount.usage30d.minutes} minutes`} /><DetailRow label="App opens" value={shownAccount.usage30d.sessions} /><DetailRow label="Page views" value={shownAccount.usage30d.pageViews} /></section>
 
               <section style={{ background: C.white, border: `0.5px solid ${C.rule}`, borderRadius: 13, padding: '14px 15px', marginBottom: 12 }}><div style={{ fontSize: 12.5, fontWeight: 650, color: C.ink, marginBottom: 6 }}>Authentication</div><DetailRow label="Provider" value={shownAccount.providers.join(', ') || 'Unknown'} /><DetailRow label="Last sign-in" value={fullDate(shownAccount.lastSignInAt)} /><DetailRow label="Last seen" value={fullDate(shownAccount.lastSeenAt)} /><DetailRow label="Account created" value={fullDate(shownAccount.authCreatedAt)} /><DetailRow label="Email verified" value={fullDate(shownAccount.emailConfirmedAt)} /><DetailRow label="Auth ID" value={<span>{shownAccount.authId} <button onClick={() => copy(shownAccount.authId)} style={{ border: 'none', background: 'none', color: C.blue, padding: 0, marginLeft: 5, cursor: 'pointer', fontSize: 10 }}>Copy</button></span>} mono /><DetailRow label="Profile ID" value={shownAccount.profileId ? <span>{shownAccount.profileId} <button onClick={() => copy(shownAccount.profileId!)} style={{ border: 'none', background: 'none', color: C.blue, padding: 0, marginLeft: 5, cursor: 'pointer', fontSize: 10 }}>Copy</button></span> : null} mono /></section>
 
