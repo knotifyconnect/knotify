@@ -68,13 +68,17 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
   const shouldAllocate = !username && !existing.data?.username
   if (!username) username = existing.data?.username ?? await allocateUsername(fullName, existing.data?.id)
 
-  const needsConsentRecord = !existing.data?.terms_accepted_at
-
   // Legal consent is only required — and only recorded — at the moment the
   // account row is actually created. This is a server-enforced gate, not just
   // a UI checkbox: re-syncing an existing profile (e.g. on every login) never
-  // requires or overwrites the original consent timestamp.
-  if (needsConsentRecord && parsed.data.termsAccepted !== true) {
+  // requires or overwrites the original consent timestamp. Gate on the row's
+  // existence, not on terms_accepted_at specifically — pre-existing accounts
+  // whose timestamp was never backfilled (created before this column existed)
+  // are not new signups and must not be asked to re-accept on every login.
+  const isNewProfile = !existing.data
+  const needsConsentBackfill = Boolean(existing.data && !existing.data.terms_accepted_at)
+
+  if (isNewProfile && parsed.data.termsAccepted !== true) {
     return res.status(422).json({ error: 'You must accept the Terms of Service and Privacy Policy to create an account.' })
   }
 
@@ -89,7 +93,7 @@ authRouter.post('/complete-profile', requireAuth, async (req, res) => {
         location_city: locationCity,
         university: university ?? null,
         status,
-        ...(needsConsentRecord ? { terms_accepted_at: new Date().toISOString(), terms_version: TERMS_VERSION } : {}),
+        ...(isNewProfile || needsConsentBackfill ? { terms_accepted_at: new Date().toISOString(), terms_version: TERMS_VERSION } : {}),
       },
       { onConflict: 'auth_id' }
     )
