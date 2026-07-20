@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Globe, Hash, Briefcase, Plus } from 'lucide-react'
 import { apiGet } from '../lib/api'
 import { KBtn, KAvatar } from '../lib/knotify'
@@ -69,12 +69,30 @@ function AskCard({ ask, onOpen }: { ask: Ask; onOpen: () => void }) {
 
 export function AsksPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [userId, setUserId] = useState('')
   const [feedAsks, setFeedAsks] = useState<Ask[]>([])
   const [myAsks, setMyAsks] = useState<Ask[]>([])
   const [loading, setLoading] = useState(true)
   const [askOpen, setAskOpen] = useState(false)
   const [askDetail, setAskDetail] = useState<Ask | null>(null)
+
+  // Deep link from a notification (?ask=<id>) — open straight to that ask's
+  // drawer instead of leaving the visitor to find it in the feed themselves.
+  useEffect(() => {
+    const askId = searchParams.get('ask')
+    if (!askId) return
+    apiGet<{ ask: Ask }>(`/api/asks/${askId}`)
+      .then((r) => { if (r.ask) setAskDetail(r.ask) })
+      .catch(() => {})
+      .finally(() => {
+        const next = new URLSearchParams(searchParams)
+        next.delete('ask')
+        setSearchParams(next, { replace: true })
+      })
+    // Only ever meant to run for the ask id present on initial navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     apiGet<{ user: { id: string } }>('/api/users/me')

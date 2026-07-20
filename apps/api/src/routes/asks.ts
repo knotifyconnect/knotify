@@ -17,6 +17,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { createNotification, getUserFirstName } from '../lib/notifications.js'
 
 export const asksRouter = Router()
 
@@ -269,6 +270,21 @@ asksRouter.post('/seen', requireAuth, async (req, res) => {
   }
 })
 
+// ── Fetch a single ask (deep-linking from a notification) ────────────────────
+asksRouter.get('/:id', requireAuth, async (req, res) => {
+  try {
+    if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
+    const askR = await supabase.from('user_asks').select('*').eq('id', req.params.id).maybeSingle()
+    if (askR.error || !askR.data) return res.status(404).json({ error: 'Ask not found' })
+
+    const [hydrated] = await hydrateAsks([askR.data as AskRow], req.appUserId)
+    const [withAuthor] = await attachAuthors([hydrated])
+    return res.json({ ask: withAuthor })
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+  }
+})
+
 // ── Edit own ask ─────────────────────────────────────────────────────────────
 asksRouter.patch('/:id', requireAuth, async (req, res) => {
   try {
@@ -375,7 +391,7 @@ asksRouter.post('/:id/replies', requireAuth, async (req, res) => {
     if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
 
     // Confirm ask exists
-    const askExists = await supabase.from('user_asks').select('id').eq('id', req.params.id).maybeSingle()
+    const askExists = await supabase.from('user_asks').select('id, user_id').eq('id', req.params.id).maybeSingle()
     if (askExists.error || !askExists.data) return res.status(404).json({ error: 'Ask not found' })
 
     const insert = await supabase
@@ -386,6 +402,20 @@ asksRouter.post('/:id/replies', requireAuth, async (req, res) => {
     if (insert.error || !insert.data) return res.status(500).json({ error: insert.error?.message ?? 'Insert failed' })
 
     const me = await supabase.from('users').select('id, full_name, username, avatar_url').eq('id', req.appUserId).maybeSingle()
+
+    if (askExists.data.user_id !== req.appUserId) {
+      const replierName = await getUserFirstName(req.appUserId)
+      void createNotification({
+        userId: askExists.data.user_id,
+        actorId: req.appUserId,
+        type: 'ask_reply',
+        title: `${replierName} replied to your ask`,
+        body: parsed.data.body,
+        entityType: 'ask',
+        entityId: req.params.id,
+      })
+    }
+
     return res.json({ reply: { ...insert.data, author: me.data ?? null } })
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })

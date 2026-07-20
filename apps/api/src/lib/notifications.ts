@@ -7,6 +7,7 @@ export const NOTIFICATION_TYPES = [
   'message',
   'event_rsvp',
   'job_referral_request',
+  'ask_reply',
 ] as const
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number]
@@ -119,6 +120,8 @@ export function entityUrl(entityType: string, entityId: string): string | undefi
       return `/events`
     case 'job':
       return `/jobs?job=${entityId}`
+    case 'ask':
+      return `/asks?ask=${entityId}`
     default:
       return undefined
   }

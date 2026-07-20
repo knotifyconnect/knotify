@@ -34,7 +34,7 @@ type Request = { id: string; peer: Peer }
 type NotificationActor = { id: string; full_name: string; username: string; avatar_url: string | null }
 type NotificationItem = {
   id: string
-  type: 'connection_request' | 'connection_accepted' | 'message' | 'event_rsvp'
+  type: 'connection_request' | 'connection_accepted' | 'message' | 'event_rsvp' | 'job_referral_request' | 'ask_reply'
   title: string
   body: string | null
   url: string | null
@@ -49,6 +49,8 @@ const NOTIFICATION_ICONS: Record<NotificationItem['type'], typeof UserPlus> = {
   connection_accepted: UserRoundPlus,
   message: MessageSquare,
   event_rsvp: CalendarCheck,
+  job_referral_request: Briefcase,
+  ask_reply: MessageCircle,
 }
 
 function timeAgo(iso: string): string {
