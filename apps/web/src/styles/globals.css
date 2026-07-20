@@ -190,6 +190,17 @@ body {
     display: none !important;
   }
 
+  /* The tab bar and the message composer are separate position:fixed,
+     bottom:0 elements. On Android, opening the keyboard resizes the visual
+     viewport and both recompute their "bottom" independently — they can
+     desync mid-transition, landing the tab bar on top of the keyboard
+     instead of staying below the composer. Removing it outright while a
+     thread is open (same signal already used above) sidesteps the whole
+     class of fixed-position-vs-keyboard bugs instead of chasing the sync. */
+  body[data-message-thread-open='true'] .k-tab-bar {
+    display: none !important;
+  }
+
   /* The shell already names the active page. These rules keep the page-level
      voice and primary action, without spending a second full hero on context. */
   .k-relationship-home-page .k-desk-header-row {
