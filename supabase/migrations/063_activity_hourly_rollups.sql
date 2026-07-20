@@ -90,8 +90,11 @@ on conflict (bucket_start, user_id, session_key) do nothing;
 
 -- Aggregate inside PostgreSQL so a year view returns a few dozen compact
 -- buckets instead of transferring every user-hour row through the API.
+drop function if exists public.get_admin_activity_analytics(timestamptz, timestamptz, timestamptz, text, text);
+
 create or replace function public.get_admin_activity_analytics(
   p_previous_start timestamptz,
+  p_previous_end timestamptz,
   p_current_start timestamptz,
   p_end timestamptz,
   p_resolution text,
@@ -115,7 +118,7 @@ begin
   ), current_rows as (
     select * from scoped where bucket_start >= p_current_start
   ), previous_rows as (
-    select * from scoped where bucket_start < p_current_start
+    select * from scoped where bucket_start < p_previous_end
   ), point_rows as (
     select
       case p_resolution
@@ -204,5 +207,5 @@ begin
 end;
 $$;
 
-revoke all on function public.get_admin_activity_analytics(timestamptz, timestamptz, timestamptz, text, text) from public;
-grant execute on function public.get_admin_activity_analytics(timestamptz, timestamptz, timestamptz, text, text) to service_role;
+revoke all on function public.get_admin_activity_analytics(timestamptz, timestamptz, timestamptz, timestamptz, text, text) from public;
+grant execute on function public.get_admin_activity_analytics(timestamptz, timestamptz, timestamptz, timestamptz, text, text) to service_role;

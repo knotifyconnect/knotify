@@ -245,10 +245,14 @@ function monthStartInZone(now: Date, timeZone: string, offsetMonths = 0) {
 }
 
 function activityTrendWindows(period: z.infer<typeof activityTrendPeriodSchema>, now: Date, timeZone: string) {
-  if (period === 'day') return { currentStart: reportDayStart(now, timeZone), previousStart: reportDayStart(now, timeZone, -1), resolution: 'hour' as const }
-  if (period === 'week') return { currentStart: reportDayStart(now, timeZone, -6), previousStart: reportDayStart(now, timeZone, -13), resolution: 'day' as const }
-  if (period === 'month') return { currentStart: reportDayStart(now, timeZone, -29), previousStart: reportDayStart(now, timeZone, -59), resolution: 'day' as const }
-  return { currentStart: monthStartInZone(now, timeZone, -11), previousStart: monthStartInZone(now, timeZone, -23), resolution: 'month' as const }
+  const base = period === 'day'
+    ? { currentStart: reportDayStart(now, timeZone), previousStart: reportDayStart(now, timeZone, -1), resolution: 'hour' as const }
+    : period === 'week'
+      ? { currentStart: reportDayStart(now, timeZone, -6), previousStart: reportDayStart(now, timeZone, -13), resolution: 'day' as const }
+      : period === 'month'
+        ? { currentStart: reportDayStart(now, timeZone, -29), previousStart: reportDayStart(now, timeZone, -59), resolution: 'day' as const }
+        : { currentStart: monthStartInZone(now, timeZone, -11), previousStart: monthStartInZone(now, timeZone, -23), resolution: 'month' as const }
+  return { ...base, previousEnd: new Date(base.previousStart.getTime() + (now.getTime() - base.currentStart.getTime())) }
 }
 
 function activityAggregate(rows: ActivityTrendRow[]) {
@@ -295,7 +299,7 @@ adminPanelRouter.get('/activity-trends', async (req, res) => {
   const period = parsed.data
   const now = new Date()
   const timeZone = dashboardTimeZone()
-  const { currentStart, previousStart, resolution } = activityTrendWindows(period, now, timeZone)
+  const { currentStart, previousStart, previousEnd, resolution } = activityTrendWindows(period, now, timeZone)
   const schema = await getProductSchemaCapabilitiesSafe('admin-panel/activity-trends')
   if (!schema.activitySessions) return res.json({ available: false, period, generatedAt: now.toISOString(), timeZone })
 
@@ -306,6 +310,7 @@ adminPanelRouter.get('/activity-trends', async (req, res) => {
     if (schema.activityHourly) {
       const result = await supabase.rpc('get_admin_activity_analytics', {
         p_previous_start: previousStart.toISOString(),
+        p_previous_end: previousEnd.toISOString(),
         p_current_start: currentStart.toISOString(),
         p_end: now.toISOString(),
         p_resolution: resolution,
@@ -337,7 +342,7 @@ adminPanelRouter.get('/activity-trends', async (req, res) => {
     }
 
     const currentRows = rows.filter(row => new Date(row.bucket_start) >= currentStart && new Date(row.bucket_start) <= now)
-    const previousRows = rows.filter(row => new Date(row.bucket_start) >= previousStart && new Date(row.bucket_start) < currentStart)
+    const previousRows = rows.filter(row => new Date(row.bucket_start) >= previousStart && new Date(row.bucket_start) < previousEnd)
     const pointStarts: Date[] = []
     if (resolution === 'hour') {
       for (let hour = 0; hour < 24; hour++) pointStarts.push(new Date(currentStart.getTime() + hour * 3600_000))
@@ -408,7 +413,7 @@ adminPanelRouter.get('/activity-trends', async (req, res) => {
       generatedAt: now.toISOString(),
       timeZone,
       source,
-      window: { start: currentStart.toISOString(), end: now.toISOString(), previousStart: previousStart.toISOString(), previousEnd: currentStart.toISOString() },
+      window: { start: currentStart.toISOString(), end: now.toISOString(), previousStart: previousStart.toISOString(), previousEnd: previousEnd.toISOString() },
       summary: {
         current: compact?.current ? normalizedActivityTotals(compact.current) : activityAggregate(currentRows),
         previous: compact?.previous ? normalizedActivityTotals(compact.previous) : activityAggregate(previousRows),
@@ -1504,7 +1509,7 @@ adminPanelRouter.get('/kpis', async (req, res) => {
     const [
       users, betaRecent, messagesRecent, connectionsCreated, connectionsAcceptedRecent,
       conversationsRecent, rsvpsRecent, questsRecent, checkinsRecent, gigRequestsRecent,
-      feedbackRecent, invitesRecent, eventsRecent, activitySessions, activityHourlyRecent,
+      feedbackRecent, invitesRecent, eventsRecent, activitySessions, activityHourlySummary,
       betaTotal, betaPending, betaApproved, betaRejected,
       workFeedback, workBugs, workGigs, workRoles,
       totalMessages, totalConnectionsAccepted, totalConversations,
@@ -1527,8 +1532,18 @@ adminPanelRouter.get('/kpis', async (req, res) => {
         ? fetchAllDashboardRows<any>('app activity sessions', () => supabase.from('user_activity_sessions').select('user_id, started_at, last_seen_at, active_seconds, is_active, page_views, last_path, device_type').gte('last_seen_at', rangeStart.toISOString()).order('last_seen_at'))
         : Promise.resolve([]),
       productSchema.activityHourly
-        ? fetchAllDashboardRows<any>('recent hourly activity', () => supabase.from('user_activity_hourly').select('bucket_start, user_id, session_key, active_seconds, page_views').gte('bucket_start', yesterdayStart.toISOString()).order('bucket_start'))
-        : Promise.resolve([]),
+        ? supabase.rpc('get_admin_activity_analytics', {
+            p_previous_start: yesterdayStart.toISOString(),
+            p_previous_end: yesterdayComparisonEnd.toISOString(),
+            p_current_start: todayStart.toISOString(),
+            p_end: now.toISOString(),
+            p_resolution: 'hour',
+            p_timezone: timeZone,
+          }).then(result => {
+            if (result.error) throw new Error(`today activity aggregation: ${result.error.message}`)
+            return result.data
+          })
+        : Promise.resolve(null),
       dashboardCount('beta signups total', 'beta_signups'),
       dashboardCount('beta signups pending', 'beta_signups', query => query.eq('status', 'pending')),
       dashboardCount('beta signups approved', 'beta_signups', query => query.eq('status', 'approved')),
@@ -1556,14 +1571,14 @@ adminPanelRouter.get('/kpis', async (req, res) => {
     const completionTotal = users.reduce((sum, user) => sum + accountProfileCompletion(user), 0)
     const sessionsToday = activitySessions.filter(session => inWindow(session.started_at, todayStart, now))
     const sessionsYesterday = activitySessions.filter(session => inWindow(session.started_at, yesterdayStart, yesterdayComparisonEnd))
-    const hourlyToday = activityHourlyRecent.filter(row => inWindow(row.bucket_start, todayStart, now))
-    const hourlyYesterday = activityHourlyRecent.filter(row => inWindow(row.bucket_start, yesterdayStart, yesterdayComparisonEnd))
+    const hourlyToday = activityHourlySummary?.current ? normalizedActivityTotals(activityHourlySummary.current) : null
+    const hourlyYesterday = activityHourlySummary?.previous ? normalizedActivityTotals(activityHourlySummary.previous) : null
     const onlineCutoff = now.getTime() - ONLINE_WINDOW_MS
     const onlineUserIds = new Set(activitySessions.filter(session => session.is_active && new Date(session.last_seen_at).getTime() >= onlineCutoff).map(session => session.user_id))
-    const sessionSecondsToday = (productSchema.activityHourly ? hourlyToday : sessionsToday).reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
-    const sessionSecondsYesterday = (productSchema.activityHourly ? hourlyYesterday : sessionsYesterday).reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
-    const activeSessionsToday = productSchema.activityHourly ? new Set(hourlyToday.map(row => `${row.user_id}:${row.session_key}`)).size : sessionsToday.length
-    const activeSessionsYesterday = productSchema.activityHourly ? new Set(hourlyYesterday.map(row => `${row.user_id}:${row.session_key}`)).size : sessionsYesterday.length
+    const sessionSecondsToday = hourlyToday ? hourlyToday.activeMinutes * 60 : sessionsToday.reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
+    const sessionSecondsYesterday = hourlyYesterday ? hourlyYesterday.activeMinutes * 60 : sessionsYesterday.reduce((sum, session) => sum + (session.active_seconds ?? 0), 0)
+    const activeSessionsToday = hourlyToday?.sessions ?? sessionsToday.length
+    const activeSessionsYesterday = hourlyYesterday?.sessions ?? sessionsYesterday.length
     const usageByUser = new Map<string, { seconds: number; sessions: number; lastSeenAt: string }>()
     for (const session of activitySessions) {
       const usage = usageByUser.get(session.user_id) ?? { seconds: 0, sessions: 0, lastSeenAt: session.last_seen_at }
@@ -1687,8 +1702,8 @@ adminPanelRouter.get('/kpis', async (req, res) => {
         onlineNow: onlineUserIds.size,
         opensToday: sessionsToday.length,
         opensYesterday: sessionsYesterday.length,
-        uniqueUsersToday: new Set((productSchema.activityHourly ? hourlyToday : sessionsToday).map(session => session.user_id)).size,
-        uniqueUsersYesterday: new Set((productSchema.activityHourly ? hourlyYesterday : sessionsYesterday).map(session => session.user_id)).size,
+        uniqueUsersToday: hourlyToday?.activeUsers ?? new Set(sessionsToday.map(session => session.user_id)).size,
+        uniqueUsersYesterday: hourlyYesterday?.activeUsers ?? new Set(sessionsYesterday.map(session => session.user_id)).size,
         totalMinutesToday: Math.round(sessionSecondsToday / 60),
         totalMinutesYesterday: Math.round(sessionSecondsYesterday / 60),
         averageSessionMinutesToday: activeSessionsToday ? Math.round(sessionSecondsToday / activeSessionsToday / 6) / 10 : 0,
