@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { AppSidebar } from '../components/layout/AppSidebar'
 import { FeedbackWidget } from '../components/FeedbackWidget'
 import { GlobalCompanionWidget } from '../components/GlobalCompanionWidget'
+import { InstallAppBanner } from '../components/InstallAppBanner'
 import { TourProvider, AutoStartTour } from '../components/tour/TourProvider'
 import { TourOverlay } from '../components/tour/TourOverlay'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -68,6 +69,7 @@ export function AppLayout({ children }: PropsWithChildren) {
       </main>
       <GlobalCompanionWidget />
       <FeedbackWidget />
+      <InstallAppBanner />
       <AutoStartTour />
       <TourOverlay />
     </div>

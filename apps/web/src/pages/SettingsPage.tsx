@@ -13,7 +13,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LEGAL } from '../lib/legal'
-import { ChevronRight, LogOut, Mail, Lock, Bell, ShieldCheck, Volume2, HelpCircle } from 'lucide-react'
+import { ChevronRight, LogOut, Mail, Lock, Bell, ShieldCheck, Volume2, HelpCircle, Download, Share, Smartphone } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useSessionStore } from '../store/session'
 import { getConsent, setConsent } from '../lib/analyticsConsent'
@@ -22,6 +22,7 @@ import { DeskHeader, T, Toggle } from '../lib/desk'
 import { KBtn } from '../lib/knotify'
 import { useTour } from '../components/tour/TourProvider'
 import { getPushSubscriptionState, subscribeToPush, unsubscribeFromPush } from '../lib/push'
+import { useInstallPrompt } from '../hooks/useInstallPrompt'
 
 function Section({ icon, title, description, children }: { icon: React.ReactNode; title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -36,7 +37,7 @@ function Section({ icon, title, description, children }: { icon: React.ReactNode
   )
 }
 
-function Row({ label, sub, right, onClick }: { label: string; sub?: string; right?: React.ReactNode; onClick?: () => void }) {
+function Row({ label, sub, right, onClick }: { label: string; sub?: React.ReactNode; right?: React.ReactNode; onClick?: () => void }) {
   const interactive = Boolean(onClick)
   return (
     <div
@@ -69,6 +70,8 @@ export function SettingsPage() {
   const [pushState, setPushState] = useState<'unsupported' | 'default' | 'denied' | 'granted-subscribed' | 'granted-unsubscribed'>('default')
   const [pushBusy, setPushBusy] = useState(false)
   const tour = useTour()
+  const { isStandalone, isIOS, canPromptInstall, promptInstall } = useInstallPrompt()
+  const [installResult, setInstallResult] = useState<'accepted' | 'dismissed' | null>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? '')).catch(() => {})
@@ -120,6 +123,11 @@ export function SettingsPage() {
     if (next) void import('../lib/analytics').then((m) => m.initAnalytics()).catch(() => {})
   }
 
+  async function handleInstallClick() {
+    const outcome = await promptInstall()
+    if (outcome !== 'unavailable') setInstallResult(outcome)
+  }
+
   function requestDeletion() {
     const subject = encodeURIComponent('Account deletion request')
     const body = encodeURIComponent(`Please delete my knotify account associated with ${email || '(your email)'}.`)
@@ -153,13 +161,32 @@ export function SettingsPage() {
           />
         </Section>
 
+        <Section icon={<Smartphone size={17} />} title="Get the app">
+          {isStandalone ? (
+            <Row label="Installed" sub="You're using knotify as an app on this device." />
+          ) : isIOS ? (
+            <Row
+              label="Add to Home Screen"
+              sub={<>Tap <Share size={12} style={{ verticalAlign: '-1px', display: 'inline' }} /> Share in Safari, then "Add to Home Screen" — this also turns on notifications, which don't work in a regular Safari tab.</>}
+            />
+          ) : canPromptInstall ? (
+            <Row
+              label="Install knotify"
+              sub={installResult === 'dismissed' ? 'Maybe later — you can install any time from here.' : 'Full-screen app experience and notifications, no app store needed.'}
+              right={<KBtn variant="signal" size="sm" onClick={() => void handleInstallClick()}><Download size={13} /> Install</KBtn>}
+            />
+          ) : (
+            <Row label="Install knotify" sub="Look for an install icon in your browser's address bar, or the browser menu." />
+          )}
+        </Section>
+
         <Section icon={<Bell size={17} />} title="Preferences">
           <Row
             label="Sound effects"
             sub="Play a short sound when you complete a quest or earn credibility."
             right={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Volume2 size={15} color={sound ? T.verd : T.inkFaint} /><Toggle on={sound} onClick={toggleSound} /></span>}
           />
-          {pushState !== 'unsupported' && (
+          {pushState !== 'unsupported' ? (
             <Row
               label="Browser notifications"
               sub={
@@ -169,7 +196,12 @@ export function SettingsPage() {
               }
               right={pushState === 'denied' ? undefined : <Toggle on={pushState === 'granted-subscribed'} onClick={pushBusy ? undefined : () => void togglePush()} />}
             />
-          )}
+          ) : isIOS && !isStandalone ? (
+            <Row
+              label="Browser notifications"
+              sub="Not available in a regular Safari tab on iOS — add knotify to your Home Screen above first, then this turns on automatically."
+            />
+          ) : null}
         </Section>
 
         <Section icon={<HelpCircle size={17} />} title="Help">
