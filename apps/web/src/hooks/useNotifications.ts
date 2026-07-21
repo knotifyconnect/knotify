@@ -16,7 +16,9 @@ type NotificationRow = {
 }
 
 const NOTIFICATIONS_UNREAD_PATH = '/api/notifications/unread-count'
-const NOTIFICATIONS_VISIBLE_POLL_MS = 2_500
+// Realtime is the primary path (instant on INSERT/UPDATE below); this poll is
+// only a repair loop for missed events, so it doesn't need to be sub-second.
+const NOTIFICATIONS_VISIBLE_POLL_MS = 30_000
 
 const listeners = new Set<() => void>()
 let snapshot = 0

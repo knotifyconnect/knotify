@@ -9,7 +9,9 @@ type MessageUnreadResponse = {
 
 const MESSAGE_UNREAD_TOTAL_EVENT = 'knotify:message-unread-total'
 const MESSAGE_UNREAD_PATH = '/api/conversations/unread'
-const MESSAGE_UNREAD_VISIBLE_POLL_MS = 2_500
+// Realtime is the primary path (instant on any `messages` change below); this
+// poll is only a repair loop for missed events, so it doesn't need to be sub-second.
+const MESSAGE_UNREAD_VISIBLE_POLL_MS = 30_000
 const LOCAL_CLEAR_RECONCILE_GRACE_MS = 1_250
 
 const listeners = new Set<() => void>()
