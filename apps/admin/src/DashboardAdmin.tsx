@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { api } from './api'
 import { LiveUsersPanel, type LiveUsersSnapshot } from './LiveUsersPanel'
-import { ActivityAnalyticsPanel, MetricInsightDrawer, type ActivityPeriod, type ActivityTrendSnapshot, type MetricInsight } from './ActivityAnalyticsPanel'
+import { ActivityAnalyticsPanel, type ActivityPeriod, type ActivityTrendSnapshot, type MetricInsight } from './ActivityAnalyticsPanel'
+import { KpiInsightDrawer } from './KpiInsightDrawer'
+import type { DashboardActivity, DashboardKpis, DashboardPoint } from './dashboardTypes'
 
 const C = {
   signal: '#D8442B', ink: '#1a1410', inkMuted: '#6b5f55', inkFaint: '#a09287',
@@ -13,42 +15,6 @@ const card: CSSProperties = { background: C.white, border: `0.5px solid ${C.rule
 const ghostButton: CSSProperties = {
   padding: '7px 12px', borderRadius: 7, border: `0.5px solid ${C.rule}`, background: 'transparent',
   color: C.inkMuted, fontSize: 12, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif',
-}
-
-type Point = { date: string; count: number }
-type Activity = {
-  messages: number; connectionsRequested: number; connectionsAccepted: number; conversations: number
-  eventRsvps: number; questCompletions: number; cafeCheckins: number; gigRequests: number
-  feedback: number; invites: number; eventsCreated: number; uniqueContributors: number
-}
-type Kpis = {
-  generatedAt: string
-  context: { timeZone: string; todayStartedAt: string; comparisonEndsAt: string; comparisonLabel: string }
-  users: {
-    total: number; newToday: number; newYesterday: number; new7d: number; previous7d: number
-    activeToday: number; active7d: number; returningToday: number; newActiveToday: number
-    dormant30d: number; onboardingComplete: number; onboardingRate: number; averageProfileCompletion: number
-    invited: number; organic: number; premium: number; hr: number; international: number
-    personas: { label: string; count: number }[]; locations: { label: string; count: number }[]
-  }
-  latestUsers: {
-    id: string; fullName: string; username: string; avatarUrl: string | null; persona: string | null
-    locationCity: string | null; createdAt: string; lastSeenAt: string | null; source: 'Invite' | 'Organic'
-    profileCompletion: number; onboardingComplete: boolean
-  }[]
-  growth: { rangeDays: number; usersPerDay: Point[]; signupsPerDay: Point[]; messagesPerDay: Point[] }
-  engagement: {
-    available: boolean
-    onlineNow: number; opensToday: number; opensYesterday: number; uniqueUsersToday: number; uniqueUsersYesterday: number
-    totalMinutesToday: number; totalMinutesYesterday: number; averageSessionMinutesToday: number; averageSessionMinutesYesterday: number
-    sessionsPerDay: Point[]; minutesPerDay: Point[]
-    topUsers: { id: string; fullName: string; username: string | null; minutes: number; sessions: number; lastSeenAt: string; online: boolean }[]
-  }
-  today: Activity
-  yesterday: Activity
-  betaFunnel: { total: number; pending: number; approved: number; rejected: number }
-  workQueue: { total: number; betaPending: number; feedbackOpen: number; bugsOpen: number; gigRequestsPending: number; roleRequestsPending: number }
-  platform: { messagesTotal: number; connectionsAccepted: number; conversationsTotal: number; upcomingEvents: number; openGigs: number; activeCafes: number; publishedQuests: number }
 }
 
 const MetricInsightContext = createContext<((insight: MetricInsight) => void) | null>(null)
@@ -84,12 +50,12 @@ function Delta({ current, previous, label = 'vs yesterday' }: { current: number;
   return <span style={{ fontSize: 11.5, color }}>{text}</span>
 }
 
-function MetricCard({ label, value, detail, current, previous, color, large = false }: {
-  label: string; value: number | string; detail?: ReactNode; current?: number; previous?: number; color?: string; large?: boolean
+function MetricCard({ id, label, value, detail, current, previous, color, large = false }: {
+  id: string; label: string; value: number | string; detail?: ReactNode; current?: number; previous?: number; color?: string; large?: boolean
 }) {
   const openInsight = useContext(MetricInsightContext)
   return (
-    <button type="button" onClick={() => openInsight?.({ label, value, detail, current, previous, color })} style={{ ...card, padding: large ? '21px 22px' : '17px 18px', minWidth: 0, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer', transition: 'transform .15s ease, box-shadow .15s ease' }} title={`Open detailed ${label} insight`}>
+    <button type="button" onClick={() => openInsight?.({ id, label, value, detail, current, previous, color })} style={{ ...card, padding: large ? '21px 22px' : '17px 18px', minWidth: 0, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer', transition: 'transform .15s ease, box-shadow .15s ease' }} title={`Open detailed ${label} insight`}>
       <div style={{ color: C.inkFaint, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.075em', marginBottom: 9 }}>{label}</div>
       <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: large ? 36 : 29, lineHeight: 1, letterSpacing: '-0.03em', color: color ?? C.ink }}>{value}</div>
       <div style={{ marginTop: 9, minHeight: 17, fontSize: 11.5, color: C.inkFaint }}>
@@ -114,7 +80,7 @@ function RangePicker({ value, onChange }: { value: number; onChange: (value: num
   )
 }
 
-function TrendChart({ series }: { series: { label: string; color: string; points: Point[] }[] }) {
+function TrendChart({ series }: { series: { label: string; color: string; points: DashboardPoint[] }[] }) {
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const width = 760, height = 190, left = 30, right = 10, top = 10, bottom = 25
@@ -124,7 +90,7 @@ function TrendChart({ series }: { series: { label: string; color: string; points
   const count = Math.max(1, ...series.map(item => item.points.length))
   const x = (index: number) => left + (index / Math.max(1, count - 1)) * (width - left - right)
   const y = (value: number) => top + (1 - value / max) * (height - top - bottom)
-  const path = (points: Point[]) => points.map((point, index) => `${index ? 'L' : 'M'}${x(index).toFixed(1)},${y(point.count).toFixed(1)}`).join(' ')
+  const path = (points: DashboardPoint[]) => points.map((point, index) => `${index ? 'L' : 'M'}${x(index).toFixed(1)},${y(point.count).toFixed(1)}`).join(' ')
   const dates = series[0]?.points ?? []
   const middle = Math.floor((dates.length - 1) / 2)
   return (
@@ -169,11 +135,11 @@ function TrendChart({ series }: { series: { label: string; color: string; points
   )
 }
 
-function Breakdown({ title, rows, total }: { title: string; rows: { label: string; count: number }[]; total: number }) {
+function Breakdown({ id, title, rows, total }: { id: string; title: string; rows: { label: string; count: number }[]; total: number }) {
   const max = Math.max(1, ...rows.map(row => row.count))
   const openInsight = useContext(MetricInsightContext)
   return (
-    <button type="button" onClick={() => openInsight?.({ label: title, value: total, detail: `${rows.length} visible segments` })} style={{ ...card, padding: 18, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer' }} title={`Open detailed ${title} insight`}>
+    <button type="button" onClick={() => openInsight?.({ id, label: title, value: total, detail: `${rows.length} visible segments` })} style={{ ...card, padding: 18, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer' }} title={`Open detailed ${title} insight`}>
       <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 15 }}>{title}</div>
       <div style={{ display: 'grid', gap: 11 }}>
         {rows.map(row => (
@@ -202,7 +168,7 @@ function Initials({ name, src }: { name: string; src: string | null }) {
   )
 }
 
-function LatestMembers({ users, timeZone }: { users: Kpis['latestUsers']; timeZone: string }) {
+function LatestMembers({ users, timeZone }: { users: DashboardKpis['latestUsers']; timeZone: string }) {
   const formatter = new Intl.DateTimeFormat('en-GB', { timeZone, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
   return (
     <div style={{ ...card, overflow: 'hidden' }}>
@@ -241,11 +207,11 @@ function LatestMembers({ users, timeZone }: { users: Kpis['latestUsers']; timeZo
   )
 }
 
-function MostEngagedMembers({ users }: { users: Kpis['engagement']['topUsers'] }) {
+function MostEngagedMembers({ users }: { users: DashboardKpis['engagement']['topUsers'] }) {
   const maxMinutes = Math.max(1, ...users.map(user => user.minutes))
   const openInsight = useContext(MetricInsightContext)
   return (
-    <button type="button" onClick={() => openInsight?.({ label: 'Most engaged members', value: users.length, detail: 'Members ranked by foreground active time in the selected range' })} style={{ ...card, padding: 18, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer' }} title="Open detailed Most engaged members insight">
+    <button type="button" onClick={() => openInsight?.({ id: 'engaged-members', label: 'Most engaged members', value: users.length, detail: 'Members ranked by foreground active time in the selected range' })} style={{ ...card, padding: 18, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer' }} title="Open detailed Most engaged members insight">
       <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 13 }}>Most engaged members · selected range</div>
       <div style={{ display: 'grid', gap: 10 }}>
         {users.map((user, index) => (
@@ -263,18 +229,18 @@ function MostEngagedMembers({ users }: { users: Kpis['engagement']['topUsers'] }
   )
 }
 
-function WorkQueue({ queue }: { queue: Kpis['workQueue'] }) {
+function WorkQueue({ queue }: { queue: DashboardKpis['workQueue'] }) {
   const openInsight = useContext(MetricInsightContext)
   const rows = [
-    ['Beta approvals', queue.betaPending, 'Signups waiting for a decision'],
-    ['Open feedback', queue.feedbackOpen, `${queue.bugsOpen} marked as bugs`],
-    ['Gig requests', queue.gigRequestsPending, 'Providers need to respond'],
-    ['Role requests', queue.roleRequestsPending, 'HR or company access requests'],
+    ['queue-beta', 'Beta approvals', queue.betaPending, 'Signups waiting for a decision'],
+    ['queue-feedback', 'Open feedback', queue.feedbackOpen, `${queue.bugsOpen} marked as bugs`],
+    ['queue-gigs', 'Gig requests', queue.gigRequestsPending, 'Providers need to respond'],
+    ['queue-roles', 'Role requests', queue.roleRequestsPending, 'HR or company access requests'],
   ] as const
   return (
     <div style={{ ...card, overflow: 'hidden' }}>
-      {rows.map(([label, value, note], index) => (
-        <button type="button" key={label} onClick={() => openInsight?.({ label, value, detail: note })} style={{ padding: '14px 16px', width: '100%', display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto', alignItems: 'center', gap: 12, border: 'none', borderTop: index ? `0.5px solid ${C.rule}` : undefined, background: 'transparent', textAlign: 'left', cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }} title={`Open detailed ${label} insight`}>
+      {rows.map(([id, label, value, note], index) => (
+        <button type="button" key={label} onClick={() => openInsight?.({ id, label, value, detail: note })} style={{ padding: '14px 16px', width: '100%', display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto', alignItems: 'center', gap: 12, border: 'none', borderTop: index ? `0.5px solid ${C.rule}` : undefined, background: 'transparent', textAlign: 'left', cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }} title={`Open detailed ${label} insight`}>
           <div><div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{label}</div><div style={{ fontSize: 11.5, color: C.inkFaint, marginTop: 2 }}>{note}</div></div>
           <span style={{ minWidth: 30, height: 30, padding: '0 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', background: value ? 'rgba(216,68,43,.10)' : C.paperSoft, color: value ? C.signal : C.inkFaint, fontWeight: 700, fontSize: 12 }}>{value}</span>
         </button>
@@ -283,13 +249,13 @@ function WorkQueue({ queue }: { queue: Kpis['workQueue'] }) {
   )
 }
 
-function BetaFunnel({ funnel }: { funnel: Kpis['betaFunnel'] }) {
+function BetaFunnel({ funnel }: { funnel: DashboardKpis['betaFunnel'] }) {
   const openInsight = useContext(MetricInsightContext)
   const rows = [
     ['Approved', funnel.approved, C.verd], ['Pending', funnel.pending, C.ochre], ['Rejected', funnel.rejected, C.signal],
   ] as const
   return (
-    <button type="button" onClick={() => openInsight?.({ label: 'Beta waitlist', value: funnel.total, detail: `${funnel.pending} pending · ${funnel.approved} approved · ${funnel.rejected} rejected` })} style={{ ...card, padding: 18, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer' }} title="Open detailed Beta waitlist insight">
+    <button type="button" onClick={() => openInsight?.({ id: 'beta-waitlist', label: 'Beta waitlist', value: funnel.total, detail: `${funnel.pending} pending · ${funnel.approved} approved · ${funnel.rejected} rejected` })} style={{ ...card, padding: 18, width: '100%', textAlign: 'left', fontFamily: 'IBM Plex Sans, sans-serif', cursor: 'pointer' }} title="Open detailed Beta waitlist insight">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}><span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Beta waitlist</span><span style={{ fontSize: 12, color: C.inkMuted }}>{funnel.total} total</span></div>
       <div style={{ height: 12, display: 'flex', overflow: 'hidden', borderRadius: 999, background: C.paperSoft, marginBottom: 14 }}>
         {rows.map(([label, value, color]) => <div key={label} title={`${label}: ${value}`} style={{ width: `${pct(value, funnel.total)}%`, background: color }} />)}
@@ -302,7 +268,7 @@ function BetaFunnel({ funnel }: { funnel: Kpis['betaFunnel'] }) {
   )
 }
 
-function exportDashboard(kpis: Kpis) {
+function exportDashboard(kpis: DashboardKpis) {
   const rows = [
     ['section', 'metric', 'value'],
     ['Today', 'New members', kpis.users.newToday], ['Today', 'Active members', kpis.users.activeToday],
@@ -327,7 +293,7 @@ function exportDashboard(kpis: Kpis) {
 }
 
 export function DashboardAdmin() {
-  const [kpis, setKpis] = useState<Kpis | null>(null)
+  const [kpis, setKpis] = useState<DashboardKpis | null>(null)
   const [liveUsers, setLiveUsers] = useState<LiveUsersSnapshot | null>(null)
   const [liveError, setLiveError] = useState('')
   const [activityPeriod, setActivityPeriod] = useState<ActivityPeriod>('week')
@@ -342,7 +308,7 @@ export function DashboardAdmin() {
   const load = useCallback(async (selectedRange: number) => {
     setError('')
     try {
-      setKpis(await api.kpis(selectedRange) as Kpis)
+      setKpis(await api.kpis(selectedRange) as DashboardKpis)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Dashboard could not be loaded.')
     } finally {
@@ -405,15 +371,15 @@ export function DashboardAdmin() {
   if (!kpis) return null
 
   const { users, today, yesterday, growth, engagement } = kpis
-  const activityCards: { label: string; key: keyof Activity; detail: string }[] = [
-    { label: 'Messages sent', key: 'messages', detail: 'Chat messages sent by members' },
-    { label: 'Connections made', key: 'connectionsAccepted', detail: 'Requests accepted today' },
-    { label: 'Connection requests', key: 'connectionsRequested', detail: 'New requests between members' },
-    { label: 'Event RSVPs', key: 'eventRsvps', detail: 'Members joining events' },
-    { label: 'Quest completions', key: 'questCompletions', detail: 'Verified progress signals' },
-    { label: 'Gig requests', key: 'gigRequests', detail: 'Requests sent to providers' },
-    { label: 'Café check-ins', key: 'cafeCheckins', detail: 'Member venue activity' },
-    { label: 'New conversations', key: 'conversations', detail: 'Conversation threads started' },
+  const activityCards: { id: string; label: string; key: keyof DashboardActivity; detail: string }[] = [
+    { id: 'activity-messages', label: 'Messages sent', key: 'messages', detail: 'Chat messages sent by members' },
+    { id: 'activity-connections-accepted', label: 'Connections made', key: 'connectionsAccepted', detail: 'Requests accepted today' },
+    { id: 'activity-connections-requested', label: 'Connection requests', key: 'connectionsRequested', detail: 'New requests between members' },
+    { id: 'activity-event-rsvps', label: 'Event RSVPs', key: 'eventRsvps', detail: 'Members joining events' },
+    { id: 'activity-quest-completions', label: 'Quest completions', key: 'questCompletions', detail: 'Verified progress signals' },
+    { id: 'activity-gig-requests', label: 'Gig requests', key: 'gigRequests', detail: 'Requests sent to providers' },
+    { id: 'activity-cafe-checkins', label: 'Café check-ins', key: 'cafeCheckins', detail: 'Member venue activity' },
+    { id: 'activity-conversations', label: 'New conversations', key: 'conversations', detail: 'Conversation threads started' },
   ]
   const timeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: kpis.context.timeZone, hour: '2-digit', minute: '2-digit' })
 
@@ -434,20 +400,20 @@ export function DashboardAdmin() {
       {error && <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, background: 'rgba(216,68,43,.08)', color: C.signal, fontSize: 12 }}>{error} Showing the last successful snapshot.</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginTop: 19 }}>
-        <MetricCard large label="New members" value={users.newToday} current={users.newToday} previous={users.newYesterday} color={C.verd} />
-        <MetricCard large label="Active members" value={users.activeToday} detail={`${users.returningToday} returning · ${users.newActiveToday} new`} />
-        <MetricCard large label="Unique contributors" value={today.uniqueContributors} detail="Members who created, joined, messaged or connected" color={C.blue} />
-        <MetricCard large label="Messages sent" value={today.messages} current={today.messages} previous={yesterday.messages} color={C.signal} />
+        <MetricCard id="new-members" large label="New members" value={users.newToday} current={users.newToday} previous={users.newYesterday} color={C.verd} />
+        <MetricCard id="active-members" large label="Active members" value={users.activeToday} detail={`${users.returningToday} returning · ${users.newActiveToday} new`} />
+        <MetricCard id="unique-contributors" large label="Unique contributors" value={today.uniqueContributors} current={today.uniqueContributors} previous={yesterday.uniqueContributors} detail="Members who created, joined, messaged or connected" color={C.blue} />
+        <MetricCard id="activity-messages" large label="Messages sent" value={today.messages} current={today.messages} previous={yesterday.messages} color={C.signal} />
       </div>
 
       <SectionTitle title="User health" subtitle="Who is joining, activating and coming back" accent={C.verd} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-        <MetricCard label="All members" value={users.total} detail={`${users.new7d} joined in the last 7 days`} />
-        <MetricCard label="Onboarded" value={`${users.onboardingRate}%`} detail={`${users.onboardingComplete} members completed core onboarding`} color={C.verd} />
-        <MetricCard label="Profile quality" value={`${users.averageProfileCompletion}%`} detail="Average completion across member profiles" />
-        <MetricCard label="Active · 7 days" value={users.active7d} detail={`${pct(users.active7d, users.total)}% of all members`} color={C.blue} />
-        <MetricCard label="Dormant · 30 days" value={users.dormant30d} detail="Not seen in the last 30 days" color={users.dormant30d ? C.ochre : C.verd} />
-        <MetricCard label="Invite acquisition" value={`${pct(users.invited, users.total)}%`} detail={`${users.invited} invited · ${users.organic} organic`} />
+        <MetricCard id="all-members" label="All members" value={users.total} detail={`${users.new7d} joined in the last 7 days`} />
+        <MetricCard id="onboarding" label="Onboarded" value={`${users.onboardingRate}%`} detail={`${users.onboardingComplete} members completed core onboarding`} color={C.verd} />
+        <MetricCard id="profile-quality" label="Profile quality" value={`${users.averageProfileCompletion}%`} detail="Average completion across member profiles" />
+        <MetricCard id="active-7d" label="Active · 7 days" value={users.active7d} detail={`${pct(users.active7d, users.total)}% of all members`} color={C.blue} />
+        <MetricCard id="dormant-30d" label="Dormant · 30 days" value={users.dormant30d} detail="Not seen in the last 30 days" color={users.dormant30d ? C.ochre : C.verd} />
+        <MetricCard id="invite-acquisition" label="Invite acquisition" value={`${pct(users.invited, users.total)}%`} detail={`${users.invited} invited · ${users.organic} organic`} />
       </div>
 
       <SectionTitle title="Live usage" subtitle="First-party session telemetry: app opens, active time and who is using Knotify now" accent={C.blue} />
@@ -458,19 +424,19 @@ export function DashboardAdmin() {
       ) : <>
         <LiveUsersPanel snapshot={liveUsers} error={liveError} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-          <MetricCard label="Online now" value={liveUsers?.users.length ?? engagement.onlineNow} detail="Live heartbeat · refreshes every 3 seconds" color={C.verd} />
-          <MetricCard label="App opens today" value={engagement.opensToday} current={engagement.opensToday} previous={engagement.opensYesterday} />
-          <MetricCard label="Unique users today" value={engagement.uniqueUsersToday} current={engagement.uniqueUsersToday} previous={engagement.uniqueUsersYesterday} color={C.blue} />
-          <MetricCard label="Active minutes today" value={engagement.totalMinutesToday} current={engagement.totalMinutesToday} previous={engagement.totalMinutesYesterday} />
-          <MetricCard label="Avg. session" value={`${engagement.averageSessionMinutesToday}m`} detail="Foreground active time per app open" />
+          <MetricCard id="online-now" label="Online now" value={liveUsers?.users.length ?? engagement.onlineNow} detail="Live heartbeat · refreshes every 3 seconds" color={C.verd} />
+          <MetricCard id="app-opens" label="App opens today" value={engagement.opensToday} current={engagement.opensToday} previous={engagement.opensYesterday} />
+          <MetricCard id="unique-users-today" label="Unique users today" value={engagement.uniqueUsersToday} current={engagement.uniqueUsersToday} previous={engagement.uniqueUsersYesterday} color={C.blue} />
+          <MetricCard id="active-minutes-today" label="Active minutes today" value={engagement.totalMinutesToday} current={engagement.totalMinutesToday} previous={engagement.totalMinutesYesterday} />
+          <MetricCard id="average-session" label="Avg. session" value={`${engagement.averageSessionMinutesToday}m`} current={engagement.averageSessionMinutesToday} previous={engagement.averageSessionMinutesYesterday} detail="Foreground active time per app open" />
         </div>
         <ActivityAnalyticsPanel data={activityTrends} period={activityPeriod} loading={activityLoading} error={activityError} onPeriodChange={setActivityPeriod} onInsight={setSelectedInsight} />
         <div style={{ marginTop: 12 }}><MostEngagedMembers users={engagement.topUsers} /></div>
       </>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginTop: 12 }}>
-        <Breakdown title="Members by persona" rows={users.personas} total={users.total} />
-        <Breakdown title="Members by location" rows={users.locations} total={users.total} />
+        <Breakdown id="members-by-persona" title="Members by persona" rows={users.personas} total={users.total} />
+        <Breakdown id="members-by-location" title="Members by location" rows={users.locations} total={users.total} />
       </div>
 
       <SectionTitle title="Latest members" subtitle="The newest accounts and whether they made it through onboarding" />
@@ -478,7 +444,7 @@ export function DashboardAdmin() {
 
       <SectionTitle title="Activity today" subtitle={`Volume compared with ${kpis.context.comparisonLabel}`} accent={C.blue} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-        {activityCards.map(item => <MetricCard key={item.key} label={item.label} value={today[item.key]} current={today[item.key]} previous={yesterday[item.key]} detail={item.detail} />)}
+        {activityCards.map(item => <MetricCard key={item.key} id={item.id} label={item.label} value={today[item.key]} current={today[item.key]} previous={yesterday[item.key]} detail={item.detail} />)}
       </div>
 
       <SectionTitle title="Growth & engagement" subtitle="New users, waitlist demand and messages by Berlin calendar day" accent={C.verd} action={<RangePicker value={range} onChange={value => { setLoading(true); setRange(value) }} />} />
@@ -497,11 +463,11 @@ export function DashboardAdmin() {
       <SectionTitle title="Platform footprint" subtitle="Current inventory and all-time network volume" accent={C.inkMuted} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 10 }}>
         {[
-          ['Messages', kpis.platform.messagesTotal], ['Connections', kpis.platform.connectionsAccepted], ['Conversations', kpis.platform.conversationsTotal],
-          ['Upcoming events', kpis.platform.upcomingEvents], ['Open gigs', kpis.platform.openGigs], ['Active cafés', kpis.platform.activeCafes], ['Published quests', kpis.platform.publishedQuests],
-        ].map(([label, value]) => <MetricCard key={label} label={String(label)} value={value} detail="Current platform inventory or all-time volume" />)}
+          ['platform-messages', 'Messages', kpis.platform.messagesTotal], ['platform-connections', 'Connections', kpis.platform.connectionsAccepted], ['platform-conversations', 'Conversations', kpis.platform.conversationsTotal],
+          ['platform-events', 'Upcoming events', kpis.platform.upcomingEvents], ['platform-gigs', 'Open gigs', kpis.platform.openGigs], ['platform-cafes', 'Active cafés', kpis.platform.activeCafes], ['platform-quests', 'Published quests', kpis.platform.publishedQuests],
+        ].map(([id, label, value]) => <MetricCard key={id} id={String(id)} label={String(label)} value={value} detail="Current platform inventory or all-time volume" />)}
       </div>
-      <MetricInsightDrawer insight={selectedInsight} activity={activityTrends} onClose={() => setSelectedInsight(null)} />
+      <KpiInsightDrawer insight={selectedInsight} kpis={kpis} activity={activityTrends} liveUsers={liveUsers} onClose={() => setSelectedInsight(null)} />
     </div>
     </MetricInsightContext.Provider>
   )
