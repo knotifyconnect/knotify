@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 export type ActivityPeriod = 'day' | 'week' | 'month' | 'year'
 export type ActivityTotals = { activeUsers: number; sessions: number; activeMinutes: number; pageViews: number; heartbeats: number; exits: number }
@@ -20,6 +20,7 @@ export type ActivityTrendSnapshot = {
 }
 
 export type MetricInsight = {
+  id: string
   label: string
   value: number | string
   detail?: ReactNode
@@ -111,10 +112,10 @@ export function ActivityAnalyticsPanel({ data, period, loading, error, onPeriodC
     {error && <div style={{ ...card, padding: 13, color: C.signal, background: 'rgba(216,68,43,.06)', marginBottom: 10, fontSize: 11.5 }}>{error}</div>}
     {loading && !data ? <div style={{ ...card, padding: 35, color: C.inkFaint, textAlign: 'center' }}>Loading activity intelligence…</div> : !data?.available ? <div style={{ ...card, padding: 20, color: C.ochre }}>Activity analytics will appear after the product-activity schema is available.</div> : <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(145px,1fr))', gap: 8, marginBottom: 10 }}>
-        <SummaryTile label="Active people" value={current?.activeUsers ?? 0} previous={previous?.activeUsers ?? 0} color={C.verd} onClick={() => onInsight?.({ label: `Active people · ${period}`, value: current?.activeUsers ?? 0, current: current?.activeUsers, previous: previous?.activeUsers, color: C.verd })} />
-        <SummaryTile label="Sessions" value={current?.sessions ?? 0} previous={previous?.sessions ?? 0} color={C.blue} onClick={() => onInsight?.({ label: `Sessions · ${period}`, value: current?.sessions ?? 0, current: current?.sessions, previous: previous?.sessions, color: C.blue })} />
-        <SummaryTile label="Active minutes" value={current?.activeMinutes ?? 0} previous={previous?.activeMinutes ?? 0} color={C.signal} onClick={() => onInsight?.({ label: `Active minutes · ${period}`, value: current?.activeMinutes ?? 0, current: current?.activeMinutes, previous: previous?.activeMinutes, color: C.signal })} />
-        <SummaryTile label="Page views" value={current?.pageViews ?? 0} previous={previous?.pageViews ?? 0} color={C.ochre} onClick={() => onInsight?.({ label: `Page views · ${period}`, value: current?.pageViews ?? 0, current: current?.pageViews, previous: previous?.pageViews, color: C.ochre })} />
+        <SummaryTile label="Active people" value={current?.activeUsers ?? 0} previous={previous?.activeUsers ?? 0} color={C.verd} onClick={() => onInsight?.({ id: 'analytics-active-people', label: `Active people · ${period}`, value: current?.activeUsers ?? 0, current: current?.activeUsers, previous: previous?.activeUsers, color: C.verd })} />
+        <SummaryTile label="Sessions" value={current?.sessions ?? 0} previous={previous?.sessions ?? 0} color={C.blue} onClick={() => onInsight?.({ id: 'analytics-sessions', label: `Sessions · ${period}`, value: current?.sessions ?? 0, current: current?.sessions, previous: previous?.sessions, color: C.blue })} />
+        <SummaryTile label="Active minutes" value={current?.activeMinutes ?? 0} previous={previous?.activeMinutes ?? 0} color={C.signal} onClick={() => onInsight?.({ id: 'analytics-active-minutes', label: `Active minutes · ${period}`, value: current?.activeMinutes ?? 0, current: current?.activeMinutes, previous: previous?.activeMinutes, color: C.signal })} />
+        <SummaryTile label="Page views" value={current?.pageViews ?? 0} previous={previous?.pageViews ?? 0} color={C.ochre} onClick={() => onInsight?.({ id: 'analytics-page-views', label: `Page views · ${period}`, value: current?.pageViews ?? 0, current: current?.pageViews, previous: previous?.pageViews, color: C.ochre })} />
       </div>
       <ActivityChart points={points} />
       <div style={{ margin: '8px 2px 10px', fontSize: 10.5, color: C.inkFaint }}>{data.peak ? <>Peak: <strong style={{ color: C.ink }}>{data.peak.label}</strong> with {data.peak.activeUsers} active people and {data.peak.activeMinutes} active minutes.</> : 'No peak yet in this period.'}</div>
@@ -126,36 +127,4 @@ export function ActivityAnalyticsPanel({ data, period, loading, error, onPeriodC
       </div>
     </>}
   </section>
-}
-
-const insightNarratives: Record<string, string> = {
-  'Online now': 'Foreground sessions with a heartbeat inside the 35-second freshness window. Hidden or closed tabs are removed immediately when the exit signal arrives.',
-  'App opens today': 'Distinct application sessions opened during the current Berlin business day.',
-  'Unique users today': 'Distinct members with recorded foreground product activity today.',
-  'Active minutes today': 'Foreground time credited in bounded heartbeat intervals; background time is excluded.',
-  'Avg. session': 'Average credited foreground minutes per application session today.',
-  'Active members': 'Members whose authoritative last-seen timestamp falls inside today.',
-  'Dormant · 30 days': 'Members without activity during the last 30 days; useful for re-engagement planning.',
-}
-
-export function MetricInsightDrawer({ insight, activity, onClose }: { insight: MetricInsight | null; activity: ActivityTrendSnapshot | null; onClose: () => void }) {
-  const supporting = useMemo(() => activity?.summary?.current, [activity])
-  if (!insight) return null
-  const comparison = insight.current !== undefined && insight.previous !== undefined ? delta(insight.current, insight.previous) : null
-  const narrative = insightNarratives[insight.label] ?? `A deeper operator view of ${insight.label.toLowerCase()}, with the current value, available comparison, and the surrounding product-activity context.`
-  return <div onMouseDown={event => { if (event.currentTarget === event.target) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(26,20,16,.30)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end' }}>
-    <aside style={{ width: 'min(560px,100%)', height: '100%', overflowY: 'auto', background: C.paper, boxShadow: '-18px 0 50px rgba(20,15,10,.18)' }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 2, padding: '13px 17px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(245,240,232,.94)', backdropFilter: 'blur(10px)', borderBottom: `0.5px solid ${C.rule}` }}><span style={{ color: C.inkFaint, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.09em', fontWeight: 700 }}>Dashboard insight</span><button onClick={onClose} aria-label="Close details" style={{ width: 30, height: 30, borderRadius: 8, border: `0.5px solid ${C.rule}`, background: C.white, color: C.inkMuted, cursor: 'pointer', fontSize: 18 }}>×</button></div>
-      <div style={{ padding: 20 }}>
-        <div style={{ ...card, padding: 19 }}><div style={{ color: C.inkFaint, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>{insight.label}</div><div style={{ marginTop: 10, fontFamily: 'Fraunces, Georgia, serif', fontSize: 42, color: insight.color ?? C.ink }}>{insight.value}</div>{comparison && <div style={{ marginTop: 8, color: comparison.color, fontSize: 11.5 }}>{comparison.text}</div>}<p style={{ color: C.inkMuted, fontSize: 12, lineHeight: 1.6, margin: '14px 0 0' }}>{narrative}</p></div>
-        <div style={{ margin: '16px 0 9px', color: C.ink, fontSize: 12.5, fontWeight: 750 }}>Activity context · {activity?.period ?? 'current period'}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 8 }}>
-          {[['Active people', supporting?.activeUsers ?? 0], ['Sessions', supporting?.sessions ?? 0], ['Active minutes', supporting?.activeMinutes ?? 0], ['Page views', supporting?.pageViews ?? 0]].map(([label, value]) => <div key={label} style={{ ...card, padding: 13 }}><div style={{ color: C.inkFaint, fontSize: 9.5 }}>{label}</div><div style={{ marginTop: 6, color: C.ink, fontFamily: 'Fraunces, Georgia, serif', fontSize: 23 }}>{value}</div></div>)}
-        </div>
-        {activity?.peak && <div style={{ ...card, padding: 14, marginTop: 9, color: C.inkMuted, fontSize: 11.5, lineHeight: 1.5 }}><strong style={{ color: C.ink }}>Peak activity:</strong> {activity.peak.label} · {activity.peak.activeUsers} people · {activity.peak.sessions} sessions · {activity.peak.activeMinutes} minutes.</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginTop: 9 }}><RankedList title="Device context" rows={activity?.devices ?? []} /><RankedList title="Section context" rows={activity?.sections ?? []} /></div>
-        <div style={{ ...card, padding: 14, marginTop: 9 }}><div style={{ color: C.ink, fontWeight: 700, fontSize: 12, marginBottom: 7 }}>How to use this</div><div style={{ color: C.inkMuted, fontSize: 11.5, lineHeight: 1.55 }}>Compare the headline with the prior period, then check peak time, device mix, and sections before making acquisition, re-engagement, content, or operational decisions. Change the Day / Week / Month / Year range on the dashboard to alter this context.</div></div>
-      </div>
-    </aside>
-  </div>
 }
