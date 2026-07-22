@@ -53,17 +53,17 @@ export function AppLayout({ children }: PropsWithChildren) {
         style={
           lockViewport
             ? isMobile
-              ? { position: 'fixed', inset: `${topClearance} 0 0`, overflow: 'clip', overscrollBehavior: 'none', paddingBottom: 0 }
+              ? { paddingBottom: 0 }
               : { height: '100dvh', overflow: 'hidden', paddingBottom: 0 }
             : { paddingBottom: 'max(88px, calc(64px + env(safe-area-inset-bottom)))', paddingTop: isMobile ? `calc(${topClearance} + 8px)` : 32 }
         }
-        className={
+        className={`${
           isMapPage
             ? 'p-0 md:ml-[220px] md:pb-6 md:pl-2 md:pr-2 md:pt-2'
             : isMessagesPage
               ? 'p-0 md:ml-[220px] md:px-8 md:py-8'
               : 'px-4 md:ml-[220px] md:pb-8 md:px-8 md:py-8'
-        }
+        }${lockViewport && isMobile ? ' k-visual-viewport-frame' : ''}`}
       >
         {children}
       </main>

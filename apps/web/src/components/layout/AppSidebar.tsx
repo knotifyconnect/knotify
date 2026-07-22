@@ -402,7 +402,7 @@ export function AppSidebar() {
         className="k-mobile-topbar"
         style={{
           position: 'fixed',
-          top: 0,
+          top: 'var(--visual-viewport-offset-top)',
           left: 0,
           right: 0,
           minHeight: 'var(--mobile-topbar-height)',
