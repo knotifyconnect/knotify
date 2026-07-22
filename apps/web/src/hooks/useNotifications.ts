@@ -10,15 +10,18 @@ type NotificationUnreadResponse = {
 
 type NotificationRow = {
   id: string
-  type: 'connection_request' | 'connection_accepted' | 'message' | 'event_rsvp'
+  type: 'connection_request' | 'connection_accepted' | 'message' | 'event_rsvp' | 'job_referral_request' | 'ask_reply'
   title: string
   body: string | null
+  read_at: string | null
 }
 
 const NOTIFICATIONS_UNREAD_PATH = '/api/notifications/unread-count'
-// Realtime is the primary path (instant on INSERT/UPDATE below); this poll is
-// only a repair loop for missed events, so it doesn't need to be sub-second.
-const NOTIFICATIONS_VISIBLE_POLL_MS = 30_000
+// Realtime is the primary path. While it is healthy, this is only a low-rate
+// consistency check. If the channel reports a fault, temporarily restore the
+// previous 30-second repair cadence until it reconnects.
+const REALTIME_HEALTHY_RECONCILE_MS = 5 * 60_000
+const REALTIME_DEGRADED_RECONCILE_MS = 30_000
 
 const listeners = new Set<() => void>()
 let snapshot = 0
@@ -30,6 +33,7 @@ let pollInterval: number | null = null
 let refreshTimer: number | null = null
 let refreshInFlight = false
 let refreshQueued = false
+let realtimeHealthy = false
 
 function canUseBrowser() {
   return typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -44,6 +48,18 @@ function setSnapshot(nextCount: number) {
   if (snapshot === next) return
   snapshot = next
   emit()
+}
+
+function setReconcileInterval(intervalMs: number) {
+  if (!canUseBrowser()) return
+
+  if (pollInterval !== null) {
+    window.clearInterval(pollInterval)
+  }
+
+  pollInterval = window.setInterval(() => {
+    void refreshUnreadCount()
+  }, intervalMs)
 }
 
 function scheduleRefresh(delay = 0) {
@@ -113,6 +129,24 @@ function toastForNotification(row: NotificationRow) {
   })
 }
 
+function onRealtimeStatus(status: string) {
+  if (!started) return
+
+  if (status === 'SUBSCRIBED') {
+    const recovered = !realtimeHealthy
+    realtimeHealthy = true
+    setReconcileInterval(REALTIME_HEALTHY_RECONCILE_MS)
+    if (recovered) scheduleRefresh(0)
+    return
+  }
+
+  if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+    realtimeHealthy = false
+    setReconcileInterval(REALTIME_DEGRADED_RECONCILE_MS)
+    scheduleRefresh(0)
+  }
+}
+
 function startNotificationsStore() {
   if (!canUseBrowser() || started) return
 
@@ -124,26 +158,36 @@ function startNotificationsStore() {
   window.addEventListener('online', onFocus)
   document.addEventListener('visibilitychange', onVisibilityChange)
 
-  pollInterval = window.setInterval(() => {
-    void refreshUnreadCount()
-  }, NOTIFICATIONS_VISIBLE_POLL_MS)
+  setReconcileInterval(REALTIME_DEGRADED_RECONCILE_MS)
 
   // RLS scopes `notifications` SELECT to the current user's own rows, so a
   // broad, unfiltered subscription here only ever delivers this user's events.
   channel = supabase
     .channel('notifications:global')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+      const row = payload.new as NotificationRow
       invalidateApiCache('/api/notifications')
       invalidateApiCache(NOTIFICATIONS_UNREAD_PATH)
-      scheduleRefresh(0)
-      toastForNotification(payload.new as NotificationRow)
+      if (!row.read_at) {
+        setSnapshot(snapshot + 1)
+        toastForNotification(row)
+      }
     })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications' }, () => {
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications' }, (payload) => {
+      const previous = payload.old as Partial<NotificationRow>
+      const next = payload.new as NotificationRow
       invalidateApiCache('/api/notifications')
       invalidateApiCache(NOTIFICATIONS_UNREAD_PATH)
-      scheduleRefresh(0)
+      if (Object.prototype.hasOwnProperty.call(previous, 'read_at')) {
+        if (!previous.read_at && next.read_at) setSnapshot(snapshot - 1)
+        if (previous.read_at && !next.read_at) setSnapshot(snapshot + 1)
+      } else {
+        // Defensive fallback for databases that have not yet applied replica
+        // identity FULL. Normal production events take the local delta above.
+        scheduleRefresh(0)
+      }
     })
-    .subscribe()
+    .subscribe(onRealtimeStatus)
 }
 
 function stopNotificationsStore() {
@@ -170,6 +214,7 @@ function stopNotificationsStore() {
   authToken = null
   refreshInFlight = false
   refreshQueued = false
+  realtimeHealthy = false
 
   if (channel) {
     void supabase.removeChannel(channel)
