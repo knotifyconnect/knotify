@@ -34,6 +34,10 @@
   --mobile-floating-action-right: 14px;
   --mobile-feedback-bottom: max(92px, calc(70px + env(safe-area-inset-bottom)));
   --mobile-notifications-bottom: max(140px, calc(118px + env(safe-area-inset-bottom)));
+  /* JavaScript keeps these in sync with window.visualViewport. The fallbacks
+     preserve the normal desktop and pre-hydration layout. */
+  --visual-viewport-height: 100dvh;
+  --visual-viewport-offset-top: 0px;
   /* Mobile top bar (logo + Discover + Profile, see AppSidebar.tsx) — pages
      need this to offset their own content/fixed layouts below it. */
   --mobile-topbar-height: calc(52px + env(safe-area-inset-top));
@@ -84,6 +88,30 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Fixed surfaces must use the visual viewport, not the layout viewport. iOS
+   pans the former when its keyboard opens while leaving CSS fixed positioning
+   anchored to the latter. These primitives compensate for that difference. */
+.k-visual-viewport-frame {
+  position: fixed;
+  top: calc(var(--visual-viewport-offset-top) + var(--mobile-topbar-height));
+  right: 0;
+  bottom: auto;
+  left: 0;
+  height: calc(var(--visual-viewport-height) - var(--mobile-topbar-height));
+  overflow: clip;
+  overscroll-behavior: none;
+}
+
+.k-visual-viewport-overlay {
+  position: fixed;
+  top: var(--visual-viewport-offset-top);
+  right: 0;
+  bottom: auto;
+  left: 0;
+  height: var(--visual-viewport-height);
+  box-sizing: border-box;
+}
+
 /* The application top bar belongs exclusively to the mobile shell. Keep the
    desktop contract explicit here so inline layout styles can never expose it. */
 .k-mobile-topbar {
@@ -93,6 +121,14 @@ body {
 @media (max-width: 767px) {
   .k-mobile-topbar {
     display: grid;
+  }
+
+  /* Navigation and floating actions are not useful while the software
+     keyboard owns the lower half of the screen. Keeping them hidden also
+     prevents iOS from compositing them over its keyboard accessory bar. */
+  html[data-virtual-keyboard='open'] .k-tab-bar,
+  html[data-virtual-keyboard='open'] .k-mobile-attention-action {
+    display: none !important;
   }
 }
 

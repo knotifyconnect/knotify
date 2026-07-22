@@ -132,10 +132,9 @@ export function AskDrawer({
 
   return createPortal(
     <div
+      className="k-visual-viewport-overlay"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
-        position: 'fixed',
-        top: 0, right: 0, bottom: 0, left: 0,
         zIndex: 220,
         background: 'rgba(26,24,21,0.5)',
         display: 'flex',
@@ -149,7 +148,7 @@ export function AskDrawer({
         style={{
           width: '100%',
           maxWidth: 520,
-          maxHeight: '85vh',
+          maxHeight: 'min(85dvh, calc(var(--visual-viewport-height) - 32px))',
           background: T.paper,
           borderRadius: 20,
           border: `0.5px solid ${T.rule}`,
@@ -187,7 +186,7 @@ export function AskDrawer({
         </div>
 
         {/* Replies */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px' }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.inkFaint, marginBottom: 12 }}>
             {replies.length > 0 ? `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}` : 'Replies'}
           </div>
