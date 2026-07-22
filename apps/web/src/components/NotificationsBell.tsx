@@ -128,9 +128,14 @@ export function NotificationsBell({ variant = 'sidebar', messageUnread = 0, refe
 
   useEffect(() => {
     const cancelInitialLoad = runWhenIdle(() => { void load(); void loadNotifications() }, 10_000)
-    const interval = window.setInterval(() => { void load(); void loadNotifications() }, 120000)
+    const reconcile = () => {
+      if (!document.hidden) { void load(); void loadNotifications() }
+    }
+    window.addEventListener('focus', reconcile)
+    const interval = window.setInterval(reconcile, 10 * 60_000)
     return () => {
       cancelInitialLoad()
+      window.removeEventListener('focus', reconcile)
       window.clearInterval(interval)
     }
   }, [load, loadNotifications])

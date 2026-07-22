@@ -9,9 +9,11 @@ type MessageUnreadResponse = {
 
 const MESSAGE_UNREAD_TOTAL_EVENT = 'knotify:message-unread-total'
 const MESSAGE_UNREAD_PATH = '/api/conversations/unread'
-// Realtime is the primary path (instant on any `messages` change below); this
-// poll is only a repair loop for missed events, so it doesn't need to be sub-second.
-const MESSAGE_UNREAD_VISIBLE_POLL_MS = 30_000
+// Realtime is the primary path. While it is healthy, this is only a low-rate
+// consistency check. If the channel reports a fault, temporarily restore the
+// previous 30-second repair cadence until it reconnects.
+const REALTIME_HEALTHY_RECONCILE_MS = 5 * 60_000
+const REALTIME_DEGRADED_RECONCILE_MS = 30_000
 const LOCAL_CLEAR_RECONCILE_GRACE_MS = 1_250
 
 const listeners = new Set<() => void>()
@@ -26,6 +28,7 @@ let refreshInFlight = false
 let refreshQueued = false
 let localVersion = 0
 let localClearAt = 0
+let realtimeHealthy = false
 
 function canUseBrowser() {
   return typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -40,6 +43,18 @@ function setSnapshot(nextCount: number) {
   if (snapshot === next) return
   snapshot = next
   emit()
+}
+
+function setReconcileInterval(intervalMs: number) {
+  if (!canUseBrowser()) return
+
+  if (pollInterval !== null) {
+    window.clearInterval(pollInterval)
+  }
+
+  pollInterval = window.setInterval(() => {
+    void refreshUnreadCount()
+  }, intervalMs)
 }
 
 function applyLocalTotal(nextCount: number) {
@@ -128,6 +143,24 @@ function onUnreadTotal(event: Event) {
   }
 }
 
+function onRealtimeStatus(status: string) {
+  if (!started) return
+
+  if (status === 'SUBSCRIBED') {
+    const recovered = !realtimeHealthy
+    realtimeHealthy = true
+    setReconcileInterval(REALTIME_HEALTHY_RECONCILE_MS)
+    if (recovered) scheduleRefresh(0)
+    return
+  }
+
+  if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+    realtimeHealthy = false
+    setReconcileInterval(REALTIME_DEGRADED_RECONCILE_MS)
+    scheduleRefresh(0)
+  }
+}
+
 function startUnreadStore() {
   if (!canUseBrowser() || started) return
 
@@ -140,9 +173,7 @@ function startUnreadStore() {
   window.addEventListener(MESSAGE_UNREAD_TOTAL_EVENT, onUnreadTotal)
   document.addEventListener('visibilitychange', onVisibilityChange)
 
-  pollInterval = window.setInterval(() => {
-    void refreshUnreadCount()
-  }, MESSAGE_UNREAD_VISIBLE_POLL_MS)
+  setReconcileInterval(REALTIME_DEGRADED_RECONCILE_MS)
 
   channel = supabase
     .channel('message-unread-count:global')
@@ -151,7 +182,7 @@ function startUnreadStore() {
       invalidateApiCache(MESSAGE_UNREAD_PATH)
       scheduleRefresh(0)
     })
-    .subscribe()
+    .subscribe(onRealtimeStatus)
 }
 
 function stopUnreadStore() {
@@ -179,6 +210,7 @@ function stopUnreadStore() {
   authToken = null
   refreshInFlight = false
   refreshQueued = false
+  realtimeHealthy = false
 
   if (channel) {
     void supabase.removeChannel(channel)

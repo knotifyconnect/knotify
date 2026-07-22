@@ -7,6 +7,8 @@ type ToastType =
   | 'connection_request'
   | 'message'
   | 'event_rsvp'
+  | 'job_referral_request'
+  | 'ask_reply'
   | 'invite_bonus'
 
 export type ToastItem = {
