@@ -10,6 +10,7 @@ const CompanionHero = lazy(() => import('./CompanionHero').then((m) => ({ defaul
 
 const STORAGE_KEY_DESKTOP = 'knotify_companion_pos_desktop_v2'
 const STORAGE_KEY_MOBILE_Y = 'knotify_companion_pos_mobile_y_v1'
+const OPEN_COMPANION_EVENT = 'knotify:open-companion'
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 // A touch naturally jitters a few pixels even on a plain tap — anything under
 // this counts as "didn't drag" so the button still opens. Without this,
@@ -84,6 +85,7 @@ export function GlobalCompanionWidget() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const [open, setOpen] = useState(false)
+  const [initialDraft, setInitialDraft] = useState('')
   // Desktop can drag the button anywhere (x and y) to dodge content under the
   // mouse. Mobile deliberately stays pinned to the left edge and only moves
   // vertically — earlier free-drag on mobile shared pointer events with
@@ -108,6 +110,16 @@ export function GlobalCompanionWidget() {
   })
   const dragRef = useRef<{ dx: number; dy: number; moved: boolean } | null>(null)
   const peers = useMemo(() => new Map<string, PeerLite>(), [])
+
+  useEffect(() => {
+    const openCompanion = (event: Event) => {
+      const draft = (event as CustomEvent<{ draft?: string }>).detail?.draft ?? ''
+      setInitialDraft(draft)
+      setOpen(true)
+    }
+    window.addEventListener(OPEN_COMPANION_EVENT, openCompanion)
+    return () => window.removeEventListener(OPEN_COMPANION_EVENT, openCompanion)
+  }, [])
 
   useEffect(() => {
     if (isMobile) return
@@ -146,6 +158,7 @@ export function GlobalCompanionWidget() {
     if (s.action === 'open_coffee' && s.peerId) navigate(`/messages?to=${s.peerId}&action=coffee`)
     if (s.action === 'open_quests') navigate('/quests')
     if (s.action === 'open_events') navigate('/events')
+    setInitialDraft('')
     setOpen(false)
   }
 
@@ -153,7 +166,7 @@ export function GlobalCompanionWidget() {
 
   return createPortal(
     <>
-      {!open && isMobile && <CompanionEdgeTab y={mobileY} onOpen={() => setOpen(true)} onDragTo={setMobileY} />}
+      {!open && isMobile && <CompanionEdgeTab y={mobileY} onOpen={() => { setInitialDraft(''); setOpen(true) }} onDragTo={setMobileY} />}
 
       {!open && !isMobile && (
         <button
@@ -182,7 +195,10 @@ export function GlobalCompanionWidget() {
           onPointerUp={() => {
             const moved = dragRef.current?.moved
             dragRef.current = null
-            if (!moved) setOpen(true)
+            if (!moved) {
+              setInitialDraft('')
+              setOpen(true)
+            }
           }}
           style={{
             position: 'fixed',
@@ -214,7 +230,7 @@ export function GlobalCompanionWidget() {
             </button>
           </div>
           <Suspense fallback={<div style={{ padding: 14, borderRadius: 18, background: '#fff', boxShadow: 'var(--lift-1)', fontFamily: "'Fraunces', serif", fontSize: 13.5 }}>Opening Companion...</div>}>
-            <CompanionHero peers={peers} onSuggestion={onSuggestion} />
+            <CompanionHero peers={peers} onSuggestion={onSuggestion} initialDraft={initialDraft} />
           </Suspense>
         </div>
       )}

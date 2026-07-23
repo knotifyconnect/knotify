@@ -49,14 +49,16 @@ const ACTION_ICON: Record<Suggestion['action'], typeof Send> = {
 export function CompanionHero({
   peers,
   onSuggestion,
+  initialDraft = '',
 }: {
   /** peerId → lightweight peer info, used to resolve suggestion pills. */
   peers: Map<string, PeerLite>
   onSuggestion: (s: Suggestion) => void
+  initialDraft?: string
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loadingHistory, setLoadingHistory] = useState(true)
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialDraft)
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 

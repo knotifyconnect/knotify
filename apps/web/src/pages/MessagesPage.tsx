@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Search, SmilePlus, Trash2 } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { ArrowUpRight, CircleHelp, Search, SmilePlus, Trash2 } from 'lucide-react'
 import { apiDeleteJson, apiGet, apiGetCached, apiPatch, apiPost, getApiCacheSnapshot, setApiCacheSnapshot } from '../lib/api'
 import { trackEvent } from '../lib/analytics'
 import { KAvatar, KBtn, KCard, KnotifyMark } from '../lib/knotify'
@@ -46,6 +46,8 @@ type Message = {
   conversation_id: string
   sender_id: string
   content: string
+  message_kind?: 'text' | 'ask'
+  ask_id?: string | null
   read_at: string | null
   delivered_at: string | null
   deleted_at?: string | null
@@ -67,6 +69,8 @@ type RealtimeMessageRow = {
   conversation_id: string
   sender_id: string
   content: string
+  message_kind?: 'text' | 'ask'
+  ask_id?: string | null
   read_at: string | null
   delivered_at: string | null
   deleted_at?: string | null
@@ -102,6 +106,8 @@ function realtimeMessageRow(value: unknown): RealtimeMessageRow | null {
     conversation_id: row.conversation_id,
     sender_id: row.sender_id,
     content: row.content,
+    message_kind: row.message_kind ?? 'text',
+    ask_id: row.ask_id ?? null,
     read_at: row.read_at ?? null,
     delivered_at: row.delivered_at ?? null,
     deleted_at: row.deleted_at ?? null,
@@ -110,8 +116,9 @@ function realtimeMessageRow(value: unknown): RealtimeMessageRow | null {
   }
 }
 
-function previewContent(message: Pick<RealtimeMessageRow, 'content' | 'deleted_at'>) {
-  return message.deleted_at ? 'Message deleted' : message.content
+function previewContent(message: Pick<RealtimeMessageRow, 'content' | 'deleted_at' | 'message_kind'>) {
+  if (message.deleted_at) return 'Message deleted'
+  return message.message_kind === 'ask' ? `Ask for help · ${message.content}` : message.content
 }
 
 function mergeMessageList(prev: Message[], next: Message) {
@@ -134,10 +141,14 @@ function mergeMessageList(prev: Message[], next: Message) {
 function dropMatchingOptimistic(
   prev: Record<string, OptimisticMessage[]>,
   conversationId: string,
-  serverMessage: Pick<Message, 'sender_id' | 'content' | 'created_at'>,
+  serverMessage: Pick<Message, 'sender_id' | 'content' | 'created_at' | 'message_kind'>,
   currentUserId: string | null
 ) {
-  if (!currentUserId || serverMessage.sender_id !== currentUserId) return prev
+  if (
+    !currentUserId
+    || serverMessage.sender_id !== currentUserId
+    || serverMessage.message_kind === 'ask'
+  ) return prev
 
   const list = prev[conversationId] ?? []
   if (!list.length) return prev
@@ -448,6 +459,7 @@ const MSG_MENU_ITEM: React.CSSProperties = {
 
 export function MessagesPage() {
   const isMobile = useIsMobile()
+  const navigate = useNavigate()
   const [conversations, setConversations] = useState<ConversationSummary[]>(() => getApiCacheSnapshot<{ conversations: ConversationSummary[] }>(CONVERSATIONS_PATH)?.conversations ?? [])
   const [connections, setConnections] = useState<Connection[]>(() => getApiCacheSnapshot<{ connections: Connection[] }>(CONNECTIONS_PATH)?.connections ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -2022,10 +2034,11 @@ export function MessagesPage() {
                 const prev = displayMessages[i - 1]
                 const showDay = !prev || dayLabel(prev.created_at) !== dayLabel(msg.created_at)
                 const isDeletedMessage = !isOpt(msg) && Boolean(msg.deleted_at)
-                const coffeeEvent = isDeletedMessage ? null : coffeeTimelineEventFromContent(msg.content)
-                const showAuthor = !coffeeEvent && !msg.is_mine && (!prev || prev.sender_id !== msg.sender_id)
+                const askCard = !isDeletedMessage && !isOpt(msg) && msg.message_kind === 'ask' && Boolean(msg.ask_id)
+                const coffeeEvent = isDeletedMessage || askCard ? null : coffeeTimelineEventFromContent(msg.content)
+                const showAuthor = !coffeeEvent && !askCard && !msg.is_mine && (!prev || prev.sender_id !== msg.sender_id)
 
-                const msgReactions = (!coffeeEvent && !isDeletedMessage && !isOpt(msg) && msg.reactions) ? msg.reactions : []
+                const msgReactions = (!coffeeEvent && !askCard && !isDeletedMessage && !isOpt(msg) && msg.reactions) ? msg.reactions : []
                 // Last couple of messages open their popovers upward so they don't
                 // overflow behind the composer / quick-actions.
                 const nearBottom = i >= displayMessages.length - 2
@@ -2047,6 +2060,43 @@ export function MessagesPage() {
                         createdAt={msg.created_at}
                         actorName={msg.is_mine ? 'You' : msg.sender?.full_name ?? 'They'}
                       />
+                    ) : askCard ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/asks?ask=${msg.ask_id}`)}
+                        style={{
+                          width: 'min(100%, 470px)',
+                          margin: msg.is_mine ? '0 0 6px auto' : '0 auto 6px 0',
+                          padding: '13px 14px',
+                          display: 'grid',
+                          gridTemplateColumns: '34px minmax(0, 1fr) 24px',
+                          alignItems: 'center',
+                          gap: 11,
+                          color: 'var(--ink)',
+                          textAlign: 'left',
+                          background: 'linear-gradient(135deg, rgba(216,68,43,0.10), rgba(255,252,246,0.96))',
+                          border: '0.5px solid rgba(216,68,43,0.28)',
+                          borderRadius: 16,
+                          boxShadow: '0 10px 24px rgba(26,24,21,0.07)',
+                          cursor: 'pointer',
+                          fontFamily: "'IBM Plex Sans', sans-serif",
+                        }}
+                        aria-label="Open Ask ticket"
+                      >
+                        <span style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', color: 'var(--signal)', background: 'rgba(216,68,43,0.10)', borderRadius: 11 }}>
+                          <CircleHelp size={18} />
+                        </span>
+                        <span style={{ minWidth: 0 }}>
+                          <strong style={{ display: 'block', fontSize: 12.5, color: 'var(--signal)' }}>Ask for help</strong>
+                          <span style={{ display: '-webkit-box', marginTop: 3, overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, fontSize: 13.5, lineHeight: 1.4 }}>
+                            {msg.content}
+                          </span>
+                          <small style={{ display: 'block', marginTop: 5, color: 'var(--ink-faint)', fontSize: 10.5 }}>
+                            {messageTime(msg.created_at)} · Open ticket
+                          </small>
+                        </span>
+                        <ArrowUpRight size={16} style={{ color: 'var(--signal)' }} />
+                      </button>
                     ) : (
                       <>
                     {showAuthor && (
