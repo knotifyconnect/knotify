@@ -9,6 +9,7 @@
  * Pure extraction: same queries, same order, same error handling as before.
  */
 import { supabase } from '../lib.js'
+import { filterAsksVisibleToViewer } from '../lib/askAudience.js'
 import {
   rankConnections,
   type PeerProfile,
@@ -269,12 +270,23 @@ export async function getRelationshipHomeData(userId: string): Promise<Relations
   try {
     const { data: asksData } = await supabase
       .from('user_asks')
-      .select('id, user_id, content, created_at')
+      .select('id, user_id, content, audience_type, audience_value, created_at')
       .in('user_id', peerIds)
       .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(10)
-    openAsks = ((asksData ?? []) as Array<{ id: string; user_id: string; content: string; created_at: string }>).map(
+    const visibleAsks = await filterAsksVisibleToViewer(
+      (asksData ?? []) as Array<{
+        id: string
+        user_id: string
+        content: string
+        created_at: string
+        audience_type?: 'everyone' | 'interest' | 'persona' | 'people'
+        audience_value?: string | null
+      }>,
+      userId
+    )
+    openAsks = visibleAsks.map(
       (a) => {
         peerIdsWithOpenAsk.add(a.user_id)
         return { id: a.id, content: a.content, created_at: a.created_at, user: peerProfiles.get(a.user_id) ?? null }

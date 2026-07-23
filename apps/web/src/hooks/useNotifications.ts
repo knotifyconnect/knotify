@@ -10,7 +10,7 @@ type NotificationUnreadResponse = {
 
 type NotificationRow = {
   id: string
-  type: 'connection_request' | 'connection_accepted' | 'message' | 'event_rsvp' | 'job_referral_request' | 'ask_reply'
+  type: 'connection_request' | 'connection_accepted' | 'message' | 'event_rsvp' | 'job_referral_request' | 'ask_reply' | 'ask_created' | 'ask_activity'
   title: string
   body: string | null
   read_at: string | null

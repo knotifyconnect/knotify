@@ -9,6 +9,8 @@ type ToastType =
   | 'event_rsvp'
   | 'job_referral_request'
   | 'ask_reply'
+  | 'ask_created'
+  | 'ask_activity'
   | 'invite_bonus'
 
 export type ToastItem = {

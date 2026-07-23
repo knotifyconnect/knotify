@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { Bell, MessageSquare, Briefcase, Check, X, Inbox, ClipboardList, UserRoundPlus, Plus, MessageCircle, UserPlus, CalendarCheck } from 'lucide-react'
+import { Bell, MessageSquare, Briefcase, Check, X, Inbox, ClipboardList, UserRoundPlus, Plus, MessageCircle, UserPlus, CalendarCheck, UsersRound, Activity } from 'lucide-react'
 import { apiGetCached, apiPatch, apiPost } from '../lib/api'
 import { KAvatar } from '../lib/knotify'
 import { runWhenIdle } from '../lib/schedule'
@@ -34,7 +34,7 @@ type Request = { id: string; peer: Peer }
 type NotificationActor = { id: string; full_name: string; username: string; avatar_url: string | null }
 type NotificationItem = {
   id: string
-  type: 'connection_request' | 'connection_accepted' | 'message' | 'event_rsvp' | 'job_referral_request' | 'ask_reply'
+  type: 'connection_request' | 'connection_accepted' | 'message' | 'event_rsvp' | 'job_referral_request' | 'ask_reply' | 'ask_created' | 'ask_activity'
   title: string
   body: string | null
   url: string | null
@@ -51,6 +51,8 @@ const NOTIFICATION_ICONS: Record<NotificationItem['type'], typeof UserPlus> = {
   event_rsvp: CalendarCheck,
   job_referral_request: Briefcase,
   ask_reply: MessageCircle,
+  ask_created: UsersRound,
+  ask_activity: Activity,
 }
 
 function timeAgo(iso: string): string {

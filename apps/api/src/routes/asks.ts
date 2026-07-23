@@ -17,22 +17,31 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
-import { createNotification, getUserFirstName } from '../lib/notifications.js'
+import {
+  acceptedConnectionIds,
+  attachAudienceCounts,
+  canViewAsk,
+  filterAsksVisibleToViewer,
+  validateExplicitAudience,
+  type AskAudienceType,
+} from '../lib/askAudience.js'
+import { notifyAskActivity, notifyAskCreated } from '../lib/askNotifications.js'
 
 export const asksRouter = Router()
 
 const ALLOWED_EMOJIS = ['❤️', '👍', '🙌', '💡', '🔥', '🤝'] as const
 
 const createAskSchema = z.object({
-  content: z.string().min(1).max(280),
-  audienceType: z.enum(['everyone', 'interest', 'persona']).default('everyone'),
+  content: z.string().trim().min(1).max(280),
+  audienceType: z.enum(['everyone', 'interest', 'persona', 'people']).default('everyone'),
   audienceValue: z.string().max(80).nullable().optional(),
+  audienceUserIds: z.array(z.string().uuid()).max(50).optional(),
 })
 const updateAskSchema = z.object({
-  content: z.string().min(1).max(280),
+  content: z.string().trim().min(1).max(280),
 })
 const replySchema = z.object({
-  body: z.string().min(1).max(800),
+  body: z.string().trim().min(1).max(800),
 })
 const reactSchema = z.object({
   emoji: z.enum(ALLOWED_EMOJIS),
@@ -45,7 +54,7 @@ type AskRow = {
   status: 'open' | 'resolved'
   resolved_at: string | null
   created_at: string
-  audience_type?: 'everyone' | 'interest' | 'persona'
+  audience_type?: AskAudienceType
   audience_value?: string | null
 }
 
@@ -96,11 +105,11 @@ async function hydrateAsks(asks: AskRow[], viewerId: string) {
     replyCount.set(r.ask_id, (replyCount.get(r.ask_id) ?? 0) + 1)
   }
 
-  return asks.map((a) => ({
+  return attachAudienceCounts(asks.map((a) => ({
     ...a,
     reactions: reactionsByAsk.get(a.id) ?? {},
     reply_count: replyCount.get(a.id) ?? 0,
-  }))
+  })))
 }
 
 // ── List a user's asks ───────────────────────────────────────────────────────
@@ -137,7 +146,10 @@ asksRouter.get('/by-user/:userId', requireAuth, async (req, res) => {
       ...(!resolvedR.error ? (resolvedR.data ?? []) as AskRow[] : []),
     ]
 
-    const hydrated = await hydrateAsks(allAsks, req.appUserId)
+    const visibleAsks = userId === req.appUserId
+      ? allAsks
+      : await filterAsksVisibleToViewer(allAsks, req.appUserId)
+    const hydrated = await hydrateAsks(visibleAsks, req.appUserId)
     return res.json({ asks: hydrated })
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -154,16 +166,28 @@ asksRouter.post('/', requireAuth, async (req, res) => {
     if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
 
     const audienceType = parsed.data.audienceType
-    const audienceValue = audienceType === 'everyone' ? null : (parsed.data.audienceValue ?? null)
-    if (audienceType !== 'everyone' && !audienceValue) {
+    const audienceValue = audienceType === 'interest' || audienceType === 'persona'
+      ? (parsed.data.audienceValue ?? null)
+      : null
+    if ((audienceType === 'interest' || audienceType === 'persona') && !audienceValue) {
       return res.status(422).json({ error: 'Pick who this ask is for.' })
+    }
+    const requestedUserIds = [...new Set(parsed.data.audienceUserIds ?? [])]
+    if (audienceType === 'people' && requestedUserIds.length === 0) {
+      return res.status(422).json({ error: 'Select at least one person.' })
+    }
+    const audienceUserIds = audienceType === 'people'
+      ? await validateExplicitAudience(req.appUserId, requestedUserIds)
+      : []
+    if (audienceType === 'people' && audienceUserIds.length !== requestedUserIds.length) {
+      return res.status(422).json({ error: 'You can only select people in your knot.' })
     }
 
     const insert = await supabase
       .from('user_asks')
       .insert({
         user_id: req.appUserId,
-        content: parsed.data.content,
+        content: parsed.data.content.trim(),
         audience_type: audienceType,
         audience_value: audienceValue,
       })
@@ -171,34 +195,42 @@ asksRouter.post('/', requireAuth, async (req, res) => {
       .maybeSingle()
 
     if (insert.error || !insert.data) return res.status(500).json({ error: insert.error?.message ?? 'Insert failed' })
-    return res.json({ ask: { ...insert.data, reactions: {}, reply_count: 0 } })
+
+    if (audienceUserIds.length > 0) {
+      const recipients = await supabase.from('ask_recipients').insert(
+        audienceUserIds.map((userId) => ({ ask_id: insert.data.id, user_id: userId }))
+      )
+      if (recipients.error) {
+        await supabase.from('user_asks').delete().eq('id', insert.data.id)
+        return res.status(500).json({ error: 'Could not save the selected audience.' })
+      }
+    }
+
+    try {
+      await notifyAskCreated(insert.data as AskRow)
+    } catch (error) {
+      console.error('Failed to notify Ask audience', error)
+    }
+
+    return res.json({
+      ask: {
+        ...insert.data,
+        audience_count: audienceUserIds.length || undefined,
+        reactions: {},
+        reply_count: 0,
+      },
+    })
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
   }
 })
 
 // ── "Asks for you" feed: targeted, answerable asks from other people ──────────
-async function acceptedConnectionIds(viewerId: string): Promise<string[]> {
-  const result = await supabase
-    .from('connections')
-    .select('requester_id, addressee_id, status')
-    .or(`requester_id.eq.${viewerId},addressee_id.eq.${viewerId}`)
-
-  const rows = (result.data ?? []) as { requester_id: string; addressee_id: string; status: string }[]
-  return rows
-    .filter((c) => c.status === 'accepted')
-    .map((c) => (c.requester_id === viewerId ? c.addressee_id : c.requester_id))
-}
-
 async function matchedOpenAsks(viewerId: string): Promise<AskRow[]> {
   // "Everyone" means everyone in the viewer's own network, not the whole
   // knotify user base — asks are a connections-scoped discovery surface.
   const connectionIds = await acceptedConnectionIds(viewerId)
   if (connectionIds.length === 0) return []
-
-  const meR = await supabase.from('users').select('interests, persona').eq('id', viewerId).maybeSingle()
-  const interests: string[] = Array.isArray(meR.data?.interests) ? meR.data!.interests : []
-  const persona: string | null = meR.data?.persona ?? null
 
   // Pull recent open asks from connections, then match by audience in JS — the
   // audience values (interest strings) aren't safe to interpolate into a filter.
@@ -210,14 +242,20 @@ async function matchedOpenAsks(viewerId: string): Promise<AskRow[]> {
     .order('created_at', { ascending: false })
     .limit(200)
 
-  const rows = (askR.data ?? []) as AskRow[]
-  return rows.filter((a) => {
-    const type = a.audience_type ?? 'everyone'
-    if (type === 'everyone') return true
-    if (type === 'interest') return !!a.audience_value && interests.includes(a.audience_value)
-    if (type === 'persona') return !!a.audience_value && persona === a.audience_value
-    return false
-  })
+  if (askR.error) throw new Error(askR.error.message)
+  return filterAsksVisibleToViewer((askR.data ?? []) as AskRow[], viewerId)
+}
+
+async function visibleAskById(askId: string, viewerId: string): Promise<AskRow | null> {
+  const result = await supabase
+    .from('user_asks')
+    .select('*')
+    .eq('id', askId)
+    .maybeSingle()
+
+  if (result.error || !result.data) return null
+  const ask = result.data as AskRow
+  return await canViewAsk(ask, viewerId) ? ask : null
 }
 
 async function attachAuthors<T extends { user_id: string }>(rows: T[]) {
@@ -274,10 +312,10 @@ asksRouter.post('/seen', requireAuth, async (req, res) => {
 asksRouter.get('/:id', requireAuth, async (req, res) => {
   try {
     if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
-    const askR = await supabase.from('user_asks').select('*').eq('id', req.params.id).maybeSingle()
-    if (askR.error || !askR.data) return res.status(404).json({ error: 'Ask not found' })
+    const ask = await visibleAskById(req.params.id, req.appUserId)
+    if (!ask) return res.status(404).json({ error: 'Ask not found' })
 
-    const [hydrated] = await hydrateAsks([askR.data as AskRow], req.appUserId)
+    const [hydrated] = await hydrateAsks([ask], req.appUserId)
     const [withAuthor] = await attachAuthors([hydrated])
     return res.json({ ask: withAuthor })
   } catch (err) {
@@ -318,6 +356,15 @@ asksRouter.post('/:id/resolve', requireAuth, async (req, res) => {
       .select('*')
       .maybeSingle()
     if (update.error || !update.data) return res.status(404).json({ error: 'Ask not found or not yours' })
+    try {
+      await notifyAskActivity({
+        ask: update.data as AskRow,
+        actorId: req.appUserId,
+        kind: 'resolved',
+      })
+    } catch (error) {
+      console.error('Failed to notify Ask audience', error)
+    }
     return res.json({ ask: update.data })
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
@@ -335,6 +382,15 @@ asksRouter.post('/:id/reopen', requireAuth, async (req, res) => {
       .select('*')
       .maybeSingle()
     if (update.error || !update.data) return res.status(404).json({ error: 'Ask not found or not yours' })
+    try {
+      await notifyAskActivity({
+        ask: update.data as AskRow,
+        actorId: req.appUserId,
+        kind: 'reopened',
+      })
+    } catch (error) {
+      console.error('Failed to notify Ask audience', error)
+    }
     return res.json({ ask: update.data })
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
@@ -361,6 +417,8 @@ asksRouter.delete('/:id', requireAuth, async (req, res) => {
 asksRouter.get('/:id/replies', requireAuth, async (req, res) => {
   try {
     if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
+    const ask = await visibleAskById(req.params.id, req.appUserId)
+    if (!ask) return res.status(404).json({ error: 'Ask not found' })
     const repliesR = await supabase
       .from('ask_replies')
       .select('id, ask_id, user_id, body, created_at')
@@ -390,30 +448,27 @@ asksRouter.post('/:id/replies', requireAuth, async (req, res) => {
     const parsed = replySchema.safeParse(req.body)
     if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
 
-    // Confirm ask exists
-    const askExists = await supabase.from('user_asks').select('id, user_id').eq('id', req.params.id).maybeSingle()
-    if (askExists.error || !askExists.data) return res.status(404).json({ error: 'Ask not found' })
+    const ask = await visibleAskById(req.params.id, req.appUserId)
+    if (!ask) return res.status(404).json({ error: 'Ask not found' })
 
     const insert = await supabase
       .from('ask_replies')
-      .insert({ ask_id: req.params.id, user_id: req.appUserId, body: parsed.data.body })
+      .insert({ ask_id: req.params.id, user_id: req.appUserId, body: parsed.data.body.trim() })
       .select('*')
       .maybeSingle()
     if (insert.error || !insert.data) return res.status(500).json({ error: insert.error?.message ?? 'Insert failed' })
 
     const me = await supabase.from('users').select('id, full_name, username, avatar_url').eq('id', req.appUserId).maybeSingle()
 
-    if (askExists.data.user_id !== req.appUserId) {
-      const replierName = await getUserFirstName(req.appUserId)
-      void createNotification({
-        userId: askExists.data.user_id,
+    try {
+      await notifyAskActivity({
+        ask,
         actorId: req.appUserId,
-        type: 'ask_reply',
-        title: `${replierName} replied to your ask`,
-        body: parsed.data.body,
-        entityType: 'ask',
-        entityId: req.params.id,
+        kind: 'reply',
+        body: parsed.data.body.trim(),
       })
+    } catch (error) {
+      console.error('Failed to notify Ask audience', error)
     }
 
     return res.json({ reply: { ...insert.data, author: me.data ?? null } })
@@ -425,10 +480,13 @@ asksRouter.post('/:id/replies', requireAuth, async (req, res) => {
 asksRouter.delete('/:id/replies/:replyId', requireAuth, async (req, res) => {
   try {
     if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
+    const ask = await visibleAskById(req.params.id, req.appUserId)
+    if (!ask) return res.status(404).json({ error: 'Ask not found' })
     const del = await supabase
       .from('ask_replies')
       .delete()
       .eq('id', req.params.replyId)
+      .eq('ask_id', req.params.id)
       .eq('user_id', req.appUserId)
     if (del.error) return res.status(500).json({ error: del.error.message })
     return res.status(204).end()
@@ -443,6 +501,8 @@ asksRouter.post('/:id/react', requireAuth, async (req, res) => {
     if (!req.appUserId) return res.status(401).json({ error: 'Unauthorized' })
     const parsed = reactSchema.safeParse(req.body)
     if (!parsed.success) return res.status(422).json({ error: 'Invalid payload', fields: parsed.error.flatten() })
+    const ask = await visibleAskById(req.params.id, req.appUserId)
+    if (!ask) return res.status(404).json({ error: 'Ask not found' })
 
     // Toggle: if exists, delete; else insert
     const existing = await supabase
@@ -465,6 +525,16 @@ asksRouter.post('/:id/react', requireAuth, async (req, res) => {
       emoji: parsed.data.emoji,
     })
     if (insert.error) return res.status(500).json({ error: insert.error.message })
+    try {
+      await notifyAskActivity({
+        ask,
+        actorId: req.appUserId,
+        kind: 'reaction',
+        body: `${parsed.data.emoji} ${ask.content}`,
+      })
+    } catch (error) {
+      console.error('Failed to notify Ask audience', error)
+    }
     return res.json({ active: true })
   } catch (err) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
