@@ -26,6 +26,10 @@ import {
   type AskAudienceType,
 } from '../lib/askAudience.js'
 import { notifyAskActivity, notifyAskCreated } from '../lib/askNotifications.js'
+import {
+  deliverAskThreadCards,
+  MAX_SPECIFIC_ASK_RECIPIENTS,
+} from '../lib/askThreadCards.js'
 
 export const asksRouter = Router()
 
@@ -35,7 +39,7 @@ const createAskSchema = z.object({
   content: z.string().trim().min(1).max(280),
   audienceType: z.enum(['everyone', 'interest', 'persona', 'people']).default('everyone'),
   audienceValue: z.string().max(80).nullable().optional(),
-  audienceUserIds: z.array(z.string().uuid()).max(50).optional(),
+  audienceUserIds: z.array(z.string().uuid()).max(MAX_SPECIFIC_ASK_RECIPIENTS).optional(),
 })
 const updateAskSchema = z.object({
   content: z.string().trim().min(1).max(280),
@@ -204,6 +208,16 @@ asksRouter.post('/', requireAuth, async (req, res) => {
         await supabase.from('user_asks').delete().eq('id', insert.data.id)
         return res.status(500).json({ error: 'Could not save the selected audience.' })
       }
+    }
+
+    if (audienceType === 'people') {
+      const cardDelivery = await deliverAskThreadCards(insert.data as AskRow, audienceUserIds)
+      console.info('[asks.thread-card]', JSON.stringify({
+        askId: insert.data.id,
+        recipients: audienceUserIds.length,
+        delivered: cardDelivery.delivered,
+        failed: cardDelivery.failed,
+      }))
     }
 
     try {

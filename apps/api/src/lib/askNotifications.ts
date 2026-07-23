@@ -58,13 +58,21 @@ export async function notifyAskActivity(opts: {
     return `${authorName} reopened an ask`
   }
 
-  await createNotifications(recipientIds.map((userId) => ({
-    userId,
-    actorId,
-    type: kind === 'reply' ? 'ask_reply' : 'ask_activity',
-    title: activityTitle(userId),
-    body: body ?? ask.content,
-    entityType: 'ask',
-    entityId: ask.id,
-  })))
+  await createNotifications(
+    recipientIds.map((userId) => ({
+      userId,
+      actorId,
+      type: kind === 'reply' ? 'ask_reply' : 'ask_activity',
+      title: activityTitle(userId),
+      body: body ?? ask.content,
+      entityType: 'ask',
+      entityId: ask.id,
+    })),
+    {
+      // Every relevant person still receives a durable in-app notification.
+      // Replies merit a bounded push; reactions and status toggles stay
+      // Realtime-only so repeated lightweight activity cannot burn Fluid CPU.
+      maxPushRecipients: kind === 'reply' ? 12 : 0,
+    }
+  )
 }

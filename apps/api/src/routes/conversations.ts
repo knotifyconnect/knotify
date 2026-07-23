@@ -21,6 +21,8 @@ type MessageRow = {
   conversation_id: string
   sender_id: string
   content: string
+  message_kind?: 'text' | 'ask'
+  ask_id?: string | null
   read_at: string | null
   delivered_at?: string | null
   deleted_at?: string | null
@@ -232,7 +234,8 @@ async function loadParticipantState(conversationId: string, userId: string) {
 }
 
 function messagePreviewContent(message: MessageRow) {
-  return message.deleted_at ? 'Message deleted' : message.content
+  if (message.deleted_at) return 'Message deleted'
+  return message.message_kind === 'ask' ? `Ask for help · ${message.content}` : message.content
 }
 
 async function buildConversationSummaries(appUserId: string, conversationIds: string[]) {
@@ -244,7 +247,7 @@ async function buildConversationSummaries(appUserId: string, conversationIds: st
     supabase.from('conversation_participants').select('conversation_id, user_id, archived_at, cleared_at').in('conversation_id', uniqueConversationIds),
     supabase
       .from('messages')
-      .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
+      .select('id, conversation_id, sender_id, content, message_kind, ask_id, read_at, delivered_at, created_at, deleted_at, deleted_by')
       .in('conversation_id', uniqueConversationIds)
       .order('created_at', { ascending: false })
       .limit(1000),
@@ -377,7 +380,7 @@ async function deleteMessageForEveryone(conversationId: string, msgId: string, a
     })
     .eq('id', msgId)
     .eq('conversation_id', conversationId)
-    .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
+    .select('id, conversation_id, sender_id, content, message_kind, ask_id, read_at, delivered_at, created_at, deleted_at, deleted_by')
     .single()
 
   if (update.error) throw new Error(update.error.message)
@@ -579,7 +582,7 @@ conversationsRouter.get('/:id/messages', requireAuth, async (req, res) => {
 
     const messages = await supabase
       .from('messages')
-      .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
+      .select('id, conversation_id, sender_id, content, message_kind, ask_id, read_at, delivered_at, created_at, deleted_at, deleted_by')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
       .limit(300)
@@ -657,7 +660,7 @@ conversationsRouter.post('/:id/messages', requireAuth, async (req, res) => {
           sender_id: req.appUserId,
           content: parsed.data.content,
         })
-        .select('id, conversation_id, sender_id, content, read_at, delivered_at, created_at, deleted_at, deleted_by')
+        .select('id, conversation_id, sender_id, content, message_kind, ask_id, read_at, delivered_at, created_at, deleted_at, deleted_by')
         .single(),
       restoreConversationForAllParticipants(conversationId)
         .then(() => null)
