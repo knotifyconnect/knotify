@@ -10,7 +10,6 @@
 
 .k-ask-compose {
   width: min(720px, 100%);
-  height: min(590px, calc(var(--visual-viewport-height) - 40px));
   max-height: min(88dvh, calc(var(--visual-viewport-height) - 40px));
   display: flex;
   flex-direction: column;
@@ -226,7 +225,7 @@
 
 .k-ask-compose__people {
   margin-top: 10px;
-  height: 220px;
+  height: 186px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -401,7 +400,6 @@
 
   .k-ask-compose {
     width: 100%;
-    height: min(570px, calc(var(--visual-viewport-height) - 8px));
     max-height: calc(var(--visual-viewport-height) - 8px);
     border-right: 0;
     border-bottom: 0;
@@ -451,7 +449,7 @@
   }
 
   .k-ask-compose__people {
-    height: 194px;
+    height: 180px;
   }
 
   .k-ask-compose__footer {
