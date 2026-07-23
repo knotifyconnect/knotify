@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth.js'
 import { supabase } from '../lib.js'
+import { acceptedConnectionIds, filterAsksVisibleToViewer } from '../lib/askAudience.js'
 
 /**
  * /api/for-you — the personalization engine.
@@ -120,15 +121,22 @@ forYouRouter.get('/', requireAuth, async (req, res) => {
     .sort((a, b) => b.score - a.score)
 
   // ── Asks: open, not mine, that the viewer might answer ─────────────────────
-  const asksR = await supabase
-    .from('user_asks')
-    .select('id, user_id, content, status, audience_type, audience_value, created_at, users:user_id(id, full_name, username, avatar_url)')
-    .eq('status', 'open')
-    .neq('user_id', meId)
-    .order('created_at', { ascending: false })
-    .limit(40)
+  const connectionIds = await acceptedConnectionIds(meId)
+  const asksR = connectionIds.length > 0
+    ? await supabase
+        .from('user_asks')
+        .select('id, user_id, content, status, audience_type, audience_value, created_at, users:user_id(id, full_name, username, avatar_url)')
+        .eq('status', 'open')
+        .in('user_id', connectionIds)
+        .order('created_at', { ascending: false })
+        .limit(80)
+    : { data: [], error: null }
 
-  const rankedAsks = (asksR.error ? [] : (asksR.data ?? []))
+  const visibleAsks = asksR.error
+    ? []
+    : await filterAsksVisibleToViewer(asksR.data ?? [], meId)
+
+  const rankedAsks = visibleAsks
     .map((a) => {
       const audienceValue = (a as any).audience_type === 'interest' && typeof (a as any).audience_value === 'string'
         ? [String((a as any).audience_value).toLowerCase()]

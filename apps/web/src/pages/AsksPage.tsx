@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Globe, Hash, Briefcase, Plus } from 'lucide-react'
+import { Globe, Hash, Briefcase, Plus, UsersRound } from 'lucide-react'
 import { apiGet } from '../lib/api'
 import { KBtn, KAvatar } from '../lib/knotify'
 import { T, DeskHeader, SectionLabel as DeskSectionLabel } from '../lib/desk'
@@ -20,11 +20,15 @@ function timeAgo(iso: string) {
 function AudienceChip({ ask }: { ask: Ask }) {
   const type = ask.audience_type ?? 'everyone'
   let Icon = Globe
-  let label = 'Everyone'
+  let label = 'Your knot'
   if (type === 'interest') { Icon = Hash; label = ask.audience_value ?? 'Topic' }
   if (type === 'persona') {
     Icon = Briefcase
     label = PERSONAS.find((p) => p.value === ask.audience_value)?.label ?? 'Profession'
+  }
+  if (type === 'people') {
+    Icon = UsersRound
+    label = `${ask.audience_count ?? 0} selected`
   }
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 999, background: T.paperDeep, fontSize: 10.5, color: T.inkMuted, fontFamily: T.text }}>

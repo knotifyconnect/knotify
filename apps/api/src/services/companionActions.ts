@@ -12,6 +12,7 @@
  */
 import { supabase } from '../lib.js'
 import type { PeerProfile } from '../engine/relationshipPriority.js'
+import { notifyAskCreated } from '../lib/askNotifications.js'
 
 export type ActionResult = {
   ok: boolean
@@ -176,9 +177,15 @@ export async function createAsk(userId: string, input: { content?: string }): Pr
   const insert = await supabase
     .from('user_asks')
     .insert({ user_id: userId, content, audience_type: 'everyone', audience_value: null })
-    .select('id')
+    .select('id, user_id, content, audience_type, audience_value')
     .single()
   if (insert.error) return { ok: false, detail: `Failed to post ask: ${insert.error.message}` }
+
+  try {
+    await notifyAskCreated(insert.data)
+  } catch (error) {
+    console.error('Failed to notify Ask audience', error)
+  }
 
   return { ok: true, detail: 'Ask posted to your network.' }
 }

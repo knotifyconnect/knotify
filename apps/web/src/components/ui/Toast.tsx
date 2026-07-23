@@ -30,6 +30,8 @@ export function ToastContainer() {
                           ? 'bg-[#d8442b]'
                           : toast.type === 'event_rsvp'
                             ? 'bg-[#3b82f6]'
+                            : toast.type === 'ask_created' || toast.type === 'ask_reply' || toast.type === 'ask_activity'
+                              ? 'bg-[#1f6b5e]'
                             : 'bg-[#9090a8]'
               }`}
             />

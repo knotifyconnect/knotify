@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Globe, Hash, Briefcase, Send, Pencil, Share2, Trash2 } from 'lucide-react'
+import { X, Globe, Hash, Briefcase, Send, Pencil, Share2, Trash2, UsersRound } from 'lucide-react'
 import { apiGet, apiPost, apiDelete, apiPatch } from '../../lib/api'
 import { KAvatar } from '../../lib/knotify'
 import { T } from '../../lib/desk'
@@ -13,8 +13,9 @@ export type Ask = {
   content: string
   status: 'open' | 'resolved'
   created_at: string
-  audience_type?: 'everyone' | 'interest' | 'persona'
+  audience_type?: 'everyone' | 'interest' | 'persona' | 'people'
   audience_value?: string | null
+  audience_count?: number
   reply_count?: number
   author?: { id: string; full_name: string; username: string; avatar_url: string | null } | null
 }
@@ -29,9 +30,15 @@ type Reply = {
 
 function audienceChip(ask: Ask) {
   const type = ask.audience_type ?? 'everyone'
-  if (type === 'everyone') return { icon: Globe, label: 'Everyone' }
+  if (type === 'everyone') return { icon: Globe, label: 'Your knot' }
   if (type === 'interest') return { icon: Hash, label: ask.audience_value ?? 'Topic' }
-  return { icon: Briefcase, label: PERSONAS.find((p) => p.value === ask.audience_value)?.label ?? 'Profession' }
+  if (type === 'persona') {
+    return { icon: Briefcase, label: PERSONAS.find((p) => p.value === ask.audience_value)?.label ?? 'Profession' }
+  }
+  return {
+    icon: UsersRound,
+    label: `${ask.audience_count ?? 0} selected ${ask.audience_count === 1 ? 'person' : 'people'}`,
+  }
 }
 
 export function AskDrawer({

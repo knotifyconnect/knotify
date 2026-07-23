@@ -8,6 +8,8 @@ export const NOTIFICATION_TYPES = [
   'event_rsvp',
   'job_referral_request',
   'ask_reply',
+  'ask_created',
+  'ask_activity',
 ] as const
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number]
@@ -77,11 +79,24 @@ export async function createNotification(opts: {
   entityType?: string | null
   entityId?: string | null
 }): Promise<void> {
-  const { userId, actorId, type, title, body, entityType, entityId } = opts
+  await createNotifications([opts])
+}
+
+export async function createNotifications(opts: Array<{
+  userId: string
+  actorId?: string | null
+  type: NotificationType
+  title: string
+  body?: string | null
+  entityType?: string | null
+  entityId?: string | null
+}>): Promise<void> {
+  const unique = [...new Map(opts.map((item) => [item.userId, item])).values()]
+  if (unique.length === 0) return
 
   const insert = await supabase
     .from('notifications')
-    .insert({
+    .insert(unique.map(({ userId, actorId, type, title, body, entityType, entityId }) => ({
       user_id: userId,
       actor_id: actorId ?? null,
       type,
@@ -89,25 +104,30 @@ export async function createNotification(opts: {
       body: body ?? null,
       entity_type: entityType ?? null,
       entity_id: entityId ?? null,
-    })
-    .select('id')
-    .single()
+    })))
+    .select('id, user_id')
 
   if (insert.error) {
-    console.error('Failed to create notification', insert.error)
+    console.error('Failed to create notifications', insert.error)
     return
   }
 
-  try {
-    await sendPushToUser(userId, {
-      id: insert.data.id,
-      title,
-      body: body ?? undefined,
-      url: entityType && entityId ? entityUrl(entityType, entityId) : undefined,
-    })
-  } catch (error) {
-    console.error('Failed to send push notification', error)
-  }
+  const notificationIdByUser = new Map(
+    (insert.data ?? []).map((row) => [row.user_id as string, row.id as string])
+  )
+
+  await Promise.allSettled(unique.map(async ({ userId, title, body, entityType, entityId }) => {
+    try {
+      await sendPushToUser(userId, {
+        id: notificationIdByUser.get(userId),
+        title,
+        body: body ?? undefined,
+        url: entityType && entityId ? entityUrl(entityType, entityId) : undefined,
+      })
+    } catch (error) {
+      console.error('Failed to send push notification', error)
+    }
+  }))
 }
 
 export function entityUrl(entityType: string, entityId: string): string | undefined {
