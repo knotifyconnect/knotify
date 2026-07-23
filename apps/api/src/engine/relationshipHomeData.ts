@@ -252,7 +252,7 @@ export async function getRelationshipHomeData(userId: string): Promise<Relations
   try {
     const { data: updatesData } = await supabase
       .from('updates')
-      .select('id, user_id, content, audience_type, audience_value, created_at')
+      .select('id, user_id, content, created_at')
       .in('user_id', peerIds)
       .order('created_at', { ascending: false })
       .limit(15)
